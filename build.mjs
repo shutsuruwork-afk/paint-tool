@@ -20,6 +20,11 @@ await mkdir('dist', { recursive: true });
 await writeFile('dist/paint.min.js', code + '\n');
 await writeFile('dist/bookmarklet.txt', bookmarklet + '\n');
 
+// インストールページの「このページで試す」用。既定の文字列を、ページが渡す変数を読む式に変える（eval を使わないため）
+const MARK = /'__PAINT_DEFAULTS__'/g;
+if ((code.match(MARK) || []).length !== 1) throw new Error('defaults marker must appear exactly once');
+const inline = code.replace(MARK, "(window.__paintBookmarkletDefaults||'')");
+
 const escAttr = s => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 const kb = n => (n / 1024).toFixed(1) + ' KB';
 const gz = gzipSync(code).length;
@@ -30,7 +35,7 @@ const page = tpl
   .replaceAll('%%BOOKMARKLET_HREF%%', () => escAttr(bookmarklet))
   .replaceAll('%%SIZE%%', () => kb(bookmarklet.length))
   .replaceAll('%%GZIP%%', () => kb(gz))
-  .replace('%%INLINE_CODE%%', () => code.replace(/<\/(script)/gi, '<\\/$1'));
+  .replace('%%INLINE_CODE%%', () => inline.replace(/<\/(script)/gi, '<\\/$1'));
 // ボタンの href が、そのままブックマークレットになっているかを確かめる
 const unesc = t => t.replace(/&lt;/g, '<').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
 const hrefs = [...page.matchAll(/href="(javascript:[^"]*)"/g)].map(m => unesc(m[1]));

@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.7.1';
+  const VERSION = '1.8.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -441,6 +441,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const mv = ev => { if (ev.pointerId === id) moveBar(ev.clientX - ox, ev.clientY - oy); };
     const up = ev => {
       if (ev.pointerId !== id) return;
+      barMoved = true;
+      remember();
       grip.removeEventListener('pointermove', mv);
       grip.removeEventListener('pointerup', up);
       grip.removeEventListener('pointercancel', up);
@@ -457,6 +459,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (pass) togglePass(); // ツールを選んだら描くつもりなので、ページ操作モードは解除する
     tool = t;
     syncTool(false);
+    remember();
   }
   function syncTool(fromSlider) {
     for (const k in toolBtns) toolBtns[k].classList.toggle('on', k === tool);
@@ -481,6 +484,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     sizeW.firstChild.textContent = tool === 'text' ? '大きさ' : '太さ';
     // 入力中の文字は、文字ツールの大きさ・濃さのスライダーを動かしたときだけ追従する
     if (ta && fromSlider && tool === 'text') { taFs = CFG.text.size; taA = CFG.text.alpha; styleTa(); }
+    if (fromSlider) remember();
     syncDot();
     updateCursor();
     liveAlpha();
@@ -503,6 +507,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (tool === 'fill') return;
     CFG[tool].size = max(1, min(100, s));
     syncTool(false);
+    remember();
   }
   function setColor(c) {
     color = c.toLowerCase();
@@ -512,6 +517,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     customB.style.setProperty('--c', color);
     if (ta) { taC = color; styleTa(); }
     syncDot();
+    remember();
   }
   function syncHist() {
     undoB.disabled = hpos === 0;
@@ -1955,6 +1961,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (!visible) return;
     if (act !== -1) endStroke();
     settle();
+    if (saveT) { clearTimeout(saveT); saveT = 0; savePrefs(); } // 隠す・閉じる前に、待たせている保存を済ませる
     closePanel();
     visible = false;
     listen(false);
@@ -2016,10 +2023,73 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     delete win[NS];
   }
 
+  // ---------- 設定（インストールページで選んだ既定 DEF に、このサイトで変えた所を重ねる） ----------
+  // サイトの localStorage にはキー 1 つだけ、既定から変えた所だけを書く（何も変えていなければキーを消す）。
+  // 背景・ページ操作モード・計測表示は、開いたときに驚かないよう覚えない
+  const LS = 'paint-bookmarklet';
+  const PREF_T = ['pen', 'marker', 'eraser', 'line', 'arrow', 'rect', 'ellipse', 'text', 'fill'];
+  const BARS = { top: 1, 'top-left': 1, 'top-right': 1, bottom: 1 };
+  let base = null, barPref = 'top', barMoved = false, saveT = 0, ready = false;
+  function applyPrefs(p) {
+    if (!p || typeof p !== 'object') return;
+    if (typeof p.color === 'string' && /^#[0-9a-f]{6}$/i.test(p.color)) color = p.color.toLowerCase();
+    if (typeof p.tool === 'string' && CFG[p.tool]) tool = p.tool;
+    for (const k of PREF_T) {
+      const sz = p.size && +p.size[k], al = p.alpha && +p.alpha[k];
+      if (k !== 'fill' && sz >= 1 && sz <= 100) CFG[k].size = sz;
+      if (k !== 'eraser' && al >= 0.05 && al <= 1) CFG[k].alpha = al;
+    }
+    if (BARS[p.bar]) barPref = p.bar;
+    else if (Array.isArray(p.bar) && p.bar.length === 2 && p.bar.every(v => typeof v === 'number' && isFinite(v))) barPref = p.bar;
+  }
+  function snapPrefs() {
+    const size = {}, alpha = {};
+    for (const k of PREF_T) { size[k] = CFG[k].size; alpha[k] = CFG[k].alpha; }
+    return { color, tool, size, alpha };
+  }
+  function remember() {
+    if (!ready) return;
+    clearTimeout(saveT);
+    saveT = setTimeout(savePrefs, 400);
+  }
+  function savePrefs() {
+    saveT = 0;
+    const cur = snapPrefs(), d = {};
+    if (cur.color !== base.color) d.color = cur.color;
+    if (cur.tool !== base.tool) d.tool = cur.tool;
+    for (const g of ['size', 'alpha']) {
+      for (const k of PREF_T) if (cur[g][k] !== base[g][k]) (d[g] || (d[g] = {}))[k] = cur[g][k];
+    }
+    if (barMoved) d.bar = [round(barX), round(barY)];
+    try {
+      const ls = win.localStorage;
+      if (Object.keys(d).length) ls.setItem(LS, JSON.stringify(d));
+      else ls.removeItem(LS);
+    } catch (_) { }
+  }
+  function loadSite() {
+    try { return JSON.parse(win.localStorage.getItem(LS)); } catch (_) { return null; }
+  }
+  function placeBar() {
+    measureBar();
+    const p = barPref;
+    if (Array.isArray(p)) moveBar(p[0], p[1]);
+    else if (p === 'top-left') moveBar(10, 10);
+    else if (p === 'top-right') moveBar(vw - barW - 10, 10);
+    else if (p === 'bottom') moveBar((vw - barW) / 2, vh - barH - 12);
+    else moveBar((vw - barW) / 2, 10);
+  }
+  applyPrefs(DEF);
+  base = snapPrefs();
+  const site = loadSite();
+  applyPrefs(site);
+  barMoved = !!(site && Array.isArray(site.bar));
+
   // ---------- 起動 ----------
   const stats = () => ({
     width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, selection: sel ? [selX, selY, selW, selH] : null, texts: tlist.length, history: hist.length, historyPixels: hpix, events: nEv, points: nPts,
     desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, nativePrediction: nativePred, inkTrail: !!inkP,
+    prefs: { ...snapPrefs(), bar: [barX, barY], touchText },
   });
   win[NS] = { version: VERSION, toggle, show, hide, close, destroy, undo, redo, clear: clearAll, tool: setTool, color: setColor, stats, pixels };
   setColor(color);
@@ -2028,7 +2098,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   syncBg();
   doc.documentElement.append(surf, host);
   show();
-  measureBar();
-  moveBar((vw - barW) / 2, 10);
+  placeBar();
+  ready = true;
   say('Esc で隠す ・ V でページ操作 ・ D で計測表示');
 })();

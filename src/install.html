@@ -204,16 +204,37 @@ tbody th { font-weight: 700; min-width: 8em; }
 .group-label { font-size: 0.78rem; color: var(--red-deep); font-weight: 700; padding: 0 6px; }
 .points { display: grid; gap: 10px; padding-left: 1.2em; }
 .foot { color: var(--ink-soft); font-size: 0.88rem; border-top: 1px solid var(--line); padding-top: 20px; }
+.prefs { display: grid; gap: 18px; padding: 20px 24px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+.prefs fieldset { margin: 0; padding: 0; border: 0; min-width: 0; display: grid; gap: 8px; }
+.prefs legend, .prefs .lbl { padding: 0; font-weight: 700; font-size: 0.95rem; }
+.swatches { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.swatches input[type=radio] { appearance: none; -webkit-appearance: none; margin: 0; width: 30px; height: 30px; border-radius: 50%; background: var(--c); box-shadow: inset 0 0 0 1px #0003; cursor: pointer; }
+.swatches input[type=radio]:checked { outline: 3px solid var(--ink); outline-offset: 2px; }
+.swatches input[type=color] { width: 44px; height: 30px; padding: 0 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); cursor: pointer; }
+.swatches .custom { display: inline-flex; align-items: center; gap: 6px; font-size: 0.88rem; color: var(--ink-soft); }
+.sliders { display: grid; gap: 6px; }
+.slider { display: grid; grid-template-columns: 8.5em minmax(0, 1fr) 3.2em; align-items: center; gap: 12px; }
+.slider input { width: 100%; accent-color: var(--red); }
+.slider output { font: 500 0.9rem/1 var(--font-mono); text-align: right; }
+.choices { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.choices label, .check { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.choices input, .check input { accent-color: var(--red); width: 18px; height: 18px; margin: 0; flex: none; }
+.check { align-items: flex-start; }
+.check input { margin-top: 0.3em; }
+.prefs select { font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
+.prefs-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+#p-state { color: var(--ink-soft); font-size: 0.88rem; }
+@media (max-width: 480px) { .prefs { padding: 16px; } .slider { grid-template-columns: 6.2em minmax(0, 1fr) 2.6em; gap: 8px; } }
 </style>
 
 <main class="page">
   <header>
-    <p class="eyebrow">Bookmarklet · v1.7.1 · %%SIZE%%（gzip %%GZIP%%）</p>
+    <p class="eyebrow">Bookmarklet · v1.8.0 · %%SIZE%%（gzip %%GZIP%%）</p>
     <h1>ペイント<br>ブックマークレット</h1>
     <p class="lead">開いているページの上に、<span class="mark">そのまま描ける<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d="M18 40C8 22 52 6 108 7s92 13 84 30-62 20-112 17S4 38 30 16" vector-effect="non-scaling-stroke"/></svg></span>ペイントツールです。ブックマークを押すだけで起動し、拡張機能もアカウントも要りません。入力から線が画面に出るまでの遅延を減らす仕組みを、ブラウザが対応している限りすべて使います。</p>
     <div class="actions">
       <a id="bm" class="bm" href="%%BOOKMARKLET_HREF%%" title="ブックマークバーへドラッグ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1.2-4.4L16 4.8a2 2 0 0 1 2.9 0l.3.3a2 2 0 0 1 0 2.9L8.4 18.8zM14 7l3 3"/></svg>Paint</a>
-      <span class="hint">← このボタンをブックマークバーへドラッグ</span>
+      <span class="hint">← このボタンをブックマークバーへドラッグ（最初の色や太さは、下の「最初の設定」で選べます）</span>
     </div>
     <div class="actions">
       <button id="try" class="btn primary" type="button">このページで試す</button>
@@ -227,6 +248,48 @@ tbody th { font-weight: 700; min-width: 8em; }
     <p>「このページで試す」を押して、下の文の誤字を赤ペンで丸く囲んでみてください。</p>
     <blockquote class="proof">ブックマークレッドは、ブラウザのブックマークに保存して使う小さなプログラムです。</blockquote>
     <p class="aside">色と太さは、ツールバーの点のボタンを押すと選べます。太さは <kbd>[</kbd> <kbd>]</kbd> でも変えられます。取り消しは <kbd>Ctrl</kbd>+<kbd>Z</kbd>、隠すときは <kbd>Esc</kbd>。<kbd>D</kbd> を押すと、入力 1 件の処理時間や使われている機能がその場で表示されます。</p>
+  </section>
+
+  <section aria-labelledby="pref-h">
+    <h2 id="pref-h">最初の設定</h2>
+    <p>起動したときの色・太さ・ツールバーの位置と、動きを選べます。選ぶと上の「Paint」ボタンの中身が変わるので、選び終えてからブックマークバーへドラッグしてください。すでに入れたブックマークは、前の設定のままです。</p>
+    <form id="prefs" class="prefs" onsubmit="return false">
+      <fieldset>
+        <legend>色</legend>
+        <div class="swatches" id="p-colors">
+          <span class="custom"><input type="color" id="p-custom" aria-label="その他の色">その他の色</span>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>太さと大きさ</legend>
+        <div class="sliders">
+          <label class="slider"><span>ペン</span><input type="range" id="p-pen" min="1" max="40"><output for="p-pen"></output></label>
+          <label class="slider"><span>蛍光ペン</span><input type="range" id="p-marker" min="4" max="80"><output for="p-marker"></output></label>
+          <label class="slider"><span>消しゴム</span><input type="range" id="p-eraser" min="4" max="100"><output for="p-eraser"></output></label>
+          <label class="slider"><span>文字の大きさ</span><input type="range" id="p-text" min="10" max="80"><output for="p-text"></output></label>
+        </div>
+      </fieldset>
+      <label class="slider"><span class="lbl">最初の道具</span>
+        <select id="p-tool">
+          <option value="pen">ペン</option><option value="marker">蛍光ペン</option><option value="text">文字</option><option value="select">選択</option>
+        </select><span></span>
+      </label>
+      <fieldset>
+        <legend>ツールバーの位置</legend>
+        <div class="choices" id="p-bar">
+          <label><input type="radio" name="bar" value="top">上の中央</label>
+          <label><input type="radio" name="bar" value="top-left">左上</label>
+          <label><input type="radio" name="bar" value="top-right">右上</label>
+          <label><input type="radio" name="bar" value="bottom">下の中央</label>
+        </div>
+      </fieldset>
+      <label class="check"><input type="checkbox" id="p-touch"><span>ペンなどを選んでいても、文字を押すと選んで動かせ、もう一度押すと書き直せる（切ると、文字の上からでもペンで描けます）</span></label>
+      <div class="prefs-foot">
+        <button type="button" id="p-reset" class="btn">最初の状態に戻す</button>
+        <span id="p-state" role="status"></span>
+      </div>
+    </form>
+    <p class="aside">使ったサイトでは、そのサイトで変えた色・太さ・道具・ツールバーの位置を次回も使います（そのサイトの保存領域に、キーを 1 つだけ書きます）。ここで選んだ設定は、そのサイトで変えていない所に効きます。背景とページ操作モードは覚えません。</p>
   </section>
 
   <section aria-labelledby="install-h">
@@ -350,9 +413,83 @@ tbody th { font-weight: 700; min-width: 8em; }
 function runPaint() {%%INLINE_CODE%%}
 (() => {
   const bm = document.getElementById('bm');
+  // ---- 最初の設定: 選んだ既定をブックマークレットのコードに埋め込む ----
+  // 組み込みの既定（src/paint.js の PALETTE と CFG に合わせる。テストで一致を確かめている）
+  const PALETTE = ['#111111', '#ffffff', '#e53935', '#fb8c00', '#fdd835', '#43a047', '#1e88e5', '#8e24aa'];
+  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 4, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true };
+  const BASE = bm.getAttribute('href'); // 既定の入っていないブックマークレット
+  const KEY = 'paint-defaults';
+  const $ = id => document.getElementById(id);
+  const colorsEl = $('p-colors'), custom = $('p-custom'), state = $('p-state');
+  PALETTE.forEach((c, i) => {
+    const r = document.createElement('input');
+    r.type = 'radio'; r.name = 'color'; r.value = c;
+    r.setAttribute('aria-label', '色 ' + (i + 1));
+    r.style.setProperty('--c', c);
+    colorsEl.insertBefore(r, colorsEl.lastElementChild);
+  });
+  const sizes = ['pen', 'marker', 'eraser', 'text'];
+  let cur = load();
+  function load() {
+    let v = null;
+    try { v = JSON.parse(localStorage.getItem(KEY)); } catch (_) { }
+    const d = JSON.parse(JSON.stringify(BUILTIN));
+    if (v && typeof v === 'object') {
+      if (typeof v.color === 'string') d.color = v.color;
+      if (typeof v.tool === 'string') d.tool = v.tool;
+      if (v.size) for (const k of sizes) if (+v.size[k] > 0) d.size[k] = +v.size[k];
+      if (typeof v.bar === 'string') d.bar = v.bar;
+      if (typeof v.touchText === 'boolean') d.touchText = v.touchText;
+    }
+    return d;
+  }
+  // 組み込みの既定と違う所だけを渡す（URL を短く保ち、あとで組み込みの既定が変わっても効くように）
+  function diff(c) {
+    const o = {};
+    if (c.color !== BUILTIN.color) o.color = c.color;
+    if (c.tool !== BUILTIN.tool) o.tool = c.tool;
+    for (const k of sizes) if (c.size[k] !== BUILTIN.size[k]) (o.size || (o.size = {}))[k] = c.size[k];
+    if (c.bar !== BUILTIN.bar) o.bar = c.bar;
+    if (c.touchText !== BUILTIN.touchText) o.touchText = c.touchText;
+    return o;
+  }
+  const enc = s => s.replace(/[%#\s"]/g, ch => encodeURIComponent(ch));
+  function hrefFor(o) {
+    if (!Object.keys(o).length) return BASE;
+    return BASE.replace(/(['"])__PAINT_DEFAULTS__\1/, () => enc(JSON.stringify(JSON.stringify(o))));
+  }
+  function show() {
+    for (const r of colorsEl.querySelectorAll('input[type=radio]')) r.checked = r.value === cur.color;
+    custom.value = cur.color;
+    for (const k of sizes) { const r = $('p-' + k); r.value = cur.size[k]; r.nextElementSibling.value = cur.size[k]; }
+    $('p-tool').value = cur.tool;
+    for (const r of document.querySelectorAll('#p-bar input')) r.checked = r.value === cur.bar;
+    $('p-touch').checked = cur.touchText;
+    const o = diff(cur);
+    bm.setAttribute('href', hrefFor(o));
+    state.textContent = Object.keys(o).length ? '設定入りのボタンになりました。ドラッグし直すと反映されます。' : '最初の状態です。';
+  }
+  function update() {
+    try { localStorage.setItem(KEY, JSON.stringify(cur)); } catch (_) { }
+    show();
+  }
+  colorsEl.addEventListener('change', e => { if (e.target.name === 'color') { cur.color = e.target.value; update(); } });
+  custom.addEventListener('input', () => { cur.color = custom.value.toLowerCase(); update(); });
+  for (const k of sizes) $('p-' + k).addEventListener('input', e => { cur.size[k] = +e.target.value; update(); });
+  $('p-tool').addEventListener('change', e => { cur.tool = e.target.value; update(); });
+  $('p-bar').addEventListener('change', e => { cur.bar = e.target.value; update(); });
+  $('p-touch').addEventListener('change', e => { cur.touchText = e.target.checked; update(); });
+  $('p-reset').addEventListener('click', () => { cur = JSON.parse(JSON.stringify(BUILTIN)); update(); });
+  show();
+  // このページで試すときは eval を使わず、埋め込み版が読む変数で既定を渡す
+  const tryPaint = () => {
+    window.__paintBookmarkletDefaults = JSON.stringify(diff(cur));
+    try { runPaint(); } finally { delete window.__paintBookmarkletDefaults; }
+  };
+
   // このページ上でクリックされたら javascript: URL へ遷移せず、同じコードを直接実行する
-  bm.addEventListener('click', e => { e.preventDefault(); runPaint(); });
-  document.getElementById('try').addEventListener('click', () => runPaint());
+  bm.addEventListener('click', e => { e.preventDefault(); tryPaint(); });
+  document.getElementById('try').addEventListener('click', () => tryPaint());
 
   const copyBtn = document.getElementById('copy');
   const area = document.getElementById('code');

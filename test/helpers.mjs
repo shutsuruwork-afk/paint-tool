@@ -22,6 +22,8 @@ export async function startServer() {
   const srv = http.createServer((req, res) => {
     res.setHeader('content-type', 'text/html; charset=utf-8');
     if (req.url.startsWith('/strict')) res.setHeader('content-security-policy', STRICT_CSP);
+    // /install はビルドしたインストールページ（docs/index.html）
+    if (req.url.startsWith('/install')) return res.end(readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8'));
     res.end(req.url.startsWith('/long') ? LONG : req.url.startsWith('/offset') ? OFFSET : PAGE);
   });
   await new Promise(r => srv.listen(0, '127.0.0.1', r));

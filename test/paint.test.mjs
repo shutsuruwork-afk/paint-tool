@@ -625,6 +625,113 @@ test('インストールページの「Paint」ボタンの中身が、そのま
   assert.equal(decodeURIComponent(href.slice(11)), CODE.trim());
 });
 
+const prefs = page => page.evaluate(() => window.__paintBookmarklet.stats().prefs);
+const lsGet = page => page.evaluate(() => localStorage.getItem('paint-bookmarklet'));
+const setRange = (page, sel, v) => page.evaluate(([s, v]) => { const r = document.querySelector(s); r.value = v; r.dispatchEvent(new Event('input', { bubbles: true })); }, [sel, v]);
+
+test('インストールページで選んだ設定入りのブックマークレットになり、別のサイトでもその設定で始まる。開き直しても選んだ設定が残る', async () => {
+  const { page, errors } = await openPage(browser, server.base + '/install');
+  const base = await page.getAttribute('#bm', 'href');
+  assert.ok(base.includes("'__PAINT_DEFAULTS__'"));
+  // ページが持つ組み込みの既定は、本体の既定と同じ
+  await page.click('#try');
+  const p0 = await prefs(page);
+  assert.equal(p0.color, await page.inputValue('#p-custom'));
+  for (const k of ['pen', 'marker', 'eraser', 'text']) assert.equal(String(p0.size[k]), await page.inputValue('#p-' + k), k);
+  assert.equal(p0.tool, await page.inputValue('#p-tool'));
+  assert.equal(p0.touchText, await page.isChecked('#p-touch'));
+  await page.evaluate(() => window.__paintBookmarklet.destroy());
+  // 選ぶと、ボタンの中身が変わる
+  await page.click('[aria-label="色 7"]');
+  await setRange(page, '#p-pen', 10);
+  await setRange(page, '#p-text', 40);
+  await page.selectOption('#p-tool', 'marker');
+  await page.check('#p-bar input[value="top-left"]');
+  await page.uncheck('#p-touch');
+  const href = await page.getAttribute('#bm', 'href');
+  assert.notEqual(href, base);
+  const want = p => {
+    assert.equal(p.color, '#1e88e5');
+    assert.equal(p.size.pen, 10);
+    assert.equal(p.size.text, 40);
+    assert.equal(p.size.marker, 24);
+    assert.equal(p.tool, 'marker');
+    assert.equal(p.touchText, false);
+    assert.ok(p.bar[0] <= 12 && p.bar[1] <= 12, JSON.stringify(p.bar));
+  };
+  // このページで試しても、別のサイトで本物の javascript: URL として押しても同じ設定
+  await page.click('#try');
+  want(await prefs(page));
+  await page.evaluate(() => window.__paintBookmarklet.destroy());
+  const o2 = await openPage(browser, server.base + '/');
+  await o2.page.evaluate(u => { location.href = u; }, href);
+  await o2.page.waitForFunction(() => !!window.__paintBookmarklet);
+  want(await prefs(o2.page));
+  assert.deepEqual(o2.errors, []);
+  await o2.page.close();
+  // 開き直しても残り、「最初の状態に戻す」で元のボタンに戻る
+  await page.reload();
+  assert.equal(await page.isChecked('[aria-label="色 7"]'), true);
+  assert.equal(await page.inputValue('#p-pen'), '10');
+  assert.equal(await page.isChecked('#p-touch'), false);
+  assert.equal(await page.getAttribute('#bm', 'href'), href);
+  await page.click('#p-reset');
+  assert.equal(await page.getAttribute('#bm', 'href'), base);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('サイトで変えた色・太さ・道具・ツールバーの位置を覚えて次回はその続きから。既定から変えた所だけを書き、背景は覚えない', async () => {
+  const { page, errors } = await fresh();
+  await page.waitForTimeout(500);
+  assert.equal(await lsGet(page), null, '何も変えていなければ書かない');
+  await page.keyboard.press('7');
+  await page.keyboard.press(']');
+  await page.keyboard.press('h');
+  await page.keyboard.press('b');
+  const g = await rectOf(page, '.grip');
+  await page.mouse.move(g.x + g.w / 2, g.y + g.h / 2);
+  await page.mouse.down();
+  await page.mouse.move(40, 300, { steps: 4 });
+  await page.mouse.up();
+  await page.waitForTimeout(600);
+  const saved = JSON.parse(await lsGet(page));
+  assert.deepEqual(Object.keys(saved).sort(), ['bar', 'color', 'size', 'tool']);
+  assert.deepEqual(saved.size, { pen: 5 });
+  assert.equal(saved.color, '#1e88e5');
+  assert.equal(saved.tool, 'marker');
+  await page.evaluate(() => window.__paintBookmarklet.destroy());
+  await runBookmarklet(page);
+  const p = await prefs(page);
+  assert.equal(p.color, '#1e88e5');
+  assert.equal(p.tool, 'marker');
+  assert.equal(p.size.pen, 5);
+  assert.deepEqual(p.bar, saved.bar);
+  assert.equal(await page.evaluate(() => document.querySelector('paint-bookmarklet-surface').shadowRoot.querySelector('.s').className), 's');
+  // インストールページの既定を変えると、このサイトで触っていない所（消しゴム）には新しい既定が効く
+  await page.evaluate(() => window.__paintBookmarklet.destroy());
+  await runCode(page, withDefaults(CODE, { color: '#43a047', size: { eraser: 50 } }));
+  const q = await prefs(page);
+  assert.equal(q.color, '#1e88e5');
+  assert.equal(q.size.eraser, 50);
+  assert.equal(q.size.pen, 5);
+  assert.deepEqual(errors, []);
+  await page.close();
+  // localStorage が使えないページでもエラーにならない
+  const ctx = await browser.newContext({ viewport: { width: 1000, height: 700 } });
+  await ctx.addInitScript(() => Object.defineProperty(window, 'localStorage', { get() { throw new DOMException('denied', 'SecurityError'); } }));
+  const p3 = await ctx.newPage();
+  const e3 = [];
+  p3.on('pageerror', e => e3.push(e.message));
+  await p3.goto(server.base + '/');
+  await runBookmarklet(p3);
+  await p3.keyboard.press('7');
+  await p3.waitForTimeout(600);
+  await p3.evaluate(() => window.__paintBookmarklet.hide());
+  assert.deepEqual(e3, []);
+  await ctx.close();
+});
+
 test('速いマウス移動でも線が途切れない（全中間点を取りこぼさない）', async () => {
   const { page } = await fresh();
   const pts = [];

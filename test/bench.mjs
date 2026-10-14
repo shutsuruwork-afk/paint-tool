@@ -18,7 +18,7 @@ for (const dpr of [1, 2]) {
     const init = performance.now() - t0;
     const api = window.__paintBookmarklet;
     const root = document.querySelector('paint-bookmarklet').shadowRoot;
-    const pad = root.querySelector('.p'), main = root.querySelector('canvas.m');
+    const pad = root.querySelector('.p'), main = root.querySelector('canvas.l');
     await new Promise(r => setTimeout(r, 100));
     const ev = (type, [x, y], extra) => new PointerEvent(type, {
       bubbles: true, cancelable: true, composed: true, pointerId: 9, pointerType: 'pen', isPrimary: true,
@@ -45,16 +45,22 @@ for (const dpr of [1, 2]) {
       let t = performance.now();
       for (let i = 1; i < N; i++) pad.dispatchEvent(evs[i]);
       const move = (performance.now() - t) / (N - 1) * 1000;
+      // 3,000 点を 1 タスクで流し込んだ分の GPU 描画を済ませてから確定を測る（実際の入力では毎フレーム消化される）
+      main.getContext('2d').getImageData(0, 0, 1, 1);
       await frame();
       t = performance.now();
       pad.dispatchEvent(ev('pointerup', pts[N - 1], { buttons: 0 }));
       const commit = performance.now() - t;
+      // 確定で積んだタイルへの描画を済ませてから元に戻すを測る（実際の操作では、確定から元に戻すまでに何フレームも空く）
+      api.pixels(0, 0, innerWidth, innerHeight);
       await frame();
       t = performance.now();
       api.undo();
       const undo = performance.now() - t;
+      api.pixels(0, 0, innerWidth, innerHeight);
       await frame();
       api.redo();
+      api.pixels(0, 0, innerWidth, innerHeight);
       await frame();
       const xs = pts.map(p => p[0] * devicePixelRatio), ys = pts.map(p => p[1] * devicePixelRatio), w = 4 * devicePixelRatio + 4;
       const bbox = (Math.max(...xs) - Math.min(...xs) + w) * (Math.max(...ys) - Math.min(...ys) + w);
@@ -81,6 +87,7 @@ for (const dpr of [1, 2]) {
 
     // 3 本のストロークが残った状態で、その周囲（ほぼ全画面）を塗りつぶす
     api.tool('fill');
+    api.pixels(0, 0, innerWidth, innerHeight);
     await frame();
     t = performance.now();
     pad.dispatchEvent(ev('pointerdown', [5, 5], { pointerType: 'mouse', pointerId: 1 }));

@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.0.0';
+  const VERSION = '1.1.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -14,7 +14,7 @@
   const doc = document;
   const perf = performance;
   const now = () => perf.now();
-  const { min, max, round, ceil, sqrt, abs, atan2, cos, sin, hypot, PI } = Math;
+  const { min, max, round, ceil, floor, sqrt, abs, atan2, cos, sin, hypot, PI } = Math;
   const TAU = PI * 2;
   const EMPTY = [];
   const SVGNS = 'http://www.w3.org/2000/svg';
@@ -71,7 +71,7 @@
 
   const CSS = `
 .w{all:initial;position:absolute;inset:0;overflow:hidden;contain:strict;pointer-events:none;outline:none;font:12px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e8e9ee;color-scheme:dark;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
-.w.bg1{background:#fff}.w.bg2{background:#1d1f23}
+.s{position:absolute;inset:0}.s.bg1{background:#fff}.s.bg2{background:#1d1f23}
 canvas{position:absolute;left:0;top:0;pointer-events:none}
 .g,.p{position:absolute;inset:0}
 .p{pointer-events:auto;touch-action:none;cursor:crosshair}
@@ -129,64 +129,126 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     c.width = w; c.height = h;
     return c;
   };
-  // GPU 上でのコピー（getImageData による読み戻しを避ける）
-  const copy = (src, r) => {
-    const c = newCanvas(r.w, r.h);
-    c.getContext('2d').drawImage(src, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
-    return c;
-  };
 
   // ---------- ホスト要素（Shadow DOM でページの CSS から隔離） ----------
+  // style 属性ではなく CSSOM 経由で設定する（CSP の style-src に阻まれない）
+  const pin = (e, list) => { for (const [k, v] of list) e.style.setProperty(k, v, 'important'); };
+  const BASE = [['all', 'initial'], ['margin', '0'], ['padding', '0'], ['border', 'none'], ['background', 'transparent'],
+    ['pointer-events', 'none'], ['display', 'block']];
+  // 2 つの Shadow DOM で 1 枚のスタイルシートを共有する（使えない環境では <style> を置く）
+  let sheet = null;
+  try { sheet = new CSSStyleSheet(); sheet.replaceSync(CSS); } catch (_) { sheet = null; }
+  const adopt = root => {
+    if (sheet) try { root.adoptedStyleSheets = [sheet]; return; } catch (_) { }
+    const st = el('style');
+    st.textContent = CSS;
+    root.append(st);
+  };
+  // UI と描いている途中の線は画面に固定する
   const host = el('paint-bookmarklet');
   const hs = host.style;
-  // style 属性ではなく CSSOM 経由で設定する（CSP の style-src に阻まれない）
-  for (const [k, v] of [
-    ['all', 'initial'], ['position', 'fixed'], ['top', '0'], ['left', '0'], ['right', '0'], ['bottom', '0'],
-    ['width', 'auto'], ['height', 'auto'], ['margin', '0'], ['padding', '0'], ['border', 'none'],
-    ['background', 'transparent'], ['overflow', 'visible'], ['z-index', '2147483647'],
-    ['pointer-events', 'none'], ['display', 'block'],
-  ]) hs.setProperty(k, v, 'important');
+  pin(host, [...BASE, ['position', 'fixed'], ['top', '0'], ['left', '0'], ['right', '0'], ['bottom', '0'],
+    ['width', 'auto'], ['height', 'auto'], ['overflow', 'visible'], ['z-index', '2147483647']]);
   // 対応ブラウザでは top layer に載せ、ページのモーダルや z-index 競争より常に手前に出す
   host.setAttribute('popover', 'manual');
   const shadow = host.attachShadow({ mode: 'open' });
-  try {
-    const sheet = new CSSStyleSheet();
-    sheet.replaceSync(CSS);
-    shadow.adoptedStyleSheets = [sheet];
-  } catch (_) {
-    const st = el('style');
-    st.textContent = CSS;
-    shadow.append(st);
-  }
+  adopt(shadow);
+  // 確定した絵は「面」に描く。面は文書に貼り付く要素で、本文と一緒にスクロールする。
+  // contain: strict と overflow: clip で文書の大きさに切り詰め、はみ出したタイルでスクロール範囲を広げない
+  const surf = el('paint-bookmarklet-surface');
+  pin(surf, [...BASE, ['position', 'absolute'], ['left', '0'], ['top', '0'], ['width', '0'], ['height', '0'],
+    ['overflow', 'hidden'], ['overflow', 'clip'], ['contain', 'strict'], ['z-index', '2147483646']]);
+  const sroot = surf.attachShadow({ mode: 'open' });
+  adopt(sroot);
+  const sbox = el('div', 's');
+  sroot.append(sbox);
 
   const wrap = el('div', 'w', { tabindex: '-1' });
   const layer = cls => {
     const c = el('canvas', cls);
     return [c, c.getContext('2d', CTX_OPT)];
   };
-  // main: 確定済みの絵 / live: 描画中のストローク / pred: 未確定の末尾＋予測線
-  const [mainC, mctx] = layer('m');
+  // live: 描いている途中の線 / pred: 未確定の末尾＋予測線（どちらも画面のデバイス px）
   const [liveC, lctx] = layer('l');
   const [predC, pctx] = layer('q');
-  const DESYNC = !!(mctx.getContextAttributes && mctx.getContextAttributes().desynchronized);
+  const DESYNC = !!(lctx.getContextAttributes && lctx.getContextAttributes().desynchronized);
   // live と pred をまとめて不透明度をかける（重なり部分が二重に濃くならない）
   const grp = el('div', 'g');
   grp.append(liveC, predC);
   const pad = el('div', 'p');
   const bar = el('div', 'bar', { role: 'toolbar', 'aria-label': 'Paint' });
   const toast = el('div', 't', { role: 'status' });
-  wrap.append(mainC, grp, pad, bar, toast);
+  wrap.append(grp, pad, bar, toast);
   shadow.append(wrap);
 
   // ---------- 状態 ----------
   let tool = 'pen', color = PALETTE[2], bg = 0, pass = false, visible = false;
   let dpr = win.devicePixelRatio || 1, W = 0, H = 0, grpA = 1, pendingFit = false, rz = 0;
-  // タイル管理: ストロークが触れた T×T タイルだけを記録し、確定・undo・消しゴムの退避をその範囲に限定する
+  // 履歴タイル: ストロークが触れた T×T タイル（面の座標）だけを記録し、確定・undo・消しゴムの退避をその範囲に限定する。
+  // 文書は大きいので、印は配列ではなく Set で持つ。番号は 行 × 65536 + 列
   const T = 128;
-  let TC = 0, TR = 0, tmark = new Uint8Array(0);
+  const tmark = new Set();
   const tl = [];    // 現在のストロークが触れたタイル番号
   const tsave = []; // 消しゴム: 削る直前に退避したタイル（tl と同じ順）
   const pool = [];  // 退避用タイルキャンバスの再利用プール
+
+  // ---------- 面（確定した絵。ページの座標に貼り付く） ----------
+  // 座標は 2 種類。V = 画面のデバイス px（live / pred / 入力）、S = 面の px（文書の左上が原点、解像度は sdpr で固定）。
+  // S = V × sk + (sox, soy)。ストロークの開始時に mapNow() で一度だけ決める
+  const dtiles = new Map(); // 表示タイル: 行 × 65536 + 列 → { c, x }
+  let sdpr = dpr, surfW = 0, surfH = 0, hdx = 0, hdy = 0, sk = 1, sox = 0, soy = 0;
+  // 表示タイルの一辺（面の px）。画面の密度によらず CSS で約 256px にする（1x なら 256、2x なら 512）。
+  // 小さいほど初めて描く場所での確保が軽く、大きいほど層の数が減って合成とスクロールが軽い。
+  // 履歴タイル T の倍数にしておくと、履歴タイルが表示タイルをまたがない
+  const DT = T * max(2, round(sdpr * 2));
+  // 画面の左上が S のどこに当たるか
+  const origin = () => [round((win.scrollX - hdx) * sdpr), round((win.scrollY - hdy) * sdpr)];
+  function mapNow() {
+    sk = sdpr / dpr;
+    [sox, soy] = origin();
+  }
+  function dtile(tx, ty) {
+    const k = ty * 65536 + tx;
+    let t = dtiles.get(k);
+    if (!t) {
+      const c = el('canvas'), st = c.style, css = DT / sdpr + 'px';
+      c.width = c.height = DT;
+      st.left = tx * DT / sdpr + 'px';
+      st.top = ty * DT / sdpr + 'px';
+      st.width = st.height = css;
+      // 数が多くなるので desynchronized にはしない（低遅延の経路はキャンバスごとに重い）
+      t = { c, x: c.getContext('2d') };
+      sbox.append(c);
+      dtiles.set(k, t);
+    }
+    return t;
+  }
+  // S の矩形に掛かる表示タイルごとに fn(タイル, タイル原点, 重なり矩形) を呼ぶ。make なら無いタイルを作る
+  function forTiles(x, y, w, h, make, fn) {
+    if (w <= 0 || h <= 0) return;
+    const tx0 = max(0, floor(x / DT)), ty0 = max(0, floor(y / DT));
+    const tx1 = min(65535, floor((x + w - 1) / DT)), ty1 = floor((y + h - 1) / DT);
+    for (let ty = ty0; ty <= ty1; ty++) {
+      for (let tx = tx0; tx <= tx1; tx++) {
+        const t = make ? dtile(tx, ty) : dtiles.get(ty * 65536 + tx);
+        if (!t) continue;
+        const ox = tx * DT, oy = ty * DT, ix = max(x, ox), iy = max(y, oy);
+        fn(t, ox, oy, ix, iy, min(x + w, ox + DT) - ix, min(y + h, oy + DT) - iy);
+      }
+    }
+  }
+  // 面の大きさを文書のスクロール範囲に合わせ、文書の原点からのずれ（html に margin や position がある場合）を測る。
+  // 一度 0 にしてから測るので、ページが縮んだときも追従する。強制レイアウトになるので、入力の処理中には呼ばない
+  function sizeSurface() {
+    const de = doc.documentElement, b = doc.body;
+    pin(surf, [['width', '0'], ['height', '0']]);
+    surfW = max(de.scrollWidth, de.clientWidth, b ? b.scrollWidth : 0);
+    surfH = max(de.scrollHeight, de.clientHeight, b ? b.scrollHeight : 0);
+    const r = surf.getBoundingClientRect();
+    hdx = r.left + win.scrollX;
+    hdy = r.top + win.scrollY;
+    pin(surf, [['width', surfW + 'px'], ['height', surfH + 'px']]);
+  }
 
   // ---------- ツールバー ----------
   const grip = el('div', 'b grip', { title: 'ドラッグで移動' });
@@ -301,6 +363,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     sizeW.classList.toggle('dis', tool === 'fill');
     alphaW.classList.toggle('dis', tool === 'eraser');
     updateCursor();
+    liveAlpha();
+  }
+  // live のグループの不透明度は、ツールや濃さを選んだ時点で合わせておく。押した瞬間に変えると、
+  // desynchronized の live の方が先に画面へ出て、半透明の線が最初の 1 フレームだけ濃く見える
+  function liveAlpha() {
+    const a = tool === 'eraser' || tool === 'fill' ? 1 : CFG[tool].alpha;
+    if (grpA !== a && !handoff) { grp.style.opacity = a; grpA = a; }
   }
   function setSize(s) {
     if (tool === 'fill') return;
@@ -320,8 +389,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   function cycleBg() {
     bg = (bg + 1) % BGS.length;
-    wrap.classList.toggle('bg1', bg === 1);
-    wrap.classList.toggle('bg2', bg === 2);
+    sbox.classList.toggle('bg1', bg === 1);
+    sbox.classList.toggle('bg2', bg === 2);
     syncBg();
   }
   function syncBg() {
@@ -358,45 +427,37 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
 
   // ---------- キャンバスのサイズ管理 ----------
-  // 拡大時のみ作り直して内容を引き継ぐ（縮小では捨てない＝再拡大しても絵が消えない）
+  // live / pred は画面の大きさ。拡大時だけ作り直す（中身は描いている途中の線だけなので引き継がない）
   function fit() {
     if (act !== -1) { pendingFit = true; return; }
     pendingFit = false;
+    finishHandoff();
     dpr = win.devicePixelRatio || 1;
     const w = ceil(win.innerWidth * dpr), h = ceil(win.innerHeight * dpr);
     if (w > W || h > H) {
-      const nw = max(w, W), nh = max(h, H);
-      const keep = W && H ? copy(mainC, { x: 0, y: 0, w: W, h: H }) : null;
-      for (const c of [mainC, liveC, predC]) { c.width = nw; c.height = nh; }
-      if (keep) { mctx.drawImage(keep, 0, 0); keep.width = keep.height = 0; }
-      W = nw; H = nh;
-      TC = ceil(W / T); TR = ceil(H / T);
-      tmark = new Uint8Array(TC * TR);
+      W = max(w, W); H = max(h, H);
+      for (const c of [liveC, predC]) { c.width = W; c.height = H; }
       setTimeout(warm, 0);
     }
     const cw = W / dpr + 'px', ch = H / dpr + 'px';
-    for (const c of [mainC, liveC, predC]) { c.style.width = cw; c.style.height = ch; }
+    for (const c of [liveC, predC]) { c.style.width = cw; c.style.height = ch; }
     tx0 = ty0 = tx1 = ty1 = 0;
-    if (visible) { measureBar(); moveBar(barX, barY); }
+    if (visible) { sizeSurface(); measureBar(); moveBar(barX, barY); }
   }
   // 暖機: キャンバスの GPU バッキング確保や合成パスの初回コンパイルは初回描画時に数十 ms かかる。
   // 描き始めてから払うと最初の一筆が引っかかるので、起動直後の何もしていない時間に済ませておく。
   function warm() {
-    if (act !== -1) return;
+    if (act !== -1 || handoff) return;
     for (const c of [lctx, pctx]) { c.fillRect(0, 0, 1, 1); c.clearRect(0, 0, 1, 1); }
-    if (!hist.length) {
-      mctx.fillRect(0, 0, 1, 1);
-      mctx.globalAlpha = 0.5;
-      mctx.drawImage(liveC, 0, 0, 1, 1, 0, 0, 1, 1); // 確定時の半透明合成
-      mctx.globalAlpha = 1;
-      mctx.globalCompositeOperation = 'destination-out'; // 消しゴム
-      mctx.fillRect(0, 0, 1, 1);
-      mctx.globalCompositeOperation = 'source-over';
-      mctx.clearRect(0, 0, 1, 1);
-    }
+    // 確定（半透明の合成）・消しゴム・退避で使う処理を、画面に出ない小さなキャンバスで一度ずつ通しておく
+    const s = newCanvas(2, 2), x = s.getContext('2d');
+    x.globalAlpha = 0.5;
+    x.drawImage(liveC, 0, 0, 1, 1, 0, 0, 1, 1);
+    x.globalAlpha = 1;
+    x.globalCompositeOperation = 'destination-out';
+    x.fillRect(0, 0, 1, 1);
     if (!pool.length) pool.push(newTile());
-    pool[0].x.drawImage(mainC, 0, 0, 1, 1, 0, 0, 1, 1); // タイル退避・アトラス生成
-    gather(rect1(0, 0, 1, 1), newCanvas(1, 1));
+    pool[0].x.drawImage(s, 0, 0, 1, 1, 0, 0, 1, 1);
   }
   function onResize() {
     if (!rz) rz = requestAnimationFrame(() => { rz = 0; fit(); });
@@ -441,7 +502,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     let ax = 0, ay = 0, rh = 0, aw = 1;
     for (let i = 0; i < R.length; i += 6) {
       const w = R[i + 2], h = R[i + 3];
-      if (ax + w > W) { ay += rh; ax = rh = 0; }
+      if (ax + w > max(W, 4096)) { ay += rh; ax = rh = 0; }
       R[i + 4] = ax; R[i + 5] = ay;
       ax += w;
       if (h > rh) rh = h;
@@ -449,38 +510,51 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     }
     return newCanvas(aw, max(1, ay + rh));
   }
-  // main の R の範囲をアトラスへ GPU コピー
+  // 面の R の範囲をアトラスへ GPU コピー（タイルの無い所は透明のまま）
   function gather(R, atlas) {
     const c = atlas.getContext('2d');
-    for (let i = 0; i < R.length; i += 6) c.drawImage(mainC, R[i], R[i + 1], R[i + 2], R[i + 3], R[i + 4], R[i + 5], R[i + 2], R[i + 3]);
+    for (let i = 0; i < R.length; i += 6) {
+      const x = R[i], y = R[i + 1], ax = R[i + 4], ay = R[i + 5];
+      forTiles(x, y, R[i + 2], R[i + 3], false, (t, ox, oy, ix, iy, iw, ih) =>
+        c.drawImage(t.c, ix - ox, iy - oy, iw, ih, ax + ix - x, ay + iy - y, iw, ih));
+    }
     return atlas;
   }
   const rect1 = (x, y, w, h) => [x, y, w, h, 0, 0];
   function swap(h) {
-    const R = h.R, cur = gather(R, newCanvas(h.c.width, h.c.height));
+    const R = h.R, src = h.c, cur = gather(R, newCanvas(src.width, src.height));
     grow(R);
     for (let i = 0; i < R.length; i += 6) {
-      mctx.clearRect(R[i], R[i + 1], R[i + 2], R[i + 3]);
-      mctx.drawImage(h.c, R[i + 4], R[i + 5], R[i + 2], R[i + 3], R[i], R[i + 1], R[i + 2], R[i + 3]);
+      const x = R[i], y = R[i + 1], ax = R[i + 4], ay = R[i + 5];
+      forTiles(x, y, R[i + 2], R[i + 3], true, (t, ox, oy, ix, iy, iw, ih) => {
+        t.x.clearRect(ix - ox, iy - oy, iw, ih);
+        t.x.drawImage(src, ax + ix - x, ay + iy - y, iw, ih, ix - ox, iy - oy, iw, ih);
+      });
     }
-    h.c.width = h.c.height = 0;
+    src.width = src.height = 0;
     h.c = cur;
   }
   function undo() {
     if (act !== -1 || !hpos) return;
+    finishHandoff();
     swap(hist[--hpos]);
     syncHist();
   }
   function redo() {
     if (act !== -1 || hpos >= hist.length) return;
+    finishHandoff();
     swap(hist[hpos++]);
     syncHist();
   }
+  // 全消去はページ全体（見えていない所も含む）。元に戻せるように、全タイルをアトラスに退避してから消す
   function clearAll() {
     if (act !== -1) return;
-    const R = rect1(0, 0, W, H);
-    push(R, gather(R, newCanvas(W, H)));
-    mctx.clearRect(0, 0, W, H);
+    finishHandoff();
+    const R = [];
+    for (const k of dtiles.keys()) R.push((k % 65536) * DT, ((k / 65536) | 0) * DT, DT, DT, 0, 0);
+    if (!R.length) return;
+    push(R, gather(R, pack(R)));
+    for (const t of dtiles.values()) t.x.clearRect(0, 0, DT, DT);
     cbx0 = cby0 = cbx1 = cby1 = 0;
   }
 
@@ -494,6 +568,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const G = new Float64Array(8); // 確定時のタイル算出用に、最後に描いた図形の形状を保持
   let pn = 0, nativePred = false, vx = 0, vy = 0;
   const px = new Float64Array(PRED_MAX), py = new Float64Array(PRED_MAX), pt = new Float64Array(PRED_MAX);
+  const ePts = new Float64Array(512); // 消しゴム: 1 回の描画で使う点（S 座標、最大 256 点）
+  let handoff = 0, hcx = 0, hcy = 0, hcw = 0, hch = 0; // 確定後に live を消すまでの受け渡し（commitLive）
   // 計測（HUD 表示中のみ時間を測る）
   let hud = null, hudT = 0, stEv = 0, stPred = 0, stCost = 0, stLag = 0, stT = 0, stP0 = 0, lastFillMs = 0;
   let nEv = 0, nPts = 0; // 累計（stats() 用）
@@ -531,6 +607,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     e.preventDefault();
     if (doc.activeElement !== host) wrap.focus({ preventScroll: true });
     if ((win.devicePixelRatio || 1) !== dpr) fit();
+    finishHandoff();
+    mapNow();
     const t = erase ? 'eraser' : tool;
     const x = e.clientX * dpr, y = e.clientY * dpr;
     if (t === 'fill') { floodFill(x, y); return; }
@@ -545,14 +623,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 
     if (t === 'eraser') {
       mode = 2;
-      mctx.globalCompositeOperation = 'destination-out';
-      mctx.globalAlpha = 1;
-      mctx.lineCap = mctx.lineJoin = 'round';
-      mctx.lineWidth = sW;
-      mctx.strokeStyle = mctx.fillStyle = '#000';
       const p = sW / 2 + 2;
       markBox(x - p, y - p, x + p, y + p); // 削る前に該当タイルを退避
-      mctx.beginPath(); mctx.arc(x, y, sW / 2, 0, TAU); mctx.fill();
+      ePts[0] = x * sk + sox; ePts[1] = y * sk + soy;
+      erasePts(1);
     } else {
       if (grpA !== sA) { grp.style.opacity = sA; grpA = sA; }
       setInk(lctx);
@@ -692,23 +766,57 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
 
   function eraseMove(e, list, n) {
-    const c = mctx;
-    let any = false;
-    c.beginPath();
-    c.moveTo(bx, by);
+    let k = 1;
+    ePts[0] = bx * sk + sox; ePts[1] = by * sk + soy;
     for (let i = 0, len = n || 1; i < len; i++) {
       const p = n ? list[i] : e;
       const t = p.timeStamp || lt, x = p.clientX * dpr, y = p.clientY * dpr;
       if (t < lt || (x === bx && y === by)) continue;
       lt = t;
       nPts++;
-      markSeg(bx, by, x, y, sW / 2 + 2); // stroke() より前に呼ぶので、削られる前の画素を退避できる
-      c.lineTo(x, y);
-      bx = x; by = y; any = true;
+      markSeg(bx, by, x, y, sW / 2 + 2); // 描く（erasePts）より前に呼ぶので、削られる前の画素を退避できる
+      ePts[k * 2] = x * sk + sox; ePts[k * 2 + 1] = y * sk + soy;
+      bx = x; by = y;
       if (x < x0) x0 = x; else if (x > x1) x1 = x;
       if (y < y0) y0 = y; else if (y > y1) y1 = y;
+      if (++k === 256) { erasePts(k); ePts[0] = ePts[510]; ePts[1] = ePts[511]; k = 1; }
     }
-    if (any) c.stroke();
+    if (k > 1) erasePts(k);
+  }
+  // 消しゴムの線（ePts の n 点、S 座標）を、掛かる表示タイルそれぞれに destination-out で描く。
+  // タイルの無い所には消すものも無いので作らない。入力のたびに呼ばれるので割り当てをしない
+  function erasePts(n) {
+    const w = sW * sk, r = w / 2 + 2;
+    let ax = ePts[0], ay = ePts[1], ex = ax, ey = ay;
+    for (let i = 2; i < n * 2; i += 2) {
+      const x = ePts[i], y = ePts[i + 1];
+      if (x < ax) ax = x; else if (x > ex) ex = x;
+      if (y < ay) ay = y; else if (y > ey) ey = y;
+    }
+    if (ex + r <= 0 || ey + r <= 0) return;
+    const tx0 = max(0, floor((ax - r) / DT)), ty0 = max(0, floor((ay - r) / DT));
+    const tx1 = floor((ex + r) / DT), ty1 = floor((ey + r) / DT);
+    for (let ty = ty0; ty <= ty1; ty++) {
+      for (let tx = tx0; tx <= tx1; tx++) {
+        const t = dtiles.get(ty * 65536 + tx);
+        if (!t) continue;
+        const c = t.x, ox = tx * DT, oy = ty * DT;
+        c.globalCompositeOperation = 'destination-out';
+        c.lineCap = c.lineJoin = 'round';
+        c.lineWidth = w;
+        c.strokeStyle = c.fillStyle = '#000';
+        c.beginPath();
+        if (n === 1) {
+          c.arc(ePts[0] - ox, ePts[1] - oy, w / 2, 0, TAU);
+          c.fill();
+        } else {
+          c.moveTo(ePts[0] - ox, ePts[1] - oy);
+          for (let i = 2; i < n * 2; i += 2) c.lineTo(ePts[i] - ox, ePts[i + 1] - oy);
+          c.stroke();
+        }
+        c.globalCompositeOperation = 'source-over';
+      }
+    }
   }
 
   function drawShape() {
@@ -805,7 +913,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       if (shaped) { markShape(); commitLive(); }
       else { const r = dirty(); if (r) lctx.clearRect(r.x, r.y, r.w, r.h); }
     } else if (m === 2) {
-      mctx.globalCompositeOperation = 'source-over';
       // 退避しておいたタイルを 1 枚のアトラスにまとめて履歴へ
       const R = tileRects(false);
       if (R.length) {
@@ -823,11 +930,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const m = mode, r = dirty();
     stopStroke();
     if (m === 2) {
-      mctx.globalCompositeOperation = 'source-over';
+      // 退避しておいた画素を戻す（表示タイルが無かった所は、何も消していない）
       const R = tileRects(false);
       for (let k = 0, i = 0; i < R.length; k++, i += 6) {
-        mctx.clearRect(R[i], R[i + 1], R[i + 2], R[i + 3]);
-        mctx.drawImage(tsave[k].c, 0, 0, R[i + 2], R[i + 3], R[i], R[i + 1], R[i + 2], R[i + 3]);
+        const x = R[i], y = R[i + 1], d = dtiles.get(((y / DT) | 0) * 65536 + ((x / DT) | 0));
+        if (!d) continue;
+        d.x.clearRect(x % DT, y % DT, T, T);
+        d.x.drawImage(tsave[k].c, 0, 0, T, T, x % DT, y % DT, T, T);
       }
     } else {
       if (r) lctx.clearRect(r.x, r.y, r.w, r.h);
@@ -837,40 +946,64 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     mode = 0;
   }
 
-  // live レイヤのうち触れたタイルだけを main に合成し、その範囲の元の絵を履歴に積む。
+  // live のうち触れたタイルの範囲だけを面に合成し、その範囲の元の絵を履歴に積む。
   // 外接矩形ではなくタイル単位なので、斜めの長い線や広範囲の線でも処理量・メモリは線の面積にほぼ比例する
   function commitLive() {
     let R = tileRects(true);
-    if (!R.length) return;
-    // 水平に細長い線などはタイルより外接矩形の方が小さいので、面積の小さい方を使う
     const r = dirty();
+    if (!R.length || !r) { if (r) lctx.clearRect(r.x, r.y, r.w, r.h); return; }
+    // 水平に細長い線などはタイルより外接矩形の方が小さいので、面積の小さい方を使う
     let tp = 0;
     for (let i = 0; i < R.length; i += 6) tp += R[i + 2] * R[i + 3];
-    if (r && r.w * r.h < tp) R = rect1(r.x, r.y, r.w, r.h);
+    const bX = floor(r.x * sk + sox), bY = floor(r.y * sk + soy);
+    const bW = ceil((r.x + r.w) * sk + sox) - bX, bH = ceil((r.y + r.h) * sk + soy) - bY;
+    if (bW * bH < tp) R = rect1(bX, bY, bW, bH);
+    sizeSurface();
     const atlas = gather(R, pack(R));
-    mctx.globalCompositeOperation = 'source-over';
-    mctx.globalAlpha = sA;
-    for (let i = 0; i < R.length; i += 6) mctx.drawImage(liveC, R[i], R[i + 1], R[i + 2], R[i + 3], R[i], R[i + 1], R[i + 2], R[i + 3]);
-    mctx.globalAlpha = 1;
-    for (let i = 0; i < R.length; i += 6) lctx.clearRect(R[i], R[i + 1], R[i + 2], R[i + 3]);
+    for (let i = 0; i < R.length; i += 6) {
+      forTiles(R[i], R[i + 1], R[i + 2], R[i + 3], true, (t, ox, oy, ix, iy, iw, ih) => {
+        const c = t.x;
+        c.globalAlpha = sA;
+        c.drawImage(liveC, (ix - sox) / sk, (iy - soy) / sk, iw / sk, ih / sk, ix - ox, iy - oy, iw, ih);
+        c.globalAlpha = 1;
+      });
+    }
     push(R, atlas);
+    // live は desynchronized なので、ここで消すと通常の更新であるタイルより先に画面へ出て、線が一瞬消える。
+    // live は残したままグループを隠し（タイルの更新と同じフレームで切り替わる）、2 フレーム後に中身を消す
+    grp.style.opacity = 0;
+    grpA = 0;
+    hcx = r.x; hcy = r.y; hcw = r.w; hch = r.h;
+    handoff = requestAnimationFrame(() => { handoff = requestAnimationFrame(finishHandoff); });
+  }
+  function finishHandoff() {
+    if (!handoff) return;
+    cancelAnimationFrame(handoff);
+    handoff = 0;
+    lctx.clearRect(hcx, hcy, hcw, hch);
+    liveAlpha();
   }
 
   // ---------- タイル ----------
-  // 矩形 [ax,bx]×[ay,by] に掛かるタイルに印を付ける。消しゴム中は初めて触れるタイルを削る前に退避（コピーオンライト）
+  // 矩形 [ax,bx]×[ay,by]（V 座標）に掛かる履歴タイル（S 座標）に印を付ける。
+  // 消しゴム中は、初めて触れるタイルを削る前に退避する（コピーオンライト）
   function markBox(ax, ay, bx, by) {
-    if (bx < 0 || by < 0 || ax >= W || ay >= H) return;
-    const c0 = ax > 0 ? (ax / T) | 0 : 0, r0 = ay > 0 ? (ay / T) | 0 : 0;
-    const c1 = min(TC - 1, (bx / T) | 0), r1 = min(TR - 1, (by / T) | 0);
+    const X0 = ax * sk + sox, Y0 = ay * sk + soy, X1 = bx * sk + sox, Y1 = by * sk + soy;
+    if (X1 < 0 || Y1 < 0) return;
+    const c0 = X0 > 0 ? (X0 / T) | 0 : 0, r0 = Y0 > 0 ? (Y0 / T) | 0 : 0;
+    const c1 = min(65535, (X1 / T) | 0), r1 = (Y1 / T) | 0;
     for (let r = r0; r <= r1; r++) {
-      for (let c = c0, i = r * TC + c0; c <= c1; c++, i++) {
-        if (tmark[i]) continue;
-        tmark[i] = 1;
-        tl.push(i);
+      for (let c = c0, k = r * 65536 + c0; c <= c1; c++, k++) {
+        if (tmark.has(k)) continue;
+        tmark.add(k);
+        tl.push(k);
         if (mode === 2) {
-          const t = pool.pop() || newTile(), x = c * T, y = r * T, w = min(T, W - x), h = min(T, H - y);
-          t.x.drawImage(mainC, x, y, w, h, 0, 0, w, h);
-          tsave.push(t);
+          // T は DT の約数なので、履歴タイルは必ず 1 枚の表示タイルに収まる
+          const s = pool.pop() || newTile(), x = c * T, y = r * T;
+          const d = dtiles.get(((y / DT) | 0) * 65536 + ((x / DT) | 0));
+          if (d) s.x.drawImage(d.c, x % DT, y % DT, T, T, 0, 0, T, T);
+          else s.x.clearRect(0, 0, T, T);
+          tsave.push(s);
         }
       }
     }
@@ -934,16 +1067,15 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const R = [];
     if (merge) tl.sort((a, b) => a - b);
     for (let k = 0; k < tl.length; k++) {
-      const s = tl[k], row = (s / TC) | 0;
+      const s = tl[k], row = (s / 65536) | 0;
       let e = s;
-      if (merge) while (k + 1 < tl.length && tl[k + 1] === e + 1 && ((e + 1) / TC | 0) === row) { k++; e++; }
-      const x = (s % TC) * T, y = row * T;
-      R.push(x, y, min(W, (e % TC + 1) * T) - x, min(T, H - y), 0, 0);
+      if (merge) while (k + 1 < tl.length && tl[k + 1] === e + 1 && ((e + 1) / 65536 | 0) === row) { k++; e++; }
+      R.push((s % 65536) * T, row * T, (e - s + 1) * T, T, 0, 0);
     }
     return R;
   }
   function resetTiles() {
-    for (let k = 0; k < tl.length; k++) tmark[tl[k]] = 0;
+    tmark.clear();
     tl.length = 0;
     // 退避タイルはプールへ戻して再利用（上限を超えた分は解放）
     for (const t of tsave) { if (pool.length < 256) pool.push(t); else t.c.width = t.c.height = 0; }
@@ -951,20 +1083,25 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
 
   // ---------- 塗りつぶし（スキャンライン法） ----------
-  function floodFill(fx, fy) {
-    const sx0 = fx | 0, sy0 = fy | 0;
+  // 塗る範囲は、いま見えている画面の中だけ（見えない所まで広げない）。
+  // 以下の座標は、画面の左上を原点にした面の px（S − (sox, soy)）
+  function floodFill(vx0, vy0) {
+    const W = ceil(wrap.clientWidth * sdpr), H = ceil(wrap.clientHeight * sdpr), FX = sox, FY = soy;
+    const sx0 = floor(vx0 * sk), sy0 = floor(vy0 * sk);
     if (sx0 < 0 || sy0 < 0 || sx0 >= W || sy0 >= H) return;
     const t0 = now();
-    // 読み戻すのは「これまでに描いた範囲」+1px だけ（それ以外は透明と分かっている）。
-    // main で直接 getImageData すると GPU 描画が遅くなるブラウザがあるので、CPU 用の一時キャンバス経由で読む
+    // 読み戻すのは「これまでに描いた範囲」+1px と画面の重なりだけ（それ以外は透明と分かっている）。
+    // タイルごとに CPU へ読み戻すと往復がタイルの数だけ起きるので、GPU 上で 1 枚に集めてから 1 回だけ読む。
+    // 表示用のタイルでは getImageData しない（読み戻しのあと GPU 描画が遅くなるブラウザがある）
     let gx = 0, gy = 0, gw = 0, gh = 0, data = null;
     if (cbx1 > cbx0) {
-      gx = max(0, cbx0 - 1); gy = max(0, cby0 - 1);
-      gw = min(W, cbx1 + 1) - gx; gh = min(H, cby1 + 1) - gy;
-      const rc = newCanvas(gw, gh), rx = rc.getContext('2d', { willReadFrequently: true });
-      rx.drawImage(mainC, gx, gy, gw, gh, 0, 0, gw, gh);
-      data = new Uint32Array(rx.getImageData(0, 0, gw, gh).data.buffer);
-      rc.width = rc.height = 0;
+      gx = max(0, cbx0 - 1 - FX); gy = max(0, cby0 - 1 - FY);
+      gw = min(W, cbx1 + 1 - FX) - gx; gh = min(H, cby1 + 1 - FY) - gy;
+      if (gw > 0 && gh > 0) {
+        const rc = gather(rect1(gx + FX, gy + FY, gw, gh), newCanvas(gw, gh));
+        data = new Uint32Array(rc.getContext('2d').getImageData(0, 0, gw, gh).data.buffer);
+        rc.width = rc.height = 0;
+      } else gw = gh = 0;
     }
     const inG = sx0 >= gx && sy0 >= gy && sx0 < gx + gw && sy0 < gy + gh;
     const seed = data && inG ? data[(sy0 - gy) * gw + sx0 - gx] : 0;
@@ -1009,28 +1146,49 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       if (y > fy1) fy1 = y;
     }
     const ax = max(0, fx0 - g), ay = max(0, fy0 - g), w = min(W, fx1 + 1 + g) - ax, h = min(H, fy1 + 1 + g) - ay;
-    const R = rect1(ax, ay, w, h);
+    const R = rect1(ax + FX, ay + FY, w, h);
     const patch = gather(R, newCanvas(w, h));
-    mctx.globalCompositeOperation = clear ? 'destination-over' : 'source-over';
-    mctx.globalAlpha = CFG.fill.alpha;
-    mctx.fillStyle = color;
-    mctx.fill(path); // 非ゼロ規則なので重なった矩形も 1 回分の濃さになる
-    mctx.globalAlpha = 1;
-    mctx.globalCompositeOperation = 'source-over';
+    forTiles(R[0], R[1], w, h, true, (t, ox, oy) => {
+      const c = t.x;
+      c.setTransform(1, 0, 0, 1, FX - ox, FY - oy);
+      c.globalCompositeOperation = clear ? 'destination-over' : 'source-over';
+      c.globalAlpha = CFG.fill.alpha;
+      c.fillStyle = color;
+      c.fill(path); // 非ゼロ規則なので重なった矩形も 1 回分の濃さになる
+      c.globalAlpha = 1;
+      c.globalCompositeOperation = 'source-over';
+      c.setTransform(1, 0, 0, 1, 0, 0);
+    });
     push(R, patch);
     lastFillMs = now() - t0;
   }
 
   // ---------- 書き出し ----------
+  // 面のうち、画面の (x, y, w, h)（CSS px）に見えている範囲を 1 枚のキャンバスに写す
+  function capture(x, y, w, h, opts) {
+    const [ox, oy] = origin(), X = round(x * sdpr) + ox, Y = round(y * sdpr) + oy;
+    const cw = max(1, round(w * sdpr)), ch = max(1, round(h * sdpr));
+    const c = newCanvas(cw, ch), cx = c.getContext('2d', opts);
+    forTiles(X, Y, cw, ch, false, (t, tox, toy, ix, iy, iw, ih) =>
+      cx.drawImage(t.c, ix - tox, iy - toy, iw, ih, ix - X, iy - Y, iw, ih));
+    return [c, cx];
+  }
   function exportBlob() {
-    const w = min(W, ceil(wrap.clientWidth * dpr)), h = min(H, ceil(wrap.clientHeight * dpr));
-    const c = newCanvas(w, h), x = c.getContext('2d');
-    if (bg) { x.fillStyle = BGS[bg]; x.fillRect(0, 0, w, h); }
-    x.drawImage(mainC, 0, 0);
+    const [c, x] = capture(0, 0, wrap.clientWidth, wrap.clientHeight);
+    if (bg) {
+      x.globalCompositeOperation = 'destination-over';
+      x.fillStyle = BGS[bg];
+      x.fillRect(0, 0, c.width, c.height);
+    }
     return c.convertToBlob
       ? c.convertToBlob({ type: 'image/png' })
       : new Promise((res, rej) => c.toBlob(b => (b ? res(b) : rej(Error('toBlob'))), 'image/png'));
   }
+  // 画面の (x, y, w, h)（CSS px）に見えている確定済みの絵の画素
+  const pixels = (x, y, w, h) => {
+    const [c, cx] = capture(x, y, w, h, { willReadFrequently: true });
+    return cx.getImageData(0, 0, c.width, c.height);
+  };
   function stamp() {
     const d = new Date(), p = n => String(n).padStart(2, '0');
     return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
@@ -1075,7 +1233,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       `入力 ${round(stEv / sec)} ev/s  点 ${((nPts - stP0) / n).toFixed(1)}/ev  予測 ${(stPred / n).toFixed(1)}/ev\n` +
       `処理 ${round(stCost / n * 1000)} µs/ev  入力→描画 ${(stLag / n).toFixed(1)} ms  塗り ${lastFillMs.toFixed(0)} ms\n` +
       `desync ${on(DESYNC)}  rawupdate ${on(HAS_RAW)}  coalesced ${on(HAS_CO)}  予測 ${nativePred ? 'native' : 'fallback'}  ink ${on(inkP)}\n` +
-      `${W}×${H} @${dpr}  履歴 ${hpos}/${hist.length} (${(hpix / 1e6).toFixed(1)} MP)  v${VERSION}`;
+      `${W}×${H} @${dpr}  面 ${surfW}×${surfH} タイル ${dtiles.size}  履歴 ${hpos}/${hist.length} (${(hpix / 1e6).toFixed(1)} MP)  v${VERSION}`;
     stEv = stPred = stCost = stLag = 0;
     stT = t;
     stP0 = nPts;
@@ -1148,6 +1306,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (visible) return;
     visible = true;
     hs.setProperty('display', 'block', 'important');
+    surf.style.setProperty('display', 'block', 'important');
     topLayer();
     listen(true);
     fit();
@@ -1160,6 +1319,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     listen(false);
     try { if (host.matches(':popover-open')) host.hidePopover(); } catch (_) { }
     hs.setProperty('display', 'none', 'important');
+    surf.style.setProperty('display', 'none', 'important');
     if (doc.activeElement === host) wrap.blur();
   }
   function toggle() { visible ? hide() : show(); }
@@ -1167,25 +1327,29 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     hide();
     if (hud) toggleHud();
     clearTimeout(toastT);
+    finishHandoff();
     while (hist.length) free(hist.pop());
-    for (const c of [mainC, liveC, predC]) c.width = c.height = 0;
+    for (const c of [liveC, predC]) c.width = c.height = 0;
+    for (const t of dtiles.values()) t.c.width = t.c.height = 0;
+    dtiles.clear();
     for (const t of pool) t.c.width = t.c.height = 0;
     pool.length = 0;
     host.remove();
+    surf.remove();
     delete win[NS];
   }
 
   // ---------- 起動 ----------
   const stats = () => ({
-    width: W, height: H, dpr, history: hist.length, historyPixels: hpix, events: nEv, points: nPts,
+    width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, history: hist.length, historyPixels: hpix, events: nEv, points: nPts,
     desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, nativePrediction: nativePred, inkTrail: !!inkP,
   });
-  win[NS] = { version: VERSION, toggle, show, hide, destroy, undo, redo, clear: clearAll, tool: setTool, color: setColor, stats };
+  win[NS] = { version: VERSION, toggle, show, hide, destroy, undo, redo, clear: clearAll, tool: setTool, color: setColor, stats, pixels };
   setColor(color);
   syncTool(false);
   syncHist();
   syncBg();
-  doc.documentElement.append(host);
+  doc.documentElement.append(surf, host);
   show();
   measureBar();
   moveBar((vw - barW) / 2, 10);

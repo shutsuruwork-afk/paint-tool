@@ -208,7 +208,7 @@ tbody th { font-weight: 700; min-width: 8em; }
 
 <main class="page">
   <header>
-    <p class="eyebrow">Bookmarklet · v1.0.0 · %%SIZE%%（gzip %%GZIP%%）</p>
+    <p class="eyebrow">Bookmarklet · v1.1.0 · %%SIZE%%（gzip %%GZIP%%）</p>
     <h1>ペイント<br>ブックマークレット</h1>
     <p class="lead">開いているページの上に、<span class="mark">そのまま描ける<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d="M18 40C8 22 52 6 108 7s92 13 84 30-62 20-112 17S4 38 30 16" vector-effect="non-scaling-stroke"/></svg></span>ペイントツールです。ブックマークを押すだけで起動し、拡張機能もアカウントも要りません。入力から線が画面に出るまでの遅延を減らす仕組みを、ブラウザが対応している限りすべて使います。</p>
     <div class="actions">
@@ -257,16 +257,17 @@ tbody th { font-weight: 700; min-width: 8em; }
       <table>
         <thead><tr><th scope="col">項目</th><th scope="col">1920×1080 @1x</th><th scope="col">@2x（3840×2160）</th></tr></thead>
         <tbody>
-          <tr><th scope="row">入力 1 件の処理</th><td class="num">4〜7 µs</td><td class="num">5〜7 µs</td></tr>
-          <tr><th scope="row">ストロークの確定</th><td class="num">1〜3 ms</td><td class="num">2〜11 ms</td></tr>
-          <tr><th scope="row">元に戻す</th><td class="num">2〜5 ms</td><td class="num">3〜17 ms</td></tr>
+          <tr><th scope="row">入力 1 件の処理</th><td class="num">5〜8 µs</td><td class="num">4〜14 µs</td></tr>
+          <tr><th scope="row">ストロークの確定</th><td class="num">4〜7 ms</td><td class="num">8〜22 ms</td></tr>
+          <tr><th scope="row">元に戻す</th><td class="num">2〜5 ms</td><td class="num">2〜18 ms</td></tr>
           <tr><th scope="row">長い斜め線の履歴メモリ</th><td class="num">外接矩形の 24%</td><td class="num">外接矩形の 12%</td></tr>
-          <tr><th scope="row">背景の塗りつぶし</th><td class="num">約 50 ms</td><td class="num">約 170 ms</td></tr>
-          <tr><th scope="row">起動</th><td class="num" colspan="2">20〜36 ms</td></tr>
+          <tr><th scope="row">背景の塗りつぶし</th><td class="num">50〜75 ms</td><td class="num">約 170 ms</td></tr>
+          <tr><th scope="row">起動</th><td class="num">24〜33 ms</td><td class="num">20〜27 ms</td></tr>
+          <tr><th scope="row">スクロール中の処理</th><td class="num" colspan="2">なし（ブラウザが動かす）</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="aside">60 Hz の 1 フレームは約 16,700 µs です。毎回パス全体を描き直す素朴な実装は、同じ条件で 1 件あたり 60〜90 µs かかり、点が増えるほど遅くなります。本ツールの処理時間は点の数によらず一定です。計測はヘッドレス Chromium 141 とソフトウェア GPU（SwiftShader）で行いました。確定・元に戻す・塗りつぶしは GPU 処理の比重が大きいので、GPU のある実機ではこれより短くなる見込みです。<code>npm run bench</code> で再計測できます。</p>
+    <p class="aside">60 Hz の 1 フレームは約 16,700 µs です。毎回パス全体を描き直す素朴な実装は、同じ条件で 1 件あたり 64〜137 µs かかり、点が増えるほど遅くなります。本ツールの処理時間は点の数によらず一定です。計測はヘッドレス Chromium 141 とソフトウェア GPU（SwiftShader）で行いました。確定・元に戻す・塗りつぶしは GPU 処理の比重が大きいので、GPU のある実機ではこれより短くなる見込みです。確定の時間には、初めて描く場所のタイルを作る時間が含まれます。<code>npm run bench</code> で再計測できます。</p>
   </section>
 
   <section aria-labelledby="keys-h">
@@ -307,17 +308,18 @@ tbody th { font-weight: 700; min-width: 8em; }
         <div class="layer">live<small>描いている途中の線（新しい点の分だけ追記）</small></div>
         <span class="group-label">この 2 枚にまとめて不透明度をかける</span>
       </div>
-      <div class="layer">main<small>確定した絵</small></div>
+      <div class="layer">面<small>確定した絵。ページに貼り付いたタイルで、スクロールと一緒に動く</small></div>
       <div class="layer page">元のページ</div>
     </figure>
     <ul class="points">
       <li>入力は <code>pointerrawupdate</code> で受け取った瞬間に描き、<code>pointermove</code> とはタイムスタンプで重複を除きます。間に挟まった点も <code>getCoalescedEvents</code> ですべて拾います。</li>
       <li>描いている途中の線は、新しい点の分だけを追記します。毎回パス全体を描き直さないので、線が長くなっても重くなりません。</li>
       <li>半透明の線は不透明で描き、レイヤごと不透明度をかけます。線が自分と重なっても濃くなりません。</li>
+      <li>確定した絵は、ページの座標に置いたタイルに描きます。スクロールはブラウザが合成だけで動かすので、スクロール中に JavaScript は動きません。タイルは描いた所にだけ作ります。</li>
       <li>確定と元に戻すは、線が通った 128px 四方のタイルだけを GPU 上でコピーします。全画面の <code>getImageData</code> は使いません。</li>
       <li>消しゴムは、削る直前のタイルだけを退避します。消し始めに画面全体をコピーする待ち時間がありません。</li>
       <li>キャンバスの確保や合成処理の初回コストは、起動直後のまだ描いていない時間に済ませます。</li>
-      <li>塗りつぶしは描いた範囲だけを読み戻し、塗る範囲を矩形パスにまとめて GPU に 1 回で塗らせます。</li>
+      <li>塗りつぶしは描いた範囲と画面が重なる部分だけを読み戻し、塗る範囲を矩形パスにまとめて GPU に 1 回で塗らせます。</li>
       <li>筆の大きさを示すカーソルは CSS カーソル画像なので、OS が遅れなく描きます。</li>
       <li>UI は Shadow DOM と CSSOM だけで組むので、ページの CSS、CSP の style-src、Trusted Types の影響を受けません。</li>
     </ul>
@@ -327,7 +329,8 @@ tbody th { font-weight: 700; min-width: 8em; }
     <h2 id="limits-h">できないこと</h2>
     <ul class="points">
       <li>Chrome と Edge は、CSP が厳しいサイト（GitHub など）ではブックマークレットの実行自体を止めます。Firefox は CSP に関係なく実行します。</li>
-      <li>絵は画面に固定されます。ページをスクロールしても絵は動きません。ページを操作したいときは <kbd>V</kbd> で操作モードにします。</li>
+      <li>ページの一部だけがスクロールするサイト（Gmail、Slack など）では、その部分のスクロールに絵が付いていきません。ページ全体のスクロールにだけ追従します。</li>
+      <li>描いている途中にスクロールすると、線は描き始めた時点の位置に確定します。描いた後で本文の位置が変わる（画像の読み込みで押し出されるなど）と、絵と本文がずれます。</li>
       <li>保存される PNG は描いた絵だけです。下にあるページは写りません。</li>
       <li>埋め込み表示（iframe）のページでは、PNG の保存やクリップボードへのコピーがブロックされることがあります。</li>
     </ul>

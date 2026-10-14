@@ -2,6 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CODE, startServer, launch, openPage, runBookmarklet, shadowEval, readMain, alphaStats, drag, click, toolOn,
+  screenPixel, scrollTo,
 } from './helpers.mjs';
 
 let server, browser;
@@ -10,12 +11,12 @@ after(async () => { await browser.close(); server.srv.close(); });
 
 const fresh = async (path = '/', viewport) => {
   const o = await openPage(browser, server.base + path, viewport);
-  if (path === '/') await runBookmarklet(o.page);
+  if (path !== '/strict') await runBookmarklet(o.page);
   return o;
 };
-const checksum = page => shadowEval(page, root => {
-  const c = root.querySelector('canvas.m');
-  const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+const checksum = page => page.evaluate(() => {
+  const de = document.documentElement;
+  const d = window.__paintBookmarklet.pixels(0, 0, de.clientWidth, de.clientHeight).data;
   let h = 0, s = 0;
   for (let i = 0; i < d.length; i++) { s += d[i]; h = (h * 31 + d[i]) | 0; }
   return `${s}:${h}`;
@@ -228,7 +229,7 @@ test('ウィンドウのリサイズで絵が消えない', async () => {
   await page.waitForTimeout(100);
   await page.setViewportSize({ width: 1200, height: 800 });
   await page.waitForTimeout(100);
-  const size = await shadowEval(page, root => { const c = root.querySelector('canvas.m'); return [c.width, c.height]; });
+  const size = await shadowEval(page, root => { const c = root.querySelector('canvas.l'); return [c.width, c.height]; });
   assert.deepEqual(size, [1200, 800]);
   assert.ok((await alphaStats(page, 840, 590, 120, 70)).max > 200);
   await drag(page, [[1100, 750], [1150, 780]], 5);
@@ -296,5 +297,171 @@ test('pointerrawupdate と pointermove の両方が届いても各入力点は 1
   const after = await st();
   assert.ok(after.events - before.events >= N * 2 - 2, `both event types delivered (${after.events - before.events})`);
   assert.equal(after.points - before.points, N, 'each point consumed exactly once');
+  await page.close();
+});
+
+// ---------- T-003: 絵がページに貼り付き、スクロールで一緒に動く ----------
+
+test('描いてからスクロールすると、絵も本文と一緒に動く', async () => {
+  const { page } = await fresh('/long');
+  await drag(page, [[100, 300], [400, 300]], 10);
+  assert.ok((await screenPixel(page, 250, 300))[3] > 200, 'drawn');
+  await scrollTo(page, 200);
+  assert.ok((await screenPixel(page, 250, 100))[3] > 200, 'moved up with the page');
+  assert.equal((await screenPixel(page, 250, 300))[3], 0, 'nothing left at the old screen position');
+  assert.ok((await readMain(page, 250, 100))[3] > 200, 'pixels() agrees');
+  await page.close();
+});
+
+test('スクロールした位置で描いた線が本文の正しい位置に付き、元に戻す・やり直すも効く', async () => {
+  const { page } = await fresh('/long');
+  await scrollTo(page, 800); // 目印 #m1（文書の y=900〜910）は画面の y=100〜110
+  await drag(page, [[120, 105], [380, 105]], 10);
+  await scrollTo(page, 850); // 目印は画面の y=50〜60 へ
+  const m1 = await page.evaluate(() => document.getElementById('m1').getBoundingClientRect().top);
+  assert.equal(m1, 50);
+  assert.ok((await screenPixel(page, 250, 55))[3] > 200, 'stroke stays on the marker');
+  await page.keyboard.press('Control+z');
+  assert.equal((await screenPixel(page, 250, 55))[3], 0, 'undo');
+  await page.keyboard.press('Control+Shift+z');
+  assert.ok((await screenPixel(page, 250, 55))[3] > 200, 'redo');
+  await scrollTo(page, 0);
+  await scrollTo(page, 850);
+  assert.ok((await screenPixel(page, 250, 55))[3] > 200, 'still there after scrolling away and back');
+  await page.close();
+});
+
+test('スクロールした位置でも、塗りつぶし・消しゴム・PNG 保存の範囲が正しい', async () => {
+  const { page } = await fresh('/long');
+  await scrollTo(page, 1200);
+  await page.keyboard.press('r');
+  await drag(page, [[200, 200], [400, 350]], 10);
+  await page.keyboard.press('f');
+  await page.mouse.click(300, 275);
+  assert.deepEqual(await screenPixel(page, 330, 275), [229, 57, 53, 255], 'filled inside');
+  assert.equal((await screenPixel(page, 450, 275))[3], 0, 'no leak outside');
+  await page.keyboard.press('e');
+  await drag(page, [[300, 220], [300, 330]], 10);
+  assert.equal((await screenPixel(page, 300, 275))[3], 0, 'erased');
+  await page.keyboard.press('Control+z');
+  assert.ok((await screenPixel(page, 300, 275))[3] > 200, 'erase undone');
+  await scrollTo(page, 1300);
+  assert.deepEqual(await screenPixel(page, 330, 175), [229, 57, 53, 255], 'moved with the page');
+  // PNG はいま見えている範囲を写す
+  const png = await page.evaluate(async () => {
+    const d = window.__paintBookmarklet.pixels(330, 175, 1, 1).data;
+    return Array.from(d);
+  });
+  assert.deepEqual(png, [229, 57, 53, 255]);
+  await page.close();
+});
+
+test('画面の端に描いても、スクロール範囲が広がらない', async () => {
+  const { page } = await fresh('/long');
+  const size = () => page.evaluate(() => {
+    const de = document.documentElement;
+    return [de.scrollWidth, de.scrollHeight, de.clientWidth];
+  });
+  const [w0, h0, cw] = await size();
+  await drag(page, [[990, 100], [999, 600]], 10); // 右端
+  await scrollTo(page, 99999);
+  await drag(page, [[100, 690], [900, 699]], 10); // 下端
+  const [w1, h1] = await size();
+  assert.equal(w1, w0, 'no wider');
+  assert.ok(w1 <= cw, 'no horizontal scrollbar');
+  assert.equal(h1, h0, 'no taller');
+  await page.close();
+});
+
+test('ページの高さが縮むと、面も縮んでスクロール範囲が残らない', async () => {
+  const { page } = await fresh('/long');
+  await drag(page, [[100, 100], [300, 100]], 5);
+  await page.evaluate(() => { document.getElementById('sp').style.height = '1200px'; });
+  await drag(page, [[100, 200], [300, 200]], 5); // 確定のときに面の大きさを測り直す
+  const h = await page.evaluate(() => document.documentElement.scrollHeight);
+  assert.equal(h, 1200);
+  await page.close();
+});
+
+test('html に position や margin があるページでも、画面上の位置が合う', async () => {
+  const { page } = await fresh('/offset');
+  await drag(page, [[100, 300], [400, 300]], 10);
+  assert.ok((await screenPixel(page, 250, 300))[3] > 200, 'at the drawn position');
+  await scrollTo(page, 500);
+  await drag(page, [[100, 200], [400, 200]], 10);
+  assert.ok((await screenPixel(page, 250, 200))[3] > 200, 'drawn after scrolling');
+  await scrollTo(page, 600);
+  assert.ok((await screenPixel(page, 250, 100))[3] > 200, 'moves with the page');
+  await page.close();
+});
+
+test('確定の瞬間にちらつかない（live は隠してから 2 フレーム後に消す）、半透明の濃さは押す前に合わせてある', async () => {
+  const { page } = await fresh('/');
+  await page.keyboard.press('h'); // 蛍光ペン（35%）
+  const r = await shadowEval(page, async root => {
+    const grp = root.querySelector('.g'), live = root.querySelector('canvas.l'), pad = root.querySelector('.p');
+    const before = grp.style.opacity;
+    const ev = (type, x) => new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, pointerId: 5, pointerType: 'mouse', isPrimary: true, clientX: x, clientY: 300, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1 });
+    pad.dispatchEvent(ev('pointerdown', 100));
+    for (let x = 110; x <= 400; x += 10) pad.dispatchEvent(ev('pointermove', x));
+    pad.dispatchEvent(ev('pointerup', 400));
+    const alpha = () => live.getContext('2d').getImageData(250, 300, 1, 1).data[3];
+    const atUp = { opacity: grp.style.opacity, live: alpha(), surface: window.__paintBookmarklet.pixels(250, 300, 1, 1).data[3] };
+    for (let i = 0; i < 3; i++) await new Promise(r => requestAnimationFrame(r));
+    return { before, atUp, after: { opacity: grp.style.opacity, live: alpha() } };
+  });
+  assert.equal(r.before, '0.35', 'opacity set when the tool was chosen');
+  assert.equal(r.atUp.opacity, '0', 'live hidden at commit');
+  assert.ok(r.atUp.live > 200 && r.atUp.surface > 80, 'stroke on both layers at the moment of commit');
+  assert.equal(r.after.live, 0, 'live cleared after frames');
+  assert.equal(r.after.opacity, '0.35', 'opacity restored');
+  await page.close();
+});
+
+test('scroll / wheel のリスナーを登録しない（スクロール中に JS が動かない）', async () => {
+  const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
+  await page.addInitScript(() => {
+    window.__types = [];
+    const orig = EventTarget.prototype.addEventListener;
+    EventTarget.prototype.addEventListener = function (type, ...rest) { window.__types.push(type); return orig.call(this, type, ...rest); };
+  });
+  await page.goto(server.base + '/long');
+  await runBookmarklet(page);
+  await drag(page, [[100, 300], [400, 300]], 10);
+  await scrollTo(page, 500);
+  await drag(page, [[100, 300], [400, 300]], 10);
+  const types = await page.evaluate(() => window.__types);
+  assert.ok(types.includes('pointerdown'), 'instrumentation works');
+  assert.deepEqual(types.filter(t => t === 'scroll' || t === 'wheel'), []);
+  await page.close();
+});
+
+test('高密度の画面（2x）でも、スクロールに追従し位置が合う', async () => {
+  const page = await browser.newPage({ viewport: { width: 1000, height: 700 }, deviceScaleFactor: 2 });
+  await page.goto(server.base + '/long');
+  await runBookmarklet(page);
+  await scrollTo(page, 300);
+  await drag(page, [[100, 300], [400, 300]], 10);
+  assert.ok((await screenPixel(page, 250, 300))[3] > 200, 'drawn');
+  await scrollTo(page, 400);
+  assert.ok((await screenPixel(page, 250, 200))[3] > 200, 'moved with the page');
+  assert.equal((await page.evaluate(() => window.__paintBookmarklet.stats().dpr)), 2);
+  await page.close();
+});
+
+test('途中で画面の密度が変わっても（ズーム相当）、描いた位置が合う', async () => {
+  const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
+  await page.goto(server.base + '/long');
+  await runBookmarklet(page);
+  await drag(page, [[100, 200], [400, 200]], 10); // 面の解像度は最初の 1x で決まる
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 700, deviceScaleFactor: 1.5, mobile: false });
+  await page.waitForFunction(() => devicePixelRatio === 1.5);
+  await scrollTo(page, 100);
+  await drag(page, [[100, 400], [400, 400]], 10); // 画面 1.5x → 面 1x の縮小が入る
+  assert.ok((await screenPixel(page, 250, 400))[3] > 150, 'second stroke at the drawn position');
+  assert.ok((await screenPixel(page, 250, 100))[3] > 150, 'first stroke moved with the page');
+  await page.keyboard.press('Control+z');
+  assert.equal((await screenPixel(page, 250, 400))[3], 0, 'undo');
   await page.close();
 });

@@ -8,16 +8,7 @@
 
 ## 次
 
-### T-002 インストールページを GitHub Pages で公開する
-- 状態: ブロック（R-001 待ち: ユーザーが Settings → Pages → Source を「GitHub Actions」にする）
-- 目的: ブックマークレットを、URL を開いてドラッグするだけで誰でも入れられるようにする
-- 完了条件:
-  - [x] リポジトリを public にする（ユーザーが 2026-10-14 に実施）
-  - [x] Pages ワークフローの test ジョブが GitHub 上で通る（run 38542922393）
-  - [ ] Source を GitHub Actions にしたあと、deploy ジョブが成功する（失敗したジョブを再実行すればよい）
-  - [ ] deploy ジョブの `page_url` が https://shutsuruwork-afk.github.io/paint-tool/ になっている
-- 関連: `.github/workflows/pages.yml`、`docs/index.html`、`README.md`
-- メモ: 作業環境から *.github.io へは接続できない（ネットワークポリシーで 403）。公開の確認は GitHub API でジョブの結果を見て行う。
+（R-003 の回答待ち。ユーザーが着手順の認識合わせを書いている）
 
 ## 候補
 
@@ -39,3 +30,5 @@
 
 - T-001 タスクとハンドオフの運用ルールを作る — 2026-10-14
 - T-014 `.human/` を作り、アイデアとお願いのやりとりを始める — 2026-10-14
+- T-002 インストールページを GitHub Pages で公開する — 2026-10-14
+- T-015 MIT ライセンスを付ける — 2026-10-14

@@ -120,3 +120,7 @@ npm run bench   # 性能計測
 テストは、実際のブックマークレットと同じく `javascript:` URL へのナビゲーションで起動し、線の途切れ、元に戻すの画素単位の一致、半透明の重なり、塗りつぶしの漏れ、筆圧、パームリジェクション、ページへのイベント漏れ、入力欄フォーカス時のショートカット、厳格な CSP + Trusted Types、リサイズ、PNG 保存、入力点の重複処理を確認します。
 
 JavaScript で操作するための API も `window.__paintBookmarklet` に用意しています（`toggle` `show` `hide` `destroy` `undo` `redo` `clear` `tool(name)` `color(hex)` `stats()`）。
+
+## ライセンス
+
+MIT（[LICENSE](LICENSE)）

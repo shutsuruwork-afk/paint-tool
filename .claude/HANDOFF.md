@@ -4,12 +4,12 @@
 
 ## 現在地
 
-- 最終更新: 2026-10-14、T-014 の完了時
+- 最終更新: 2026-10-14、T-002 と T-015 の完了時
 - ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない
-- CI: GitHub Actions「Pages」は test 成功。deploy は Pages が未設定で失敗中（T-002）
-- 公開: インストールページは Artifact（非公開）で公開済み。GitHub Pages は Source の設定待ち
-- 人の操作待ち: `.human/requests.md` の R-001（Pages の Source 設定）、R-002（ライセンス）、R-003（改善の着手順）
-- 次の一手: R-003 の回答に従って改善を始める。指定がなければ T-003（スクロール追従。`.human/ideas/scroll-follow.md` に方式の比較あり）
+- CI: GitHub Actions「Pages」は test・deploy とも成功（main へのプッシュごとに公開が更新される）
+- 公開: https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）の 2 か所
+- 人の操作待ち: `.human/requests.md` の R-003（改善の着手順）。ユーザーが認識合わせの内容を書いている
+- 次の一手: R-003 に書かれた内容を読み、着手順と最初のタスクの範囲をすり合わせてから始める。それまでは改善タスクに着手しない
 
 ## 始め方
 
@@ -56,7 +56,7 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - pointerrawupdate のリスナーは描画中だけ登録する（登録しているだけでコストがかかる）。図形は 1 フレームに 1 回で足りるので使わない。
 - 履歴は 128px タイルと外接矩形のうち面積の小さい方で保存する。消しゴムはコピーオンライト。
 - 起動直後に warm() で初回コストを前払いする（初回の確定が 17ms → 2ms、@2x で 60ms → 4ms）。
-- ライセンスは未設定（R-002 でユーザーに確認中。おすすめは MIT）。
+- ライセンスは MIT（R-002 でユーザーが決定）。著作権者の表記は GitHub のユーザー名 shutsuruwork-afk。
 
 ## 落とし穴
 
@@ -76,11 +76,20 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 ## 外部の状態
 
 - GitHub: shutsuruwork-afk/paint-tool（public）。ブランチは main と feature/paint-bookmarklet
-- Actions: Pages ワークフロー。run 38542922393 は test 成功、deploy は Pages が未設定で失敗
-- Pages: 未有効。公開予定の URL は https://shutsuruwork-afk.github.io/paint-tool/
+- Actions: Pages ワークフロー。run 38550725208（05f8ca8）で初めて deploy まで成功。configure-pages@v5 と deploy-pages@v4 に Node 20 非推奨の警告が出るが、動作はしている
+- Pages: 公開中。Source は「GitHub Actions」。URL は https://shutsuruwork-afk.github.io/paint-tool/
 - Artifact: https://claude.ai/artifact/Aj3XQxn6Q7EUaiHjYAFbve（インストールページ、非公開）。`docs/index.html` の本文だけの版
 
 ## 完了ログ（新しい順）
+
+### T-015 MIT ライセンスを付ける — 2026-10-14
+- 変更: LICENSE（MIT、Copyright (c) 2026 shutsuruwork-afk）を追加。package.json の license、README の「ライセンス」節、`src/paint.js` の先頭コメント、インストールページのフッターに MIT を明記した。Artifact も更新した（version 3）。
+- 確認: `npm test` 16 件が通過。
+- 残課題: 圧縮版（dist/、ブックマークレット）には著作権表示のコメントを入れていない（サイズを優先）。本人の配布なので問題はない。
+
+### T-002 インストールページを GitHub Pages で公開する — 2026-10-14
+- 結果: ユーザーが public 化と Source の設定（R-001）を済ませ、run 38550725208 の deploy が成功。公開 URL は https://shutsuruwork-afk.github.io/paint-tool/ （deploy ジョブのログの environment url で確認）。
+- 確認できていないこと: 公開ページを直接開いての表示確認（作業環境から github.io につながらないため）。
 
 ### T-014 `.human/` を作り、アイデアとお願いのやりとりを始める — 2026-10-14
 - 変更: `.human/`（README、`ideas/`、`requests.md`）と `.claude/rules/human.md` を追加。CLAUDE.md から requests.md を読み込むようにした。

@@ -1,6 +1,6 @@
 /*!
  * Paint Bookmarklet — どんなページの上にも描ける低遅延ペイントツール
- * https://github.com/shutsuruwork-afk/paint-tool
+ * https://github.com/shutsuruwork-afk/paint-tool (MIT License)
  */
 (() => {
   'use strict';

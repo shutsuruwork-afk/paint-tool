@@ -208,7 +208,7 @@ tbody th { font-weight: 700; min-width: 8em; }
 
 <main class="page">
   <header>
-    <p class="eyebrow">Bookmarklet · v1.2.0 · %%SIZE%%（gzip %%GZIP%%）</p>
+    <p class="eyebrow">Bookmarklet · v1.3.0 · %%SIZE%%（gzip %%GZIP%%）</p>
     <h1>ペイント<br>ブックマークレット</h1>
     <p class="lead">開いているページの上に、<span class="mark">そのまま描ける<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d="M18 40C8 22 52 6 108 7s92 13 84 30-62 20-112 17S4 38 30 16" vector-effect="non-scaling-stroke"/></svg></span>ペイントツールです。ブックマークを押すだけで起動し、拡張機能もアカウントも要りません。入力から線が画面に出るまでの遅延を減らす仕組みを、ブラウザが対応している限りすべて使います。</p>
     <div class="actions">
@@ -226,7 +226,7 @@ tbody th { font-weight: 700; min-width: 8em; }
     <h2 id="try-h">試し書き</h2>
     <p>「このページで試す」を押して、下の文の誤字を赤ペンで丸く囲んでみてください。</p>
     <blockquote class="proof">ブックマークレッドは、ブラウザのブックマークに保存して使う小さなプログラムです。</blockquote>
-    <p class="aside">太さは <kbd>[</kbd> <kbd>]</kbd>、取り消しは <kbd>Ctrl</kbd>+<kbd>Z</kbd>、隠すときは <kbd>Esc</kbd>。<kbd>D</kbd> を押すと、入力 1 件の処理時間や使われている機能がその場で表示されます。</p>
+    <p class="aside">色と太さは、ツールバーの点のボタンを押すと選べます。太さは <kbd>[</kbd> <kbd>]</kbd> でも変えられます。取り消しは <kbd>Ctrl</kbd>+<kbd>Z</kbd>、隠すときは <kbd>Esc</kbd>。<kbd>D</kbd> を押すと、入力 1 件の処理時間や使われている機能がその場で表示されます。</p>
   </section>
 
   <section aria-labelledby="install-h">
@@ -258,11 +258,11 @@ tbody th { font-weight: 700; min-width: 8em; }
         <thead><tr><th scope="col">項目</th><th scope="col">1920×1080 @1x</th><th scope="col">@2x（3840×2160）</th></tr></thead>
         <tbody>
           <tr><th scope="row">入力 1 件の処理</th><td class="num">5〜8 µs</td><td class="num">4〜14 µs</td></tr>
-          <tr><th scope="row">ストロークの確定</th><td class="num">4〜7 ms</td><td class="num">8〜22 ms</td></tr>
+          <tr><th scope="row">ストロークの確定</th><td class="num">4〜9 ms</td><td class="num">8〜22 ms</td></tr>
           <tr><th scope="row">元に戻す</th><td class="num">2〜5 ms</td><td class="num">2〜18 ms</td></tr>
           <tr><th scope="row">長い斜め線の履歴メモリ</th><td class="num">外接矩形の 24%</td><td class="num">外接矩形の 12%</td></tr>
-          <tr><th scope="row">背景の塗りつぶし</th><td class="num">50〜75 ms</td><td class="num">約 170 ms</td></tr>
-          <tr><th scope="row">起動</th><td class="num">24〜33 ms</td><td class="num">20〜27 ms</td></tr>
+          <tr><th scope="row">背景の塗りつぶし</th><td class="num">50〜75 ms</td><td class="num">170〜180 ms</td></tr>
+          <tr><th scope="row">起動</th><td class="num">19〜33 ms</td><td class="num">15〜27 ms</td></tr>
           <tr><th scope="row">スクロール中の処理</th><td class="num" colspan="2">なし（ブラウザが動かす）</td></tr>
         </tbody>
       </table>

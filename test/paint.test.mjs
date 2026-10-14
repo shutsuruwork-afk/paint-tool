@@ -131,6 +131,99 @@ test('何も描いていなければ × ですぐに閉じる。API の destroy 
   await page.close();
 });
 
+const openPanels = page => shadowEval(page, root => root.querySelectorAll('.pn.on').length);
+const rectOf = (page, sel) => shadowEval(page, (root, s) => {
+  const r = root.querySelector(s).getBoundingClientRect();
+  return { x: r.x, y: r.y, w: r.width, h: r.height, r: r.right, b: r.bottom };
+}, sel);
+const mouseClick = async (page, sel) => {
+  const r = await rectOf(page, sel);
+  assert.ok(r.w > 0 && r.h > 0, `${sel} が表示されていない`);
+  await page.mouse.click(r.x + r.w / 2, r.y + r.h / 2);
+};
+
+test('ツールバーは 1 段で幅 520px 以下。図形は最後に使った物を出し、押すとパネルが開く', async () => {
+  const { page, errors } = await fresh();
+  const bar = await rectOf(page, '.bar');
+  assert.ok(bar.w <= 520 && bar.h <= 50, JSON.stringify(bar));
+  const shapeTitle = () => shadowEval(page, root => root.querySelector('.bar > .dd').title);
+  // 図形ボタン: 押すと最後の図形（最初は直線）になり、パネルが開く
+  await mouseClick(page, '.bar > .dd');
+  assert.match(await toolOn(page), /^直線/);
+  assert.equal(await openPanels(page), 1);
+  assert.equal(await shadowEval(page, root => root.querySelectorAll('.pn.on .b').length), 4);
+  await mouseClick(page, '.pn.on [aria-label^="四角形"]');
+  assert.equal(await openPanels(page), 0);
+  assert.match(await toolOn(page), /^四角形/);
+  assert.match(await shapeTitle(), /^四角形/);
+  await page.keyboard.press('o');
+  assert.match(await shapeTitle(), /^楕円/);
+  await page.keyboard.press('p');
+  assert.match(await toolOn(page), /^ペン/);
+  // ペンに戻ってから押すと、最後の図形（楕円）になる。描き始めるとパネルは閉じる
+  await mouseClick(page, '.bar > .dd');
+  assert.match(await toolOn(page), /^楕円/);
+  assert.equal(await openPanels(page), 1);
+  await drag(page, [[300, 300], [500, 450]], 5);
+  assert.equal(await openPanels(page), 0);
+  assert.ok((await alphaStats(page, 290, 290, 220, 170)).count > 100);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('色と太さのパネル: 色を選んでも開いたまま、描き始めると閉じてその色で描ける。Esc はまずパネルを閉じる', async () => {
+  const { page } = await fresh();
+  await mouseClick(page, '[aria-label^="色・"]');
+  assert.equal(await openPanels(page), 1);
+  await mouseClick(page, '.pn.on [aria-label="色 7"]');
+  assert.equal(await openPanels(page), 1);
+  assert.equal(await shadowEval(page, root => root.querySelector('.dot').style.getPropertyValue('--c')), '#1e88e5');
+  await drag(page, [[100, 400], [600, 400]], 5);
+  assert.equal(await openPanels(page), 0);
+  const px = await readMain(page, 350, 400);
+  assert.deepEqual(px.slice(0, 3), [0x1e, 0x88, 0xe5]);
+  // 太さのスライダーもパネルの中で動く
+  await mouseClick(page, '[aria-label^="色・"]');
+  await setSlider(page, 0, 60);
+  assert.equal(await shadowEval(page, root => root.querySelector('.pn.on output').value), '36');
+  const display = () => page.evaluate(() => getComputedStyle(document.querySelector('paint-bookmarklet')).display);
+  await page.keyboard.press('Escape');
+  assert.equal(await openPanels(page), 0);
+  assert.equal(await display(), 'block');
+  await page.keyboard.press('Escape');
+  assert.equal(await display(), 'none');
+  await page.close();
+});
+
+test('その他のパネルに全消去・背景・保存が名前付きで並び、画面の端では内側に開く', async () => {
+  const { page } = await fresh();
+  await drag(page, [[100, 400], [600, 400]]);
+  // ツールバーを右下の隅へ動かす
+  const g = await rectOf(page, '.grip');
+  await page.mouse.move(g.x + g.w / 2, g.y + g.h / 2);
+  await page.mouse.down();
+  await page.mouse.move(995, 695, { steps: 4 });
+  await page.mouse.up();
+  const bar = await rectOf(page, '.bar');
+  assert.ok(bar.r <= 1000 && bar.b <= 700 && bar.b > 680, JSON.stringify(bar));
+  for (const sel of ['[aria-label^="その他"]', '[aria-label^="色・"]', '.bar > .dd']) {
+    await mouseClick(page, sel);
+    const p = await rectOf(page, '.pn.on');
+    assert.ok(p.x >= 0 && p.y >= 0 && p.r <= 1000 && p.b <= bar.y, `${sel}: ${JSON.stringify(p)}`);
+  }
+  await mouseClick(page, '[aria-label^="その他"]');
+  const labels = await shadowEval(page, root => [...root.querySelectorAll('.pn.on .mi span')].map(s => s.textContent));
+  assert.deepEqual(labels.slice(0, 3), ['全消去', '背景: 透明', 'PNG で保存']);
+  // 背景は続けて切り替えられるよう、押してもパネルが閉じない
+  await mouseClick(page, '.pn.on [aria-label^="背景"]');
+  assert.equal(await openPanels(page), 1);
+  assert.equal(await shadowEval(page, root => root.querySelectorAll('.pn.on .mi span')[1].textContent), '背景: 白');
+  await mouseClick(page, '.pn.on [aria-label^="全消去"]');
+  assert.equal(await openPanels(page), 0);
+  assert.equal((await alphaStats(page, 0, 0, 1000, 650)).count, 0);
+  await page.close();
+});
+
 test('速いマウス移動でも線が途切れない（全中間点を取りこぼさない）', async () => {
   const { page } = await fresh();
   const pts = [];

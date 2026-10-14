@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.2.0';
+  const VERSION = '1.3.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -25,6 +25,8 @@
   const HAS_OC = typeof OffscreenCanvas === 'function';
   const HAS_ED = 'EyeDropper' in win;
   const HAS_CLIP = !!(navigator.clipboard && navigator.clipboard.write && win.ClipboardItem);
+  const PLAT = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+  const IS_MAC = /^(mac|ip)/i.test(PLAT);
   // desynchronized: コンポジタの描画同期を待たずに表示（低遅延キャンバス。非対応環境では無視される）
   const CTX_OPT = { desynchronized: true };
   const PRED_MAX = 16;  // 保持する予測点の上限
@@ -67,6 +69,7 @@
     save: 'M12 4v11M7 10l5 5 5-5M5 20h14',
     copy: 'M9 9h11v11H9zM5 15H4V4h11v1',
     hide: 'M5 12h14',
+    more: 'M5 12h.01M12 12h.01M19 12h.01',
     close: 'M6 6l12 12M18 6L6 18',
   };
 
@@ -83,16 +86,25 @@ canvas{position:absolute;left:0;top:0;pointer-events:none}
 .b.on{background:#3d7cff;color:#fff}
 .b:disabled{opacity:.3;cursor:default;background:none}
 .b:focus-visible{outline:2px solid #3d7cff;outline-offset:-2px}
+.b.open:not(.on){background:#ffffff2e}
+.dd{position:relative}.dd::after{content:"";position:absolute;right:3px;bottom:3px;border:2.5px solid transparent;border-right-color:currentColor;border-bottom-color:currentColor;opacity:.55}
+.dot{width:var(--d);height:var(--d);border-radius:50%;background:var(--c);opacity:var(--a);box-shadow:0 0 0 1px #ffffff59}
+.dot.er{background:none;opacity:1;box-shadow:inset 0 0 0 1.5px #e8e9ee}
+.pn{position:absolute;left:0;top:calc(100% + 6px);display:none;flex-direction:column;gap:2px;padding:4px;background:#202228;border:1px solid #ffffff1f;border-radius:10px;box-shadow:0 6px 24px #0007;pointer-events:auto}
+.pn.on{display:flex}.up .pn{top:auto;bottom:calc(100% + 6px)}
+.row{display:flex;align-items:center;gap:2px}
+.b.mi{width:auto;display:flex;justify-content:flex-start;gap:10px;padding:0 10px 0 6px;white-space:nowrap}
+.mi kbd{margin-left:auto;padding-left:20px;color:#7d808a;font:inherit}
 svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
-.grip{width:16px;cursor:grab;color:#7d808a}.grip:hover{background:none}.grip svg{stroke-width:3}
+.grip{width:16px;cursor:grab;color:#7d808a}.grip:hover{background:none}.grip svg,[aria-label^="その他"] svg{stroke-width:3}
 .c{width:24px}
 .c::before{content:"";width:18px;height:18px;border-radius:50%;background:var(--c);box-shadow:inset 0 0 0 1px #ffffff59}
 .c.on{background:none}
 .c.on::before{box-shadow:0 0 0 2px #202228,0 0 0 4px #fff}
 .cc::before{background:conic-gradient(#f44,#fd4,#4d4,#4dd,#44f,#d4d,#f44)}
 .sep{flex:none;width:1px;height:22px;margin:0 3px;background:#ffffff24}
-.r{display:flex;align-items:center;gap:4px;height:30px;padding:0 4px;color:#a9acb8}
-.r input{width:64px;margin:0;accent-color:#3d7cff}
+.r{display:flex;align-items:center;gap:8px;height:30px;padding:0 6px;color:#a9acb8}
+.r input{flex:1;width:auto;min-width:0;margin:0;accent-color:#3d7cff}
 .r output{min-width:30px;color:#e8e9ee;font-variant-numeric:tabular-nums}
 .r.dis{opacity:.3;pointer-events:none}
 .ci{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;border:0;padding:0}
@@ -105,7 +117,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 @keyframes bye{to{transform:scaleX(0)}}
 .bye>:not(.t){display:none}
 .hud{position:absolute;left:8px;bottom:8px;padding:6px 8px;border-radius:6px;background:#000c;color:#8f8;font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;white-space:pre;pointer-events:none}
-@media (pointer:coarse){.b{width:38px;height:38px}.c{width:30px}.r{height:38px}.r input{width:84px}}
+@media (pointer:coarse){.b{width:38px;height:38px}.c{width:30px}.r{height:38px}}
 `;
 
   // ---------- DOM ヘルパ（innerHTML を使わないので Trusted Types 強制ページでも動く） ----------
@@ -264,23 +276,43 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   grip.append(icon(I.grip));
   bar.append(grip);
 
+  // よく使う物だけをバーに並べ、残りはボタンの下に開くパネル（.pn）に入れる。
+  // パネルはバーの子なのでバーと一緒に動き、absolute なのでバーの幅には入らない
+  const TITLES = {
+    pen: 'ペン (P)',
+    marker: '蛍光ペン (H)',
+    eraser: '消しゴム (E) — 右クリックやペンの消しゴム側でも消せます',
+    line: '直線 (L) — Shift で 45° 刻み',
+    arrow: '矢印 (A) — Shift で 45° 刻み',
+    rect: '四角形 (R) — Shift で正方形 / Alt で中心から',
+    ellipse: '楕円 (O) — Shift で正円 / Alt で中心から',
+    fill: '塗りつぶし (F)',
+  };
+  const SHAPES = ['line', 'arrow', 'rect', 'ellipse'];
+  const pnl = () => el('div', 'pn');
+  const row = (...a) => { const r = el('div', 'row'); r.append(...a); return r; };
   const toolBtns = {};
-  for (const [t, title] of [
-    ['pen', 'ペン (P)'],
-    ['marker', '蛍光ペン (H)'],
-    ['eraser', '消しゴム (E) — 右クリックやペンの消しゴム側でも消せます'],
-    ['line', '直線 (L) — Shift で 45° 刻み'],
-    ['arrow', '矢印 (A) — Shift で 45° 刻み'],
-    ['rect', '四角形 (R) — Shift で正方形 / Alt で中心から'],
-    ['ellipse', '楕円 (O) — Shift で正円 / Alt で中心から'],
-    ['fill', '塗りつぶし (F)'],
-  ]) bar.append(toolBtns[t] = btn(title, I[t], () => setTool(t)));
-  bar.append(sep());
+  for (const t of ['pen', 'marker', 'eraser']) bar.append(toolBtns[t] = btn(TITLES[t], I[t], () => setTool(t)));
+  // 図形: 最後に使った図形を表示する。押すとその図形になり、4 つの図形のパネルが開く
+  let lastShape = 'line';
+  const shapeP = pnl();
+  const shapeB = btn(TITLES.line, I.line, () => {
+    if (SHAPES.includes(tool)) togglePanel(shapeP, shapeB);
+    else { setTool(lastShape); openPanel(shapeP, shapeB); }
+  }, 'dd');
+  const shapeD = shapeB.querySelector('path');
+  shapeP.append(row(...SHAPES.map(t => toolBtns[t] = btn(TITLES[t], I[t], () => { setTool(t); closePanel(); }))));
+  bar.append(shapeB, toolBtns.fill = btn(TITLES.fill, I.fill, () => setTool('fill')), sep());
 
+  // 色と太さ: 今の色・太さ・濃さを点で見せる。パネルにパレット・カスタム色・スポイト・太さ・濃さ
+  const styleP = pnl();
+  const styleB = btn('色・太さ・濃さ', null, () => togglePanel(styleP, styleB), 'dd');
+  const dot = el('span', 'dot');
+  styleB.append(dot);
+  bar.append(styleB, sep());
   const swBtns = PALETTE.map((c, i) => {
     const b = btn(`色 ${i + 1}`, null, () => setColor(c), 'c');
     b.style.setProperty('--c', c);
-    bar.append(b);
     return b;
   });
   const ci = el('input', 'ci', { type: 'color', tabindex: '-1', 'aria-hidden': 'true' });
@@ -289,9 +321,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     ci.value = color;
     try { ci.showPicker(); } catch (_) { ci.click(); }
   }, 'c cc');
-  bar.append(customB, ci);
-  if (HAS_ED) bar.append(btn('スポイト (I) — 画面上の色を拾う', I.drop, pickColor));
-  bar.append(sep());
+  const pal = row(...swBtns, customB);
+  if (HAS_ED) pal.append(btn('スポイト (I) — 画面上の色を拾う', I.drop, () => { closePanel(); pickColor(); }));
+  styleP.append(pal);
+  bar.append(ci);
 
   const range = (label, title, lo, hi, fn) => {
     const w = el('label', 'r', { title });
@@ -301,7 +334,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const o = el('output');
     r.addEventListener('input', () => fn(+r.value));
     w.append(s, r, o);
-    bar.append(w);
+    styleP.append(w);
     return [w, r, o];
   };
   // 太さは二乗スケール（細い線を細かく調整できる）
@@ -313,16 +346,54 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     CFG[tool].alpha = v / 100;
     syncTool(true);
   });
-  bar.append(sep());
 
   const undoB = btn('元に戻す (Ctrl/⌘+Z)', I.undo, undo);
   const redoB = btn('やり直す (Ctrl/⌘+Shift+Z)', I.redo, redo);
-  bar.append(undoB, redoB, btn('全消去 (Delete)', I.trash, clearAll), sep());
-  const bgB = btn('', I.bg, cycleBg);
   const passB = btn('ページ操作モード (V) — 絵を残したままページを操作', I.pass, togglePass);
-  bar.append(bgB, passB, btn('PNG で保存 (Ctrl/⌘+S)', I.save, save));
-  if (HAS_CLIP) bar.append(btn('画像をクリップボードにコピー', I.copy, copyImg));
-  bar.append(sep(), btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hide), btn('閉じる（8 秒間は元に戻せます）', I.close, close));
+  // その他: 名前とショートカット付きのメニュー。keep なら押しても閉じない（背景を続けて切り替えられる）
+  const moreP = pnl();
+  const moreB = btn('その他（全消去・背景・保存・コピー）', I.more, () => togglePanel(moreP, moreB));
+  const item = (title, label, key, d, fn, keep) => {
+    const b = btn(title, d, () => { if (!keep) closePanel(); fn(); }, 'mi');
+    const s = el('span');
+    s.textContent = label;
+    b.append(s);
+    if (key) { const k = el('kbd'); k.textContent = key; b.append(k); }
+    moreP.append(b);
+    return [b, s];
+  };
+  item('全消去 (Delete)', '全消去', 'Delete', I.trash, clearAll);
+  const [bgB, bgL] = item('', '', 'B', I.bg, cycleBg, true);
+  item('PNG で保存 (Ctrl/⌘+S)', 'PNG で保存', IS_MAC ? '⌘S' : 'Ctrl+S', I.save, save);
+  if (HAS_CLIP) item('画像をクリップボードにコピー', 'クリップボードにコピー', '', I.copy, copyImg);
+  bar.append(undoB, redoB, sep(), passB, moreB, sep(),
+    btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hide), btn('閉じる（8 秒間は元に戻せます）', I.close, close),
+    shapeP, styleP, moreP);
+
+  // パネルは 1 つだけ開く。描き始め・パネルの外を押す・Esc で閉じる。
+  // 開いていなければ pointerdown ごとの仕事は比較 1 回だけ（入力のホットパスには触れない）
+  let openP = null, openB = null;
+  function openPanel(p, b) {
+    closePanel();
+    openP = p; openB = b;
+    p.classList.add('on');
+    b.classList.add('open');
+    measureBar();
+    const pw = p.offsetWidth, ph = p.offsetHeight;
+    // 下に入らなければ上に開く。横は画面からはみ出さないように寄せる
+    bar.classList.toggle('up', barY + barH + ph + 8 > vh && barY >= ph + 8);
+    p.style.left = max(4 - barX, min(b.offsetLeft, vw - barX - pw - 4)) + 'px';
+  }
+  function closePanel() {
+    if (!openP) return;
+    openP.classList.remove('on');
+    openB.classList.remove('open');
+    openP = openB = null;
+  }
+  function togglePanel(p, b) { openP === p ? closePanel() : openPanel(p, b); }
+  wrap.addEventListener('pointerdown', e => {
+    if (openP && !openP.contains(e.target) && !openB.contains(e.target)) closePanel();
+  }, true);
 
   // ボタンがフォーカスを奪うと Space/Enter で誤作動するため、クリックでのフォーカス移動を抑止
   bar.addEventListener('pointerdown', e => { if (e.target.closest('.b')) e.preventDefault(); });
@@ -362,6 +433,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   function syncTool(fromSlider) {
     for (const k in toolBtns) toolBtns[k].classList.toggle('on', k === tool);
+    const shape = SHAPES.includes(tool);
+    if (shape && lastShape !== tool) {
+      lastShape = tool;
+      shapeD.setAttribute('d', I[tool]);
+      shapeB.title = TITLES[tool];
+      shapeB.setAttribute('aria-label', TITLES[tool]);
+    }
+    shapeB.classList.toggle('on', shape);
     const c = CFG[tool];
     if (!fromSlider) {
       sizeR.value = round(sqrt(max(c.size, 1) * 100));
@@ -371,8 +450,17 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     alphaO.value = tool === 'eraser' ? '—' : round(c.alpha * 100) + '%';
     sizeW.classList.toggle('dis', tool === 'fill');
     alphaW.classList.toggle('dis', tool === 'eraser');
+    syncDot();
     updateCursor();
     liveAlpha();
+  }
+  // 色と太さのボタンの点: 色・太さ（4〜20px に縮めて表示）・濃さ。消しゴムは輪だけ
+  function syncDot() {
+    const c = CFG[tool];
+    dot.style.setProperty('--c', color);
+    dot.style.setProperty('--d', (tool === 'fill' ? 16 : round(4 + sqrt(min(c.size, 100) / 100) * 16)) + 'px');
+    dot.style.setProperty('--a', tool === 'eraser' ? 1 : max(0.2, c.alpha));
+    dot.classList.toggle('er', tool === 'eraser');
   }
   // live のグループの不透明度は、ツールや濃さを選んだ時点で合わせておく。押した瞬間に変えると、
   // desynchronized の live の方が先に画面へ出て、半透明の線が最初の 1 フレームだけ濃く見える
@@ -391,6 +479,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     swBtns.forEach((b, i) => { const on = PALETTE[i] === color; b.classList.toggle('on', on); hit = hit || on; });
     customB.classList.toggle('on', !hit);
     customB.style.setProperty('--c', color);
+    syncDot();
   }
   function syncHist() {
     undoB.disabled = hpos === 0;
@@ -403,9 +492,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     syncBg();
   }
   function syncBg() {
-    const t = `背景: ${BG_NAMES[bg]} (B)`;
-    bgB.title = t;
-    bgB.setAttribute('aria-label', t);
+    const t = `背景: ${BG_NAMES[bg]}`;
+    bgB.title = t + ' (B)';
+    bgB.setAttribute('aria-label', t + ' (B)');
+    bgL.textContent = t;
     bgB.classList.toggle('on', bg !== 0);
   }
   function togglePass() {
@@ -595,8 +685,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // それ以外では予測線を使う（API が存在しても軌跡が描かれない環境で予測を失わないため）
   let inkP = null;
   try {
-    const plat = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
-    if (/^Win/i.test(plat) && navigator.ink && navigator.ink.requestPresenter) {
+    if (/^Win/i.test(PLAT) && navigator.ink && navigator.ink.requestPresenter) {
       navigator.ink.requestPresenter({ presentationArea: pad }).then(p => { inkP = p; }, () => { });
     }
   } catch (_) { }
@@ -1288,7 +1377,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     else if (k === 'd') toggleHud();
     else if (k === 'i' && HAS_ED) pickColor();
     else if (k === 'Delete') clearAll();
-    else if (k === 'Escape') hide();
+    else if (k === 'Escape') openP ? closePanel() : hide();
     else ok = false;
     if (ok) { e.preventDefault(); e.stopPropagation(); }
   }
@@ -1334,6 +1423,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function hide() {
     if (!visible) return;
     if (act !== -1) endStroke();
+    closePanel();
     visible = false;
     listen(false);
     try { if (host.matches(':popover-open')) host.hidePopover(); } catch (_) { }

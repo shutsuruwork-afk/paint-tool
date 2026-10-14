@@ -303,6 +303,124 @@ test('文字は Esc・ツールの切り替えでも確定し、入力中に変�
   await page.close();
 });
 
+// 選択の中身（.sel）と、つまみの付いた外枠（.sel b）の画面上の矩形。選んでいなければ null
+const selBox = (page, frame) => page.evaluate(f => {
+  const e = document.querySelector('paint-bookmarklet-surface').shadowRoot.querySelector(f ? '.sel b' : '.sel');
+  if (!e || !e.isConnected) return null;
+  const r = e.getBoundingClientRect();
+  return { x: r.x, y: r.y, w: r.width, h: r.height, r: r.right, b: r.bottom };
+}, frame);
+const near = (a, b, d = 2) => Math.abs(a - b) <= d;
+
+test('選択: 囲むと中身に詰めた枠で選ばれ、移動して確定・元に戻す・やり直すが画素単位で効く', async () => {
+  const { page, errors } = await fresh();
+  await drag(page, [[100, 300], [400, 300]], 10);
+  const s0 = await checksum(page);
+  await page.keyboard.press('s');
+  assert.match(await toolOn(page), /^選択/);
+  await drag(page, [[80, 250], [450, 350]], 5);
+  // 余白を詰めて、線（幅 4px）の外接矩形が選ばれる。浮いている間は面から消えている
+  const b = await selBox(page);
+  assert.ok(near(b.x, 98) && near(b.r, 402) && near(b.y, 298) && near(b.b, 302), JSON.stringify(b));
+  assert.equal((await alphaStats(page, 0, 0, 1000, 700)).count, 0);
+  // 動かさずに確定しても、元どおりで履歴は増えない
+  await page.keyboard.press('Escape');
+  assert.equal(await selBox(page), null);
+  assert.equal(await checksum(page), s0);
+  assert.equal(await hist(page), 1);
+  // 細い線でも、枠の中を押せば移動になる
+  await drag(page, [[80, 250], [450, 350]], 5);
+  await drag(page, [[250, 300], [250, 500]], 5);
+  assert.ok(near((await selBox(page)).y, 498));
+  await page.keyboard.press('Enter');
+  assert.equal(await hist(page), 2);
+  assert.equal((await alphaStats(page, 90, 290, 320, 20)).count, 0);
+  assert.ok((await alphaStats(page, 90, 490, 320, 20)).count > 1000);
+  const s1 = await checksum(page);
+  await page.keyboard.press('Control+z');
+  assert.equal(await checksum(page), s0);
+  await page.keyboard.press('Control+Shift+z');
+  assert.equal(await checksum(page), s1);
+  // 何もない所を囲んでも、クリックしても選ばれない
+  await drag(page, [[600, 100], [900, 200]], 5);
+  assert.equal(await selBox(page), null);
+  await page.mouse.click(700, 600);
+  assert.equal(await selBox(page), null);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('選択: クリックで描いた物を選び（四角で囲んだ文字は文字）、角で比を保って縮小・辺で片方向・矢印で移動・Delete で削除', async () => {
+  const { page, errors } = await fresh();
+  await page.keyboard.press('r');
+  await drag(page, [[100, 300], [500, 500]], 5);
+  await page.keyboard.press('t');
+  await page.mouse.click(150, 400);
+  await page.keyboard.type('Note');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('s');
+  // 文字をクリックすると、四角ではなく文字が選ばれる
+  await page.mouse.click(170, 400);
+  const t = await selBox(page);
+  assert.ok(t.w < 100 && t.h < 40 && t.x > 140, JSON.stringify(t));
+  await page.keyboard.press('Escape');
+  // 四角の線をクリックすると四角が選ばれる
+  await page.mouse.click(300, 500);
+  const r = await selBox(page);
+  assert.ok(near(r.x, 98) && near(r.r, 502) && near(r.y, 298) && near(r.b, 502), JSON.stringify(r));
+  // 右下の角を対角線に沿って半分まで引くと、縦横比を保って半分になる（少し縦にずれても比は保つ）
+  const f = await selBox(page, true);
+  await drag(page, [[f.r, f.b], [f.r - r.w / 2, f.b - r.h / 2 + 6]], 5);
+  const k = await selBox(page);
+  assert.ok(near(k.x, r.x) && near(k.y, r.y) && near(k.w, r.w / 2, 4) && near(k.h, r.h / 2, 4) && near(k.w / k.h, r.w / r.h, 0.02), JSON.stringify(k));
+  // 右の辺を引くと、横だけ伸びる
+  const f2 = await selBox(page, true);
+  await drag(page, [[f2.r, f2.y + f2.h / 2], [f2.r + 100, f2.y + f2.h / 2 + 30]], 5);
+  const e2 = await selBox(page);
+  assert.ok(near(e2.w, k.w + 100, 3) && near(e2.h, k.h), JSON.stringify(e2));
+  // 矢印キーで 1px、Shift で 10px
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Shift+ArrowDown');
+  const m = await selBox(page);
+  assert.ok(near(m.x, e2.x + 1, 0.5) && near(m.y, e2.y + 10, 0.5), JSON.stringify(m));
+  await page.keyboard.press('Enter');
+  assert.equal(await hist(page), 3);
+  assert.ok((await alphaStats(page, m.x - 2, m.y - 2, m.w + 4, m.h + 4)).count > 300);
+  // Delete で選んだ範囲が消え、元に戻すで戻る（画素の選択なので、四角の中の文字も一緒に動き、一緒に消える。文字を別に扱うのは T-019）
+  await page.mouse.click(m.x + 1, m.y + m.h / 2);
+  assert.ok(await selBox(page));
+  await page.keyboard.press('Delete');
+  assert.equal(await selBox(page), null);
+  assert.equal((await alphaStats(page, m.x - 2, m.y - 2, m.w + 4, m.h + 4)).count, 0);
+  await page.keyboard.press('Control+z');
+  assert.ok((await alphaStats(page, m.x - 2, m.y - 2, m.w + 4, m.h + 4)).count > 300);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('選択: 選んだままスクロールすると枠も本文と一緒に動き、ツールの切り替えで確定する', async () => {
+  const { page } = await fresh('/long');
+  await scrollTo(page, 400);
+  await drag(page, [[100, 500], [300, 500]], 5); // 文書の y = 900
+  await page.keyboard.press('s');
+  await page.mouse.click(200, 500);
+  assert.ok(near((await selBox(page)).y, 498));
+  await scrollTo(page, 300);
+  const b = await selBox(page);
+  assert.ok(near(b.y, 598), JSON.stringify(b));
+  await drag(page, [[200, 600], [500, 650]], 5);
+  await page.keyboard.press('p');
+  assert.equal(await selBox(page), null);
+  assert.equal(await hist(page), 2);
+  await scrollTo(page, 0);
+  assert.equal((await alphaStats(page, 0, 0, 1000, 700)).count, 0);
+  await scrollTo(page, 350);
+  // 文書の y = 950 に、x = 400〜600 で置かれている
+  assert.ok((await alphaStats(page, 395, 590, 210, 20)).count > 500);
+  assert.equal((await alphaStats(page, 90, 540, 210, 20)).count, 0);
+  await page.close();
+});
+
 test('速いマウス移動でも線が途切れない（全中間点を取りこぼさない）', async () => {
   const { page } = await fresh();
   const pts = [];

@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.4.0';
+  const VERSION = '1.5.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -48,8 +48,9 @@
     ellipse: { size: 4, alpha: 1 },
     fill: { size: 0, alpha: 1 },
     text: { size: 24, alpha: 1 },
+    select: { size: 0, alpha: 1 },
   };
-  const KEYMAP = { p: 'pen', h: 'marker', e: 'eraser', l: 'line', a: 'arrow', r: 'rect', o: 'ellipse', f: 'fill', t: 'text' };
+  const KEYMAP = { p: 'pen', h: 'marker', e: 'eraser', l: 'line', a: 'arrow', r: 'rect', o: 'ellipse', f: 'fill', t: 'text', s: 'select' };
   // 文字の書体。入力欄（CSS）と確定時の fillText で同じものを使う
   const FONT = 'system-ui,-apple-system,"Segoe UI","Hiragino Sans","Yu Gothic UI",sans-serif';
   const LH = 1.25; // 文字の行の高さ（文字の大きさに対する比）
@@ -65,6 +66,7 @@
     ellipse: 'M3 12a9 6.5 0 1 0 18 0a9 6.5 0 1 0-18 0',
     fill: 'M5 12l7-7 7 7-7 7zM5 12h14M21 18.5a1.5 1.5 0 0 1-3 0c0-1.2 1.5-3 1.5-3s1.5 1.8 1.5 3z',
     text: 'M5 7V5h14v2M12 5v14M9 19h6',
+    select: 'M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3',
     drop: 'M13 6l5 5M15.5 3.5a2.1 2.1 0 0 1 3 0l2 2a2.1 2.1 0 0 1 0 3L18 11M15 8l-9 9v3h3l9-9',
     undo: 'M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3',
     redo: 'M15 14l5-5-5-5M20 9H9a5 5 0 0 0 0 10h3',
@@ -81,6 +83,11 @@
   const CSS = `
 .w{all:initial;position:absolute;inset:0;overflow:hidden;contain:strict;pointer-events:none;outline:none;font:12px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e8e9ee;color-scheme:dark;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
 .s{position:absolute;inset:0}.s.bg1{background:#fff}.s.bg2{background:#1d1f23}
+.sel{position:absolute;z-index:1;pointer-events:none}
+.sel b{position:absolute;outline:1px solid #3d7cff}
+.sel.mq b{outline-style:dashed;background:#3d7cff14}.sel.mq canvas,.sel.mq i{display:none}
+.sel canvas{width:100%;height:100%}
+.sel i{position:absolute;width:9px;height:9px;margin:-5px 0 0 -5px;box-sizing:border-box;background:#fff;border:1.5px solid #3d7cff;border-radius:2px}
 canvas{position:absolute;left:0;top:0;pointer-events:none}
 .g,.p{position:absolute;inset:0}
 .p{pointer-events:auto;touch-action:none;cursor:crosshair}
@@ -285,6 +292,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // よく使う物だけをバーに並べ、残りはボタンの下に開くパネル（.pn）に入れる。
   // パネルはバーの子なのでバーと一緒に動き、absolute なのでバーの幅には入らない
   const TITLES = {
+    select: '選択 (S) — 囲むかクリックで選び、ドラッグで移動・角で拡大縮小',
     pen: 'ペン (P)',
     marker: '蛍光ペン (H)',
     eraser: '消しゴム (E) — 右クリックやペンの消しゴム側でも消せます',
@@ -299,7 +307,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const pnl = () => el('div', 'pn');
   const row = (...a) => { const r = el('div', 'row'); r.append(...a); return r; };
   const toolBtns = {};
-  for (const t of ['pen', 'marker', 'eraser']) bar.append(toolBtns[t] = btn(TITLES[t], I[t], () => setTool(t)));
+  for (const t of ['select', 'pen', 'marker', 'eraser']) bar.append(toolBtns[t] = btn(TITLES[t], I[t], () => setTool(t)));
   // 図形: 最後に使った図形を表示する。押すとその図形になり、4 つの図形のパネルが開く
   let lastShape = 'line';
   const shapeP = pnl();
@@ -437,6 +445,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // ---------- UI 同期（ホットパス外でのみ呼ぶ） ----------
   function setTool(t) {
     if (t !== 'text') commitText();
+    if (t !== 'select') dropSel();
     tool = t;
     syncTool(false);
   }
@@ -455,10 +464,11 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       sizeR.value = round(sqrt(max(c.size, 1) * 100));
       alphaR.value = round(c.alpha * 100);
     }
-    sizeO.value = tool === 'fill' ? '—' : c.size;
-    alphaO.value = tool === 'eraser' ? '—' : round(c.alpha * 100) + '%';
-    sizeW.classList.toggle('dis', tool === 'fill');
-    alphaW.classList.toggle('dis', tool === 'eraser');
+    const noSize = tool === 'fill' || tool === 'select', noAlpha = tool === 'eraser' || tool === 'select';
+    sizeO.value = noSize ? '—' : c.size;
+    alphaO.value = noAlpha ? '—' : round(c.alpha * 100) + '%';
+    sizeW.classList.toggle('dis', noSize);
+    alphaW.classList.toggle('dis', noAlpha);
     sizeW.firstChild.textContent = tool === 'text' ? '大きさ' : '太さ';
     if (ta) styleTa();
     syncDot();
@@ -469,14 +479,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function syncDot() {
     const c = CFG[tool];
     dot.style.setProperty('--c', color);
-    dot.style.setProperty('--d', (tool === 'fill' ? 16 : round(4 + sqrt(min(c.size, 100) / 100) * 16)) + 'px');
+    dot.style.setProperty('--d', (tool === 'fill' || tool === 'select' ? 16 : round(4 + sqrt(min(c.size, 100) / 100) * 16)) + 'px');
     dot.style.setProperty('--a', tool === 'eraser' ? 1 : max(0.2, c.alpha));
     dot.classList.toggle('er', tool === 'eraser');
   }
   // live のグループの不透明度は、ツールや濃さを選んだ時点で合わせておく。押した瞬間に変えると、
   // desynchronized の live の方が先に画面へ出て、半透明の線が最初の 1 フレームだけ濃く見える
   function liveAlpha() {
-    const a = tool === 'eraser' || tool === 'fill' ? 1 : CFG[tool].alpha;
+    const a = tool === 'eraser' || tool === 'fill' || tool === 'select' ? 1 : CFG[tool].alpha;
     if (grpA !== a && !handoff) { grp.style.opacity = a; grpA = a; }
   }
   function setSize(s) {
@@ -512,7 +522,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   function togglePass() {
     if (act !== -1) endStroke();
-    commitText();
+    settle();
     pass = !pass;
     wrap.classList.toggle('pass', pass);
     passB.classList.toggle('on', pass);
@@ -520,7 +530,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   // カーソル画像は OS/コンポジタが描くので遅延ゼロ（DOM で追従させるとフレーム遅れが出る）
   function updateCursor() {
-    let cur = tool === 'text' ? 'text' : 'crosshair';
+    let cur = tool === 'text' ? 'text' : tool === 'select' ? 'default' : 'crosshair';
     if (tool === 'pen' || tool === 'marker' || tool === 'eraser') {
       const d = max(6, round(CFG[tool].size)), s = d + 4, m = s / 2, r = d / 2;
       if (s <= 128) {
@@ -601,12 +611,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       if (ey > cby1) cby1 = ey;
     }
   }
-  function push(R, c) {
+  // b: その手で描いた物の外接矩形 [x0, y0, x1, y1]（S）。選択ツールのクリックで選ぶ物を探すのに使う
+  function push(R, c, b) {
     grow(R);
     while (hist.length > hpos) free(hist.pop());
     let pix = 0;
     for (let i = 0; i < R.length; i += 6) pix += R[i + 2] * R[i + 3];
-    hist.push({ R, c, pix });
+    hist.push({ R, c, pix, b });
     hpos++;
     hpix += pix;
     // メモリ上限: 画面 8 枚分または 200 手
@@ -656,14 +667,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     h.c = cur;
   }
   function undo() {
-    commitText();
+    settle();
     if (act !== -1 || !hpos) return;
     finishHandoff();
     swap(hist[--hpos]);
     syncHist();
   }
   function redo() {
-    commitText();
+    settle();
     if (act !== -1 || hpos >= hist.length) return;
     finishHandoff();
     swap(hist[hpos++]);
@@ -672,7 +683,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 全消去はページ全体（見えていない所も含む）。元に戻せるように、全タイルをアトラスに退避してから消す
   function clearAll() {
     if (act !== -1) return;
-    commitText();
+    settle();
     finishHandoff();
     const R = [];
     for (const k of dtiles.keys()) R.push((k % 65536) * DT, ((k / 65536) | 0) * DT, DT, DT, 0, 0);
@@ -683,7 +694,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
 
   // ---------- ストローク状態（ホットパスで割り当てを起こさないよう、すべてスカラーで保持） ----------
-  let act = -1, aType = '', mode = 0; // mode: 1 インク / 2 消しゴム / 3 図形
+  let act = -1, aType = '', mode = 0; // mode: 1 インク / 2 消しゴム / 3 図形 / 4 選択（囲む・移動・拡大縮小）
   let sTool = 'pen', sW = 0, sA = 1, sP = false, sRaw = false, raf = 0;
   let bx = 0, by = 0, bw = 0, mx = 0, my = 0, ps = 1, lt = 0, lastPen = -1e9;
   let x0 = 0, y0 = 0, x1 = 0, y1 = 0, mW = 0; // ストロークの外接矩形
@@ -738,7 +749,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     finishHandoff();
     mapNow();
     const t = erase ? 'eraser' : tool;
+    if (t !== 'select') dropSel();
     const x = e.clientX * dpr, y = e.clientY * dpr;
+    if (t === 'select') { selDown(e, x * sk + sox, y * sk + soy); return; }
     if (t === 'fill') { floodFill(x, y); return; }
     if (t === 'text') { textAt(e.clientX, e.clientY); return; }
 
@@ -788,6 +801,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function onMove(e) {
     if (e.pointerId !== act) {
       if (e.pointerType === 'pen') lastPen = e.timeStamp; // ホバー中のペンもパームリジェクションに使う
+      if (sel && act === -1) selHover(e);
       return;
     }
     const t0 = hud ? now() : 0;
@@ -803,6 +817,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       drawTail();
     } else if (mode === 2) {
       eraseMove(e, list, n);
+    } else if (mode === 4) {
+      selMove(e);
     } else if (e.type !== 'pointerrawupdate') {
       const p = n ? list[n - 1] : e;
       cx = p.clientX * dpr; cy = p.clientY * dpr;
@@ -1041,6 +1057,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     } else if (m === 3) {
       if (shaped) { markShape(); commitLive(); }
       else { const r = dirty(); if (r) lctx.clearRect(r.x, r.y, r.w, r.h); }
+    } else if (m === 4) {
+      selUp();
     } else if (m === 2) {
       // 退避しておいたタイルを 1 枚のアトラスにまとめて履歴へ
       const R = tileRects(false);
@@ -1058,7 +1076,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function abortStroke() {
     const m = mode, r = dirty();
     stopStroke();
-    if (m === 2) {
+    if (m === 4) selAbort();
+    else if (m === 2) {
       // 退避しておいた画素を戻す（表示タイルが無かった所は、何も消していない）
       const R = tileRects(false);
       for (let k = 0, i = 0; i < R.length; k++, i += 6) {
@@ -1097,7 +1116,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         c.globalAlpha = 1;
       });
     }
-    push(R, atlas);
+    push(R, atlas, [bX, bY, bX + bW, bY + bH]);
     // live は desynchronized なので、ここで消すと通常の更新であるタイルより先に画面へ出て、線が一瞬消える。
     // live は残したままグループを隠し（タイルの更新と同じフレームで切り替わる）、2 フレーム後に中身を消す
     grp.style.opacity = 0;
@@ -1288,8 +1307,215 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       c.globalCompositeOperation = 'source-over';
       c.setTransform(1, 0, 0, 1, 0, 0);
     });
-    push(R, patch);
+    push(R, patch, [R[0], R[1], R[0] + w, R[1] + h]);
     lastFillMs = now() - t0;
+  }
+
+  // ---------- 選択（範囲の画素を浮かせ、移動・拡大縮小する） ----------
+  // 浮かせた中身は面の中の canvas に置き、枠の位置と大きさだけを変えて見せる（動かしている間は描き直さない）。
+  // 浮かせる時に元の範囲を面から消し、確定で「元の範囲」と「置いた範囲」を 1 手として積む
+  // 枠（b）は中身より少し外に出し、どの向きも最低 SEL_MIN にする（細い線でも移動とつまみを押し分けられる）
+  const SEL_MIN = 24;
+  const selEl = el('div', 'sel'), selC = el('canvas'), selB = el('b');
+  selEl.append(selC, selB);
+  // つまみの位置（枠に対する割合）: 左上・上・右上・右・右下・下・左下・左
+  const HND = [0, 0, 0.5, 0, 1, 0, 1, 0.5, 1, 1, 0.5, 1, 0, 1, 0, 0.5];
+  const HCUR = ['nwse-resize', 'ns-resize', 'nesw-resize', 'ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize', 'ew-resize'];
+  for (let i = 0; i < 16; i += 2) {
+    const h = el('i');
+    h.style.left = HND[i] * 100 + '%';
+    h.style.top = HND[i + 1] * 100 + '%';
+    selB.append(h);
+  }
+  let sel = false, selHint = false, sDrag = 0, sH = 0, hoverCur = '';
+  let selX = 0, selY = 0, selW = 0, selH = 0;     // 今の枠（S、小数のまま持つ）
+  let srcX = 0, srcY = 0, srcW = 0, srcH = 0;     // 浮かせた元の範囲（S、整数）
+  let dragX = 0, dragY = 0, begX = 0, begY = 0, begW = 0, begH = 0; // ドラッグ開始時のポインタと枠
+  // 面や履歴を変える操作の前に、入力中の文字と浮いている選択を確定する
+  function settle() {
+    commitText();
+    dropSel();
+  }
+  // 枠が中身から外へ出る量（S）。囲んでいる途中は出さない
+  const padX = mq => mq ? 0 : max(3 * sdpr, (SEL_MIN * sdpr - selW) / 2);
+  const padY = mq => mq ? 0 : max(3 * sdpr, (SEL_MIN * sdpr - selH) / 2);
+  function showSel(mq) {
+    const st = selEl.style, bs = selB.style, px = -padX(mq) / sdpr + 'px', py = -padY(mq) / sdpr + 'px';
+    selEl.classList.toggle('mq', mq);
+    st.left = selX / sdpr + 'px';
+    st.top = selY / sdpr + 'px';
+    st.width = selW / sdpr + 'px';
+    st.height = selH / sdpr + 'px';
+    bs.left = bs.right = px;
+    bs.top = bs.bottom = py;
+    if (!selEl.parentNode) sbox.append(selEl);
+  }
+  // S の矩形の中の描いた物を浮かせる。枠は中身の外接矩形に詰める。何もなければ false
+  function liftSel(x, y, w, h) {
+    // 描いた範囲の外は透明と分かっているので、重なる所だけを 1 回で読む
+    const ax = max(0, x, cbx0), ay = max(0, y, cby0), ex = min(x + w, cbx1), ey = min(y + h, cby1);
+    if (cbx1 <= cbx0 || ex <= ax || ey <= ay) return false;
+    const gw = ex - ax, gh = ey - ay, rc = gather(rect1(ax, ay, gw, gh), newCanvas(gw, gh));
+    const d = new Uint32Array(rc.getContext('2d').getImageData(0, 0, gw, gh).data.buffer);
+    let bx0 = gw, by0 = -1, bx1 = -1, by1 = -1;
+    for (let j = 0, i = 0; j < gh; j++, i += gw) {
+      let a = 0, b = gw - 1;
+      while (a < gw && !(d[i + a] >>> 24)) a++;
+      if (a === gw) continue;
+      while (!(d[i + b] >>> 24)) b--;
+      if (a < bx0) bx0 = a;
+      if (b > bx1) bx1 = b;
+      if (by0 < 0) by0 = j;
+      by1 = j;
+    }
+    if (by0 < 0) { rc.width = rc.height = 0; return false; }
+    srcX = ax + bx0; srcY = ay + by0; srcW = bx1 - bx0 + 1; srcH = by1 - by0 + 1;
+    selC.width = srcW;
+    selC.height = srcH;
+    selC.getContext('2d').drawImage(rc, bx0, by0, srcW, srcH, 0, 0, srcW, srcH);
+    rc.width = rc.height = 0;
+    forTiles(srcX, srcY, srcW, srcH, false, (t, ox, oy, ix, iy, iw, ih) => t.x.clearRect(ix - ox, iy - oy, iw, ih));
+    selX = srcX; selY = srcY; selW = srcW; selH = srcH;
+    sel = true;
+    showSel(false);
+    if (!selHint) { selHint = true; say('ドラッグで移動 ・ 角で拡大縮小 ・ Delete で削除 ・ Esc で確定', 3000); }
+    return true;
+  }
+  // 浮かせた中身を今の枠に描き込む。del なら置かずに消すだけ。動かしていなければ元に戻すだけで履歴は増やさない
+  function dropSel(del) {
+    if (!sel) return;
+    sel = false;
+    selEl.remove();
+    hoverCur = '';
+    updateCursor();
+    const dx = round(selX), dy = round(selY), dw = max(1, round(selW)), dh = max(1, round(selH));
+    if (!del && dx === srcX && dy === srcY && dw === srcW && dh === srcH) paintSel(srcX, srcY, srcW, srcH);
+    else {
+      const R = del ? rect1(srcX, srcY, srcW, srcH) : [srcX, srcY, srcW, srcH, 0, 0, dx, dy, dw, dh, 0, 0];
+      const atlas = gather(R, pack(R)), c = atlas.getContext('2d');
+      // 保存する画素は「浮かせる前」にそろえる。元の範囲は今は空なので、中身を元の位置に重ねれば戻る
+      for (let i = 0; i < R.length; i += 6) {
+        c.save();
+        c.beginPath();
+        c.rect(R[i + 4], R[i + 5], R[i + 2], R[i + 3]);
+        c.clip();
+        c.drawImage(selC, R[i + 4] + srcX - R[i], R[i + 5] + srcY - R[i + 1]);
+        c.restore();
+      }
+      if (!del) paintSel(dx, dy, dw, dh);
+      push(R, atlas, del ? null : [dx, dy, dx + dw, dy + dh]);
+    }
+    selC.width = selC.height = 0;
+  }
+  function paintSel(x, y, w, h) {
+    sizeSurface();
+    forTiles(x, y, w, h, true, (t, ox, oy, ix, iy, iw, ih) => {
+      const g = t.x;
+      g.save();
+      g.beginPath();
+      g.rect(ix - ox, iy - oy, iw, ih);
+      g.clip();
+      g.imageSmoothingQuality = 'high';
+      g.drawImage(selC, x - ox, y - oy, w, h);
+      g.restore();
+    });
+  }
+  // 枠のどこか: 0〜7 つまみ / -1 枠の中 / -2 外。枠の内側はつまみより移動を優先する（小さい枠は全部つまみ）
+  function selHit(X, Y) {
+    const r = 8 * sdpr, px = padX(false), py = padY(false);
+    const fx = selX - px, fy = selY - py, fw = selW + 2 * px, fh = selH + 2 * py;
+    if (X > fx + r && X < fx + fw - r && Y > fy + r && Y < fy + fh - r) return -1;
+    for (let i = 0; i < 16; i += 2) {
+      if (abs(X - fx - HND[i] * fw) <= r && abs(Y - fy - HND[i + 1] * fh) <= r) return i / 2;
+    }
+    return X >= fx && X <= fx + fw && Y >= fy && Y <= fy + fh ? -1 : -2;
+  }
+  function selHover(e) {
+    const k = selHit(e.clientX * sdpr + sox, e.clientY * sdpr + soy);
+    const c = k >= 0 ? HCUR[k] : k === -1 ? 'move' : 'default';
+    if (c !== hoverCur) { hoverCur = c; pad.style.cursor = c; }
+  }
+  function selDown(e, X, Y) {
+    const hit = sel ? selHit(X, Y) : -2;
+    if (hit === -2) dropSel();
+    act = e.pointerId; aType = e.pointerType; mode = 4;
+    try { pad.setPointerCapture(act); } catch (_) { }
+    dragX = X; dragY = Y; begX = selX; begY = selY; begW = selW; begH = selH;
+    if (hit === -1) sDrag = 2;
+    else if (hit >= 0) { sDrag = 3; sH = hit; }
+    else { sDrag = 1; selX = X; selY = Y; selW = selH = 0; }
+  }
+  function selMove(e) {
+    const X = e.clientX * sdpr + sox, Y = e.clientY * sdpr + soy;
+    if (sDrag === 1) {
+      selX = min(dragX, X); selY = min(dragY, Y); selW = abs(X - dragX); selH = abs(Y - dragY);
+      if (selW > 3 * sdpr || selH > 3 * sdpr) showSel(true);
+    } else if (sDrag === 2) {
+      selX = max(0, begX + X - dragX);
+      selY = max(0, begY + Y - dragY);
+      showSel(false);
+    } else if (sDrag === 3) {
+      scaleSel(X, Y, e.shiftKey);
+      showSel(false);
+    }
+  }
+  // つまみの反対側を固定し、押した所からの移動量だけ伸び縮みさせる。角は縦横比を保つ（free なら保たない）。
+  // 比を保つ倍率は (w, h) を (begW, begH) の向きへ射影して求める（細長い物でも少しの縦の動きで暴れない）。裏返しにはしない
+  function scaleSel(X, Y, free) {
+    const hx = HND[sH * 2], hy = HND[sH * 2 + 1], m = 2 * sdpr, dX = X - dragX, dY = Y - dragY;
+    const fx = begX + (1 - hx) * begW, fy = begY + (1 - hy) * begH;
+    let w = hx === 0.5 ? begW : max(m, hx ? begW + dX : begW - dX);
+    let h = hy === 0.5 ? begH : max(m, hy ? begH + dY : begH - dY);
+    if (hx !== 0.5 && hy !== 0.5 && !free) {
+      const k = (w * begW + h * begH) / (begW * begW + begH * begH);
+      w = max(m, begW * k); h = max(m, begH * k);
+    }
+    selX = hx === 0.5 ? begX : hx ? fx : fx - w;
+    selY = hy === 0.5 ? begY : hy ? fy : fy - h;
+    if (selX < 0) { w += selX; selX = 0; }
+    if (selY < 0) { h += selY; selY = 0; }
+    selW = w; selH = h;
+  }
+  function selUp() {
+    if (sDrag === 1) {
+      selEl.remove();
+      if (selW > 3 * sdpr || selH > 3 * sdpr) {
+        const x = floor(selX), y = floor(selY);
+        liftSel(x, y, ceil(selX + selW) - x, ceil(selY + selH) - y);
+      } else pickSel(dragX, dragY);
+    }
+    sDrag = 0;
+  }
+  function selAbort() {
+    if (sDrag === 1) selEl.remove();
+    else { selX = begX; selY = begY; selW = begW; selH = begH; showSel(false); }
+    sDrag = 0;
+  }
+  // クリック: その場所に描いた画素がある手のうち、外接矩形がいちばん小さい物を選ぶ
+  // （丸で囲んだ文字をクリックすると、丸ではなく文字が選ばれる）
+  function pickSel(X, Y) {
+    const r = round(3 * sdpr), n = 2 * r + 1, x = floor(X) - r, y = floor(Y) - r;
+    const rc = gather(rect1(x, y, n, n), newCanvas(n, n)), d = rc.getContext('2d').getImageData(0, 0, n, n).data;
+    rc.width = rc.height = 0;
+    let ink = false;
+    for (let i = 3; i < d.length && !ink; i += 4) ink = d[i] > 0;
+    if (!ink) return;
+    let best = null, ba = Infinity;
+    for (let i = 0; i < hpos; i++) {
+      const b = hist[i].b;
+      if (!b || X < b[0] - r || X > b[2] + r || Y < b[1] - r || Y > b[3] + r) continue;
+      const a = (b[2] - b[0]) * (b[3] - b[1]);
+      if (a <= ba) { ba = a; best = b; }
+    }
+    if (best) liftSel(best[0] - r, best[1] - r, best[2] - best[0] + 2 * r, best[3] - best[1] + 2 * r);
+  }
+  function nudgeSel(k, step) {
+    const d = step * sdpr;
+    if (k === 'ArrowLeft') selX = max(0, selX - d);
+    else if (k === 'ArrowRight') selX += d;
+    else if (k === 'ArrowUp') selY = max(0, selY - d);
+    else selY += d;
+    showSel(false);
   }
 
   // ---------- 文字（入力中は本物の textarea を重ねるので IME がそのまま使える。確定したら面に描き込む） ----------
@@ -1371,7 +1597,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       for (let i = 0; i < lines.length; i++) g.fillText(lines[i], x, base + i * lh);
       g.restore();
     });
-    push(R, atlas);
+    push(R, atlas, [X0, Y0, X1, Y1]);
   }
 
   // ---------- 書き出し ----------
@@ -1385,7 +1611,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     return [c, cx];
   }
   function exportBlob() {
-    commitText();
+    settle();
     const [c, x] = capture(0, 0, wrap.clientWidth, wrap.clientHeight);
     if (bg) {
       x.globalCompositeOperation = 'destination-over';
@@ -1473,6 +1699,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       else if (k === 's') save();
       else ok = false;
     } else if (e.altKey) ok = false;
+    else if (sel && act === -1 && (k === 'Delete' || k === 'Backspace')) dropSel(true);
+    else if (sel && act === -1 && k.startsWith('Arrow')) nudgeSel(k, e.shiftKey ? 10 : 1);
+    else if (sel && act === -1 && k === 'Enter') dropSel();
+    else if (sel && act === -1 && k === 'Escape' && !openP) dropSel();
     else if (KEYMAP[k]) setTool(KEYMAP[k]);
     else if (k >= '1' && k <= '8' && k.length === 1) setColor(PALETTE[k - 1]);
     else if (k === '[') setSize(round(CFG[tool].size / 1.2));
@@ -1528,7 +1758,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function hide() {
     if (!visible) return;
     if (act !== -1) endStroke();
-    commitText();
+    settle();
     closePanel();
     visible = false;
     listen(false);
@@ -1592,7 +1822,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 
   // ---------- 起動 ----------
   const stats = () => ({
-    width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, history: hist.length, historyPixels: hpix, events: nEv, points: nPts,
+    width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, selection: sel ? [selX, selY, selW, selH] : null, history: hist.length, historyPixels: hpix, events: nEv, points: nPts,
     desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, nativePrediction: nativePred, inkTrail: !!inkP,
   });
   win[NS] = { version: VERSION, toggle, show, hide, close, destroy, undo, redo, clear: clearAll, tool: setTool, color: setColor, stats, pixels };

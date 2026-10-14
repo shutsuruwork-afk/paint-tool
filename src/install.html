@@ -208,7 +208,7 @@ tbody th { font-weight: 700; min-width: 8em; }
 
 <main class="page">
   <header>
-    <p class="eyebrow">Bookmarklet · v1.4.0 · %%SIZE%%（gzip %%GZIP%%）</p>
+    <p class="eyebrow">Bookmarklet · v1.5.0 · %%SIZE%%（gzip %%GZIP%%）</p>
     <h1>ペイント<br>ブックマークレット</h1>
     <p class="lead">開いているページの上に、<span class="mark">そのまま描ける<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d="M18 40C8 22 52 6 108 7s92 13 84 30-62 20-112 17S4 38 30 16" vector-effect="non-scaling-stroke"/></svg></span>ペイントツールです。ブックマークを押すだけで起動し、拡張機能もアカウントも要りません。入力から線が画面に出るまでの遅延を減らす仕組みを、ブラウザが対応している限りすべて使います。</p>
     <div class="actions">
@@ -273,6 +273,7 @@ tbody th { font-weight: 700; min-width: 8em; }
   <section aria-labelledby="keys-h">
     <h2 id="keys-h">ショートカット</h2>
     <ul class="keys">
+      <li><span class="k"><kbd>S</kbd></span>選択（移動・拡大縮小・<kbd>Delete</kbd> で削除）</li>
       <li><span class="k"><kbd>P</kbd></span>ペン（筆圧対応）</li>
       <li><span class="k"><kbd>H</kbd></span>蛍光ペン</li>
       <li><span class="k"><kbd>E</kbd></span>消しゴム（右クリックでも）</li>
@@ -321,6 +322,7 @@ tbody th { font-weight: 700; min-width: 8em; }
       <li>消しゴムは、削る直前のタイルだけを退避します。消し始めに画面全体をコピーする待ち時間がありません。</li>
       <li>キャンバスの確保や合成処理の初回コストは、起動直後のまだ描いていない時間に済ませます。</li>
       <li>塗りつぶしは描いた範囲と画面が重なる部分だけを読み戻し、塗る範囲を矩形パスにまとめて GPU に 1 回で塗らせます。</li>
+      <li>選択した物は 1 枚のキャンバスに浮かせ、動かしている間は枠の位置と大きさを変えるだけです。描き直さないので、大きな範囲でも軽く動きます。</li>
       <li>文字は入力中だけ本物の入力欄を重ねるので、日本語の変換がそのまま使えます。確定すると、入力欄と同じ位置に絵として描き込みます。</li>
       <li>筆の大きさを示すカーソルは CSS カーソル画像なので、OS が遅れなく描きます。</li>
       <li>UI は Shadow DOM と CSSOM だけで組むので、ページの CSS、CSP の style-src、Trusted Types の影響を受けません。</li>
@@ -333,6 +335,7 @@ tbody th { font-weight: 700; min-width: 8em; }
       <li>Chrome と Edge は、CSP が厳しいサイト（GitHub など）ではブックマークレットの実行自体を止めます。Firefox は CSP に関係なく実行します。</li>
       <li>ページの一部だけがスクロールするサイト（Gmail、Slack など）では、その部分のスクロールに絵が付いていきません。ページ全体のスクロールにだけ追従します。</li>
       <li>描いている途中にスクロールすると、線は描き始めた時点の位置に確定します。描いた後で本文の位置が変わる（画像の読み込みで押し出されるなど）と、絵と本文がずれます。</li>
+      <li>選択は画素の単位です。囲んだ範囲に重なっている別の線や文字も一緒に動きます。拡大すると少しぼやけます。</li>
       <li>保存される PNG は描いた絵だけです。下にあるページは写りません。</li>
       <li>埋め込み表示（iframe）のページでは、PNG の保存やクリップボードへのコピーがブロックされることがあります。</li>
     </ul>

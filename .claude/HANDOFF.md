@@ -4,12 +4,12 @@
 
 ## 現在地
 
-- 最終更新: 2026-10-14、T-001 の完了時
+- 最終更新: 2026-10-14、T-014 の完了時
 - ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない
 - CI: GitHub Actions「Pages」は test 成功。deploy は Pages が未設定で失敗中（T-002）
 - 公開: インストールページは Artifact（非公開）で公開済み。GitHub Pages は Source の設定待ち
-- 人の操作待ち: Settings → Pages → Source を「GitHub Actions」にする（T-002）
-- 次の一手: 使いやすさ改善の候補（TASKS.md）から、ユーザーと優先度を決めて着手する
+- 人の操作待ち: `.human/requests.md` の R-001（Pages の Source 設定）、R-002（ライセンス）、R-003（改善の着手順）
+- 次の一手: R-003 の回答に従って改善を始める。指定がなければ T-003（スクロール追従。`.human/ideas/scroll-follow.md` に方式の比較あり）
 
 ## 始め方
 
@@ -34,6 +34,8 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - `build.mjs`: terser で圧縮し、`dist/paint.min.js`、`dist/bookmarklet.txt`、`docs/index.html` を作る
 - `test/paint.test.mjs`（テスト 16 件）、`test/helpers.mjs`（サーバー・起動・画素の読み取り）、`test/bench.mjs`
 - `.github/workflows/pages.yml`: main へのプッシュでテストしてから docs/ を Pages に公開。PR ではテストだけ
+- `.claude/`: CLAUDE.md（概要と読み込み）、`rules/`（tasks / handoff / human）、TASKS.md、HANDOFF.md、Stop フック（`hooks/check-handoff.mjs`）
+- `.human/`: ユーザーとの非同期のやりとり。`ideas/`（ユーザーのアイデア、1 件 1 ファイル）、`requests.md`（Claude からの判断・作業のお願い）
 - 公開 API: `window.__paintBookmarklet` の `toggle / show / hide / destroy / undo / redo / clear / tool(name) / color(hex) / stats()`。テストとベンチがこれを使う
 
 ## 不変条件（壊すと困る）
@@ -54,7 +56,7 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - pointerrawupdate のリスナーは描画中だけ登録する（登録しているだけでコストがかかる）。図形は 1 フレームに 1 回で足りるので使わない。
 - 履歴は 128px タイルと外接矩形のうち面積の小さい方で保存する。消しゴムはコピーオンライト。
 - 起動直後に warm() で初回コストを前払いする（初回の確定が 17ms → 2ms、@2x で 60ms → 4ms）。
-- ライセンスは未設定（ユーザーが決める）。
+- ライセンスは未設定（R-002 でユーザーに確認中。おすすめは MIT）。
 
 ## 落とし穴
 
@@ -79,6 +81,13 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - Artifact: https://claude.ai/artifact/Aj3XQxn6Q7EUaiHjYAFbve（インストールページ、非公開）。`docs/index.html` の本文だけの版
 
 ## 完了ログ（新しい順）
+
+### T-014 `.human/` を作り、アイデアとお願いのやりとりを始める — 2026-10-14
+- 変更: `.human/`（README、`ideas/`、`requests.md`）と `.claude/rules/human.md` を追加。CLAUDE.md から requests.md を読み込むようにした。
+- ideas に 2 件を登録: 文字ボックス（T-009 に紐づけ）、スクロール追従（T-003 に紐づけ。方式 A/B/C の比較を書き、B の「描いた所にだけページ座標のタイルを置く」を第一候補にした）。
+- requests に 3 件を登録: R-001 Pages の Source 設定、R-002 ライセンス、R-003 改善の着手順。
+- 確認: Stop フックが漏れなしと判定すること、CLAUDE.md の読み込み先のファイルがあること。
+- 残課題: なし。
 
 ### T-001 タスクとハンドオフの運用ルールを作る — 2026-10-14
 - 変更: `.claude/` に CLAUDE.md（概要と TASKS・HANDOFF の読み込み）、`rules/tasks.md`、`rules/handoff.md`、TASKS.md、HANDOFF.md、Stop フック（`hooks/check-handoff.mjs` と `settings.json`）を追加した。

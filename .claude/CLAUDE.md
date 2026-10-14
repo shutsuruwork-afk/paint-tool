@@ -7,8 +7,10 @@
 
 - 作業はタスクとして `.claude/TASKS.md` に書く（`.claude/rules/tasks.md`）
 - タスクを完了したら `.claude/HANDOFF.md` を更新する（`.claude/rules/handoff.md`）
+- ユーザーのアイデアは `.human/ideas/`、ユーザーへの判断・作業のお願いは `.human/requests.md`（`.claude/rules/human.md`）
 
-以下の 2 つはセッション開始時に自動で読み込まれる。まず「現在地」と「進行中」を確認してから作業を始める。
+以下はセッション開始時に自動で読み込まれる。まず「現在地」「進行中」「未対応のお願い」を確認し、`.human/ideas/` に未取り込みのファイルがないかを見てから作業を始める。
 
 @HANDOFF.md
 @TASKS.md
+@../.human/requests.md

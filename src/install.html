@@ -1,0 +1,387 @@
+<title>ペイント ブックマークレット</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="開いているページの上にそのまま描ける、低遅延のブックマークレット製ペイントツール">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Klee+One:wght@600&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: 方眼ノートの 1 ページ。左寄せの 1 カラムに、赤ペンの書き込みを 1 か所だけ入れる */
+:root {
+  --paper: #f7fafa;
+  --grid: #e0ebed;
+  --ink: #1b2531;
+  --ink-soft: #566272;
+  --line: #cbd7db;
+  --card: #ffffff;
+  --red: #d7362d;
+  --red-deep: #a8241c;
+  --on-red: #ffffff;
+  --ok: #1f7346;
+  --ok-bg: #dff1e6;
+  --off: #66717d;
+  --off-bg: #e9edf0;
+  --font-hand: "Klee One", "Hiragino Maru Gothic ProN", "Yu Gothic", sans-serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic UI", Meiryo, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #12171b; --grid: #1b2328; --ink: #e4eaee; --ink-soft: #9aa6b0; --line: #2b363d; --card: #182027;
+    --red: #ff6b5d; --red-deep: #c4433a; --on-red: #1c0c0a; --ok: #74d9a0; --ok-bg: #163126; --off: #8995a0; --off-bg: #212a30;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #12171b; --grid: #1b2328; --ink: #e4eaee; --ink-soft: #9aa6b0; --line: #2b363d; --card: #182027;
+  --red: #ff6b5d; --red-deep: #c4433a; --on-red: #1c0c0a; --ok: #74d9a0; --ok-bg: #163126; --off: #8995a0; --off-bg: #212a30;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background-color: var(--paper);
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 24px 24px;
+  color: var(--ink);
+  font: 16px/1.85 var(--font-body);
+}
+.page {
+  max-width: 780px;
+  margin: 0 auto;
+  padding-block: 56px 72px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid;
+  gap: 64px;
+}
+section, header { display: grid; gap: 16px; min-width: 0; }
+h1, h2, p, ol, ul, figure, blockquote { margin: 0; }
+h1 {
+  font: 600 clamp(2.5rem, 8vw, 3.75rem)/1.2 var(--font-hand);
+  letter-spacing: 0.02em;
+  text-wrap: balance;
+}
+h2 { font-size: 1.375rem; line-height: 1.4; font-weight: 700; text-wrap: balance; }
+p, li { max-width: 40em; }
+a { color: var(--red-deep); text-underline-offset: 3px; }
+code, .mono { font-family: var(--font-mono); font-size: 0.88em; }
+kbd {
+  display: inline-block;
+  min-width: 1.7em;
+  padding: 0.05em 0.45em;
+  font: 700 0.78em/1.5 var(--font-mono);
+  text-align: center;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+}
+.eyebrow {
+  font: 500 0.8rem/1.4 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.lead { font-size: 1.075rem; }
+.mark { position: relative; white-space: nowrap; }
+.mark svg {
+  position: absolute;
+  left: -10%; top: -32%;
+  width: 120%; height: 168%;
+  overflow: visible;
+  pointer-events: none;
+}
+.mark path {
+  fill: none;
+  stroke: var(--red);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-dasharray: 640;
+  stroke-dashoffset: 0;
+  animation: draw 0.9s 0.3s cubic-bezier(.6,.1,.3,1) backwards;
+}
+@keyframes draw { from { stroke-dashoffset: 640; } }
+@media (prefers-reduced-motion: reduce) { .mark path { animation: none; } }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
+.bm {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px 10px 16px;
+  border-radius: 999px;
+  background: var(--red);
+  color: var(--on-red);
+  font: 600 1.2rem/1 var(--font-hand);
+  text-decoration: none;
+  box-shadow: 0 3px 0 var(--red-deep);
+  cursor: grab;
+}
+.bm:active { cursor: grabbing; transform: translateY(1px); box-shadow: 0 2px 0 var(--red-deep); }
+.bm svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.hint { color: var(--ink-soft); font-size: 0.92rem; }
+.btn {
+  font: 500 0.95rem/1 var(--font-body);
+  padding: 12px 18px;
+  border-radius: 10px;
+  border: 1.5px solid var(--ink);
+  background: var(--card);
+  color: var(--ink);
+  cursor: pointer;
+}
+.btn.primary { background: var(--ink); color: var(--paper); }
+.btn:hover { border-color: var(--red); }
+.btn:focus-visible, .bm:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-offset: 3px; }
+textarea {
+  width: 100%;
+  min-height: 7em;
+  font: 0.75rem/1.5 var(--font-mono);
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  word-break: break-all;
+}
+.proof {
+  padding: 20px 24px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-size: 1.2rem;
+  line-height: 2;
+}
+.steps { padding-left: 1.4em; display: grid; gap: 8px; }
+.steps li::marker { font: 700 1em var(--font-mono); color: var(--red-deep); }
+.aside { color: var(--ink-soft); font-size: 0.92rem; }
+.table-wrap {
+  overflow-x: auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+table { width: 100%; border-collapse: collapse; font-size: 0.93rem; line-height: 1.6; }
+th, td { padding: 11px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+tr:last-child > * { border-bottom: 0; }
+thead th { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.06em; color: var(--ink-soft); white-space: nowrap; }
+tbody th { font-weight: 700; min-width: 8em; }
+.caps tbody th { font: 500 0.82rem/1.6 var(--font-mono); white-space: nowrap; }
+@media (max-width: 560px) {
+  .caps thead { display: none; }
+  .caps tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 2px 12px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .caps tr:last-child { border-bottom: 0; }
+  .caps th, .caps td { padding: 0; border: 0; }
+  .caps tbody th { white-space: normal; overflow-wrap: anywhere; }
+  .caps td:last-child { grid-column: 1 / -1; color: var(--ink-soft); }
+}
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chip {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.chip.on { color: var(--ok); background: var(--ok-bg); }
+.chip.off { color: var(--off); background: var(--off-bg); }
+.keys { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 24px; padding: 0; list-style: none; }
+.keys li { display: flex; gap: 10px; align-items: baseline; min-width: 0; }
+.keys .k { flex: none; min-width: 5.6em; }
+.stack { display: grid; gap: 6px; max-width: 520px; }
+.layer {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px;
+  padding: 9px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  font: 700 0.85rem/1.5 var(--font-mono);
+}
+.layer small { font: 400 0.82rem/1.5 var(--font-body); color: var(--ink-soft); }
+.layer.page { background: transparent; border-style: dashed; color: var(--ink-soft); }
+.group { display: grid; gap: 6px; padding: 6px; border: 1.5px solid var(--red); border-radius: 11px; position: relative; }
+.group-label { font-size: 0.78rem; color: var(--red-deep); font-weight: 700; padding: 0 6px; }
+.points { display: grid; gap: 10px; padding-left: 1.2em; }
+.foot { color: var(--ink-soft); font-size: 0.88rem; border-top: 1px solid var(--line); padding-top: 20px; }
+</style>
+
+<main class="page">
+  <header>
+    <p class="eyebrow">Bookmarklet · v1.0.0 · %%SIZE%%（gzip %%GZIP%%）</p>
+    <h1>ペイント<br>ブックマークレット</h1>
+    <p class="lead">開いているページの上に、<span class="mark">そのまま描ける<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d="M18 40C8 22 52 6 108 7s92 13 84 30-62 20-112 17S4 38 30 16" vector-effect="non-scaling-stroke"/></svg></span>ペイントツールです。ブックマークを押すだけで起動し、拡張機能もアカウントも要りません。入力から線が画面に出るまでの遅延を減らす仕組みを、ブラウザが対応している限りすべて使います。</p>
+    <div class="actions">
+      <a id="bm" class="bm" href="%%BOOKMARKLET_HREF%%" title="ブックマークバーへドラッグ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1.2-4.4L16 4.8a2 2 0 0 1 2.9 0l.3.3a2 2 0 0 1 0 2.9L8.4 18.8zM14 7l3 3"/></svg>Paint</a>
+      <span class="hint">← このボタンをブックマークバーへドラッグ</span>
+    </div>
+    <div class="actions">
+      <button id="try" class="btn primary" type="button">このページで試す</button>
+      <button id="copy" class="btn" type="button">コードをコピー</button>
+    </div>
+    <textarea id="code" readonly hidden aria-label="ブックマークレットのコード"></textarea>
+  </header>
+
+  <section aria-labelledby="try-h">
+    <h2 id="try-h">試し書き</h2>
+    <p>「このページで試す」を押して、下の文の誤字を赤ペンで丸く囲んでみてください。</p>
+    <blockquote class="proof">ブックマークレッドは、ブラウザのブックマークに保存して使う小さなプログラムです。</blockquote>
+    <p class="aside">太さは <kbd>[</kbd> <kbd>]</kbd>、取り消しは <kbd>Ctrl</kbd>+<kbd>Z</kbd>、隠すときは <kbd>Esc</kbd>。<kbd>D</kbd> を押すと、入力 1 件の処理時間や使われている機能がその場で表示されます。</p>
+  </section>
+
+  <section aria-labelledby="install-h">
+    <h2 id="install-h">入れ方</h2>
+    <ol class="steps">
+      <li>ブックマークバーを表示します。Chrome・Edge・Firefox では <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>、Mac では <kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> です。</li>
+      <li>赤い「Paint」ボタンを、ブックマークバーへドラッグします。</li>
+      <li>描きたいページで、追加したブックマークを押します。もう一度押すと、絵を残したまま隠れます。</li>
+    </ol>
+    <p class="aside">スマートフォンなどドラッグできない環境では、「コードをコピー」を押してから適当なページをブックマークし、そのブックマークの URL 欄をコピーした内容に書き換えて保存します。</p>
+  </section>
+
+  <section aria-labelledby="cap-h">
+    <h2 id="cap-h">このブラウザで使える低遅延機能</h2>
+    <p>いま開いているブラウザで判定した結果です。使えない機能は、自動的に代わりの方法へ切り替わります。</p>
+    <div class="table-wrap">
+      <table class="caps">
+        <thead><tr><th scope="col">機能</th><th scope="col">状態</th><th scope="col">役割</th></tr></thead>
+        <tbody id="caps"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="bench-h">
+    <h2 id="bench-h">計測</h2>
+    <p>3,000 点のペン入力（筆圧あり）を流し込み、メインスレッドが塞がる時間を測りました。この時間が短いほど、次の入力をすぐに受け取れます。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">項目</th><th scope="col">1920×1080 @1x</th><th scope="col">@2x（3840×2160）</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">入力 1 件の処理</th><td class="num">4〜7 µs</td><td class="num">5〜7 µs</td></tr>
+          <tr><th scope="row">ストロークの確定</th><td class="num">1〜3 ms</td><td class="num">2〜11 ms</td></tr>
+          <tr><th scope="row">元に戻す</th><td class="num">2〜5 ms</td><td class="num">3〜17 ms</td></tr>
+          <tr><th scope="row">長い斜め線の履歴メモリ</th><td class="num">外接矩形の 24%</td><td class="num">外接矩形の 12%</td></tr>
+          <tr><th scope="row">背景の塗りつぶし</th><td class="num">約 50 ms</td><td class="num">約 170 ms</td></tr>
+          <tr><th scope="row">起動</th><td class="num" colspan="2">20〜36 ms</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="aside">60 Hz の 1 フレームは約 16,700 µs です。毎回パス全体を描き直す素朴な実装は、同じ条件で 1 件あたり 60〜90 µs かかり、点が増えるほど遅くなります。本ツールの処理時間は点の数によらず一定です。計測はヘッドレス Chromium 141 とソフトウェア GPU（SwiftShader）で行いました。確定・元に戻す・塗りつぶしは GPU 処理の比重が大きいので、GPU のある実機ではこれより短くなる見込みです。<code>npm run bench</code> で再計測できます。</p>
+  </section>
+
+  <section aria-labelledby="keys-h">
+    <h2 id="keys-h">ショートカット</h2>
+    <ul class="keys">
+      <li><span class="k"><kbd>P</kbd></span>ペン（筆圧対応）</li>
+      <li><span class="k"><kbd>H</kbd></span>蛍光ペン</li>
+      <li><span class="k"><kbd>E</kbd></span>消しゴム（右クリックでも）</li>
+      <li><span class="k"><kbd>L</kbd></span>直線</li>
+      <li><span class="k"><kbd>A</kbd></span>矢印</li>
+      <li><span class="k"><kbd>R</kbd></span>四角形</li>
+      <li><span class="k"><kbd>O</kbd></span>楕円</li>
+      <li><span class="k"><kbd>F</kbd></span>塗りつぶし</li>
+      <li><span class="k"><kbd>I</kbd></span>スポイト</li>
+      <li><span class="k"><kbd>1</kbd>〜<kbd>8</kbd></span>色を選ぶ</li>
+      <li><span class="k"><kbd>[</kbd> <kbd>]</kbd></span>太さ</li>
+      <li><span class="k"><kbd>Shift</kbd></span>図形を 45° 刻み・正方形・正円に</li>
+      <li><span class="k"><kbd>Alt</kbd></span>図形を中心から描く</li>
+      <li><span class="k"><kbd>Ctrl</kbd>+<kbd>Z</kbd></span>元に戻す</li>
+      <li><span class="k"><kbd>Ctrl</kbd>+<kbd>Y</kbd></span>やり直す</li>
+      <li><span class="k"><kbd>Delete</kbd></span>全消去（元に戻せます）</li>
+      <li><span class="k"><kbd>B</kbd></span>背景を透明・白・黒に</li>
+      <li><span class="k"><kbd>V</kbd></span>ページ操作モード</li>
+      <li><span class="k"><kbd>Ctrl</kbd>+<kbd>S</kbd></span>PNG で保存</li>
+      <li><span class="k"><kbd>D</kbd></span>計測表示</li>
+      <li><span class="k"><kbd>Esc</kbd></span>隠す</li>
+    </ul>
+    <p class="aside">Mac では <kbd>Ctrl</kbd> の代わりに <kbd>⌘</kbd> も使えます。ページの入力欄に文字を打っている間は、ショートカットは反応しません。</p>
+  </section>
+
+  <section aria-labelledby="how-h">
+    <h2 id="how-h">遅延を減らす仕組み</h2>
+    <figure class="stack" aria-label="レイヤの重なり（上が手前）">
+      <div class="layer">ツールバー</div>
+      <div class="layer">入力レイヤ<small>ページ側のリスナーへは入力を渡さない</small></div>
+      <div class="group">
+        <div class="layer">pred<small>線の未確定の末尾と予測線</small></div>
+        <div class="layer">live<small>描いている途中の線（新しい点の分だけ追記）</small></div>
+        <span class="group-label">この 2 枚にまとめて不透明度をかける</span>
+      </div>
+      <div class="layer">main<small>確定した絵</small></div>
+      <div class="layer page">元のページ</div>
+    </figure>
+    <ul class="points">
+      <li>入力は <code>pointerrawupdate</code> で受け取った瞬間に描き、<code>pointermove</code> とはタイムスタンプで重複を除きます。間に挟まった点も <code>getCoalescedEvents</code> ですべて拾います。</li>
+      <li>描いている途中の線は、新しい点の分だけを追記します。毎回パス全体を描き直さないので、線が長くなっても重くなりません。</li>
+      <li>半透明の線は不透明で描き、レイヤごと不透明度をかけます。線が自分と重なっても濃くなりません。</li>
+      <li>確定と元に戻すは、線が通った 128px 四方のタイルだけを GPU 上でコピーします。全画面の <code>getImageData</code> は使いません。</li>
+      <li>消しゴムは、削る直前のタイルだけを退避します。消し始めに画面全体をコピーする待ち時間がありません。</li>
+      <li>キャンバスの確保や合成処理の初回コストは、起動直後のまだ描いていない時間に済ませます。</li>
+      <li>塗りつぶしは描いた範囲だけを読み戻し、塗る範囲を矩形パスにまとめて GPU に 1 回で塗らせます。</li>
+      <li>筆の大きさを示すカーソルは CSS カーソル画像なので、OS が遅れなく描きます。</li>
+      <li>UI は Shadow DOM と CSSOM だけで組むので、ページの CSS、CSP の style-src、Trusted Types の影響を受けません。</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="limits-h">
+    <h2 id="limits-h">できないこと</h2>
+    <ul class="points">
+      <li>Chrome と Edge は、CSP が厳しいサイト（GitHub など）ではブックマークレットの実行自体を止めます。Firefox は CSP に関係なく実行します。</li>
+      <li>絵は画面に固定されます。ページをスクロールしても絵は動きません。ページを操作したいときは <kbd>V</kbd> で操作モードにします。</li>
+      <li>保存される PNG は描いた絵だけです。下にあるページは写りません。</li>
+      <li>埋め込み表示（iframe）のページでは、PNG の保存やクリップボードへのコピーがブロックされることがあります。</li>
+    </ul>
+  </section>
+
+  <footer class="foot">
+    <p>ソースコードとテスト: <a href="https://github.com/shutsuruwork-afk/paint-tool">github.com/shutsuruwork-afk/paint-tool</a></p>
+  </footer>
+</main>
+
+<script>
+function runPaint() {%%INLINE_CODE%%}
+(() => {
+  const bm = document.getElementById('bm');
+  // このページ上でクリックされたら javascript: URL へ遷移せず、同じコードを直接実行する
+  bm.addEventListener('click', e => { e.preventDefault(); runPaint(); });
+  document.getElementById('try').addEventListener('click', () => runPaint());
+
+  const copyBtn = document.getElementById('copy');
+  const area = document.getElementById('code');
+  let t = 0;
+  copyBtn.addEventListener('click', () => {
+    const code = bm.getAttribute('href');
+    const done = msg => { copyBtn.textContent = msg; clearTimeout(t); t = setTimeout(() => { copyBtn.textContent = 'コードをコピー'; }, 2500); };
+    const manual = () => { area.hidden = false; area.value = code; area.focus(); area.select(); done('下の欄からコピーしてください'); };
+    try { navigator.clipboard.writeText(code).then(() => done('コピーしました'), manual); } catch (_) { manual(); }
+  });
+
+  const PE = window.PointerEvent && PointerEvent.prototype;
+  let desync = false;
+  try { desync = !!document.createElement('canvas').getContext('2d', { desynchronized: true }).getContextAttributes().desynchronized; } catch (_) { }
+  const plat = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+  const ink = navigator.ink && navigator.ink.requestPresenter ? (/^Win/i.test(plat) ? true : 'Windows のみ') : false;
+  const rows = [
+    ['pointerrawupdate', 'onpointerrawupdate' in window, 'フレームの区切りを待たずに入力を受け取り、すぐに描きます。'],
+    ['getCoalescedEvents', !!PE && 'getCoalescedEvents' in PE, '1 フレームの間にまとめられた入力点を全部使うので、速く動かしても線が角張りません。'],
+    ['getPredictedEvents', !!PE && 'getPredictedEvents' in PE, '予測された次の位置まで線を先に伸ばし、ペン先との隙間を埋めます。無い場合は速度から外挿します。'],
+    ['desynchronized', desync, 'キャンバスの更新を、画面合成の順番待ちをせずに表示します。'],
+    ['Delegated Ink Trail', ink, '次のフレームが出るまでの線を OS が直接描きます。'],
+    ['Popover (top layer)', 'showPopover' in HTMLElement.prototype, 'ページのモーダルや z-index に関係なく最前面に表示します。'],
+    ['OffscreenCanvas', typeof OffscreenCanvas === 'function', '履歴やタイルの退避を、画面に載らないキャンバスで扱います。'],
+    ['EyeDropper', 'EyeDropper' in window, 'スポイトで画面上の色を拾います。'],
+  ];
+  const tb = document.getElementById('caps');
+  for (const [name, state, desc] of rows) {
+    const tr = document.createElement('tr');
+    const th = document.createElement('th'); th.scope = 'row'; th.textContent = name;
+    const td1 = document.createElement('td'), chip = document.createElement('span');
+    chip.className = 'chip ' + (state === true ? 'on' : 'off');
+    chip.textContent = state === true ? '使える' : state || '使えない';
+    td1.append(chip);
+    const td2 = document.createElement('td'); td2.textContent = desc;
+    tr.append(th, td1, td2);
+    tb.append(tr);
+  }
+})();
+</script>

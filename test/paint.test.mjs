@@ -311,6 +311,13 @@ const selBox = (page, frame) => page.evaluate(f => {
   return { x: r.x, y: r.y, w: r.width, h: r.height, r: r.right, b: r.bottom };
 }, frame);
 const near = (a, b, d = 2) => Math.abs(a - b) <= d;
+// 面に置いた文字の物（.to）の画面上の矩形。i 番目、なければ null
+const textRect = (page, i = 0) => page.evaluate(i => {
+  const e = document.querySelector('paint-bookmarklet-surface').shadowRoot.querySelectorAll('.to')[i];
+  if (!e) return null;
+  const r = e.getBoundingClientRect();
+  return { x: r.x, y: r.y, w: r.width, h: r.height };
+}, i);
 
 test('選択: 囲むと中身に詰めた枠で選ばれ、移動して確定・元に戻す・やり直すが画素単位で効く', async () => {
   const { page, errors } = await fresh();
@@ -350,7 +357,7 @@ test('選択: 囲むと中身に詰めた枠で選ばれ、移動して確定・
   await page.close();
 });
 
-test('選択: クリックで描いた物を選び（四角で囲んだ文字は文字）、角で比を保って縮小・辺で片方向・矢印で移動・Delete で削除', async () => {
+test('選択: クリックで描いた物を選び（四角で囲んだ文字は文字、四角は四角だけ）、角で比を保って縮小・辺で片方向・矢印で移動・Delete で削除', async () => {
   const { page, errors } = await fresh();
   await page.keyboard.press('r');
   await drag(page, [[100, 300], [500, 500]], 5);
@@ -364,7 +371,8 @@ test('選択: クリックで描いた物を選び（四角で囲んだ文字は
   const t = await selBox(page);
   assert.ok(t.w < 100 && t.h < 40 && t.x > 140, JSON.stringify(t));
   await page.keyboard.press('Escape');
-  // 四角の線をクリックすると四角が選ばれる
+  // 四角の線をクリックすると四角だけが選ばれる（文字は物なので動かない）
+  const textAt0 = await textRect(page);
   await page.mouse.click(300, 500);
   const r = await selBox(page);
   assert.ok(near(r.x, 98) && near(r.r, 502) && near(r.y, 298) && near(r.b, 502), JSON.stringify(r));
@@ -385,15 +393,20 @@ test('選択: クリックで描いた物を選び（四角で囲んだ文字は
   assert.ok(near(m.x, e2.x + 1, 0.5) && near(m.y, e2.y + 10, 0.5), JSON.stringify(m));
   await page.keyboard.press('Enter');
   assert.equal(await hist(page), 3);
-  assert.ok((await alphaStats(page, m.x - 2, m.y - 2, m.w + 4, m.h + 4)).count > 300);
-  // Delete で選んだ範囲が消え、元に戻すで戻る（画素の選択なので、四角の中の文字も一緒に動き、一緒に消える。文字を別に扱うのは T-019）
+  assert.deepEqual(await textRect(page), textAt0);
+  // 四角の左の辺と上の辺（文字とは重ならない所）で、四角が描かれているかを見る
+  const rectInk = async () => (await alphaStats(page, m.x - 2, m.y - 2, 10, m.h + 4)).count + (await alphaStats(page, m.x, m.y - 2, m.w, 8)).count;
+  assert.ok(await rectInk() > 300);
+  // Delete で四角だけが消え、文字は残る。元に戻すで戻る
   await page.mouse.click(m.x + 1, m.y + m.h / 2);
   assert.ok(await selBox(page));
   await page.keyboard.press('Delete');
   assert.equal(await selBox(page), null);
-  assert.equal((await alphaStats(page, m.x - 2, m.y - 2, m.w + 4, m.h + 4)).count, 0);
+  assert.equal(await rectInk(), 0);
+  assert.deepEqual(await textRect(page), textAt0);
+  assert.ok((await alphaStats(page, textAt0.x, textAt0.y, textAt0.w, textAt0.h)).count > 50);
   await page.keyboard.press('Control+z');
-  assert.ok((await alphaStats(page, m.x - 2, m.y - 2, m.w + 4, m.h + 4)).count > 300);
+  assert.ok(await rectInk() > 300);
   assert.deepEqual(errors, []);
   await page.close();
 });
@@ -418,6 +431,113 @@ test('選択: 選んだままスクロールすると枠も本文と一緒に動
   // 文書の y = 950 に、x = 400〜600 で置かれている
   assert.ok((await alphaStats(page, 395, 590, 210, 20)).count > 500);
   assert.equal((await alphaStats(page, 90, 540, 210, 20)).count, 0);
+  await page.close();
+});
+
+const textInfo = page => page.evaluate(() => [...document.querySelector('paint-bookmarklet-surface').shadowRoot.querySelectorAll('.to')]
+  .map(e => ({ s: e.textContent, fs: getComputedStyle(e).fontSize, ed: e.classList.contains('ed'), gone: e.classList.contains('gone') })));
+
+test('文字の物: 押してそのまま動かせ、角で拡大すると文字の大きさが変わる。ダブルクリックや文字ツールで書き直せ、どれも元に戻せる', async () => {
+  const { page, errors } = await fresh();
+  await page.keyboard.press('t');
+  await page.mouse.click(200, 300);
+  await page.keyboard.type('Hello');
+  await page.keyboard.press('Escape');
+  const t0 = await textRect(page);
+  assert.deepEqual(await textInfo(page), [{ s: 'Hello', fs: '24px', ed: false, gone: false }]);
+  // 選択ツール: 文字を押したまま引くと、そのまま動く
+  await page.keyboard.press('s');
+  await drag(page, [[t0.x + t0.w / 2, t0.y + t0.h / 2], [t0.x + t0.w / 2 + 200, t0.y + t0.h / 2 + 100]], 5);
+  assert.equal(await shadowEval(page, () => document.querySelector('paint-bookmarklet-surface').shadowRoot.querySelector('.sel').classList.contains('only')), true);
+  await page.keyboard.press('Escape');
+  const t1 = await textRect(page);
+  assert.ok(near(t1.x, t0.x + 200, 1) && near(t1.y, t0.y + 100, 1), JSON.stringify(t1));
+  assert.equal(await hist(page), 2);
+  // 角のつまみを対角線に沿って引いて 2 倍にすると、文字そのものが 48px になる（画像の拡大ではない）
+  await page.mouse.click(t1.x + 5, t1.y + t1.h / 2);
+  const f = await selBox(page, true);
+  await drag(page, [[f.r, f.b], [f.r + t1.w, f.b + t1.h]], 5);
+  await page.keyboard.press('Enter');
+  assert.equal((await textInfo(page))[0].fs, '48px');
+  const t2 = await textRect(page);
+  assert.ok(near(t2.x, t1.x, 1) && near(t2.w, t1.w * 2, 4), JSON.stringify(t2));
+  // ダブルクリックで書き直す
+  await page.mouse.dblclick(t2.x + 10, t2.y + t2.h / 2);
+  assert.deepEqual(await textBox(page), { value: 'Hello', focused: true, color: '#e53935' });
+  assert.equal((await textInfo(page))[0].ed, true);
+  await page.keyboard.type(' world');
+  await page.keyboard.press('Escape');
+  assert.deepEqual(await textInfo(page), [{ s: 'Hello world', fs: '48px', ed: false, gone: false }]);
+  // 文字ツールで文字を押しても書き直せる。空にして確定すると消える
+  await page.mouse.click(t2.x + 10, t2.y + t2.h / 2);
+  assert.equal((await textBox(page)).value, 'Hello world');
+  await page.keyboard.press('Control+a');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Escape');
+  assert.deepEqual(await textInfo(page), []);
+  assert.equal(await hist(page), 5);
+  // 1 手ずつ戻る
+  await page.keyboard.press('Control+z');
+  assert.equal((await textInfo(page))[0].s, 'Hello world');
+  await page.keyboard.press('Control+z');
+  assert.deepEqual(await textInfo(page), [{ s: 'Hello', fs: '48px', ed: false, gone: false }]);
+  await page.keyboard.press('Control+z');
+  assert.equal((await textInfo(page))[0].fs, '24px');
+  assert.deepEqual(await textRect(page), t1);
+  await page.keyboard.press('Control+z');
+  assert.deepEqual(await textRect(page), t0);
+  await page.keyboard.press('Control+z');
+  assert.deepEqual(await textInfo(page), []);
+  await page.keyboard.press('Control+Shift+z');
+  assert.deepEqual(await textRect(page), t0);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('文字の物: 消しゴムでなぞると消え（なぞっている間は薄い）、囲むと線と一緒に動き、全消去でも消えて元に戻せる', async () => {
+  const { page, errors } = await fresh();
+  await page.keyboard.press('t');
+  await page.mouse.click(200, 300);
+  await page.keyboard.type('Erase me');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('p');
+  await drag(page, [[150, 400], [450, 400]], 5);
+  const t0 = await textRect(page);
+  assert.ok((await alphaStats(page, t0.x, t0.y, t0.w, t0.h)).count > 100, '書き出し（pixels）に文字が入る');
+  // 消しゴムでなぞる: 離すまでは薄く見え、離すと消える。線には触れていない
+  await page.keyboard.press('e');
+  await page.mouse.move(150, 300);
+  await page.mouse.down();
+  await page.mouse.move(300, 300, { steps: 5 });
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  assert.equal((await textInfo(page))[0].gone, true);
+  await page.mouse.up();
+  assert.deepEqual(await textInfo(page), []);
+  assert.equal(await hist(page), 3);
+  assert.ok((await alphaStats(page, 140, 390, 320, 20)).count > 500);
+  await page.keyboard.press('Control+z');
+  assert.deepEqual(await textInfo(page), [{ s: 'Erase me', fs: '24px', ed: false, gone: false }]);
+  // 囲むと、範囲に収まる文字も線と一緒に選ばれて動く。1 手で戻る
+  await page.keyboard.press('s');
+  await drag(page, [[100, 250], [500, 450]], 5);
+  assert.equal(await shadowEval(page, () => document.querySelector('paint-bookmarklet-surface').shadowRoot.querySelector('.sel').classList.contains('only')), false);
+  await drag(page, [[300, 350], [300, 450]], 5);
+  await page.keyboard.press('Escape');
+  const t1 = await textRect(page);
+  assert.ok(near(t1.y, t0.y + 100, 1) && near(t1.x, t0.x, 1), JSON.stringify(t1));
+  assert.ok((await alphaStats(page, 140, 490, 320, 20)).count > 500);
+  assert.equal((await alphaStats(page, t1.x + t1.w + 5, 390, 460 - t1.x - t1.w - 5, 20)).count, 0, '線の元の位置（文字と重ならない所）');
+  await page.keyboard.press('Control+z');
+  assert.deepEqual(await textRect(page), t0);
+  assert.ok((await alphaStats(page, 140, 390, 320, 20)).count > 500);
+  // 全消去は文字も消す。元に戻すで両方戻る
+  await page.keyboard.press('Delete');
+  assert.deepEqual(await textInfo(page), []);
+  assert.equal((await alphaStats(page, 0, 0, 1000, 700)).count, 0);
+  await page.keyboard.press('Control+z');
+  assert.equal((await textInfo(page)).length, 1);
+  assert.ok((await alphaStats(page, 140, 390, 320, 20)).count > 500);
+  assert.deepEqual(errors, []);
   await page.close();
 });
 

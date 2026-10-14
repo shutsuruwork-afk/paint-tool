@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.5.0';
+  const VERSION = '1.6.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -83,10 +83,12 @@
   const CSS = `
 .w{all:initial;position:absolute;inset:0;overflow:hidden;contain:strict;pointer-events:none;outline:none;font:12px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e8e9ee;color-scheme:dark;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
 .s{position:absolute;inset:0}.s.bg1{background:#fff}.s.bg2{background:#1d1f23}
-.sel{position:absolute;z-index:1;pointer-events:none}
+.sel{position:absolute;z-index:2;pointer-events:none}
 .sel b{position:absolute;outline:1px solid #3d7cff}
-.sel.mq b{outline-style:dashed;background:#3d7cff14}.sel.mq canvas,.sel.mq i{display:none}
-.sel canvas{width:100%;height:100%}
+.sel.mq b{outline-style:dashed;background:#3d7cff14}.sel.mq .si,.sel.mq i,.sel.only i:nth-of-type(2n){display:none}
+.si{position:absolute;left:0;top:0;transform-origin:0 0}
+.to{position:absolute;z-index:1;white-space:pre;pointer-events:none;color:var(--c);opacity:var(--a);font:600 var(--fs)/${LH} ${FONT}}
+.to.gone{opacity:calc(var(--a) * .25)}.to.ed{visibility:hidden}
 .sel i{position:absolute;width:9px;height:9px;margin:-5px 0 0 -5px;box-sizing:border-box;background:#fff;border:1.5px solid #3d7cff;border-radius:2px}
 canvas{position:absolute;left:0;top:0;pointer-events:none}
 .g,.p{position:absolute;inset:0}
@@ -611,13 +613,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       if (ey > cby1) cby1 = ey;
     }
   }
-  // b: その手で描いた物の外接矩形 [x0, y0, x1, y1]（S）。選択ツールのクリックで選ぶ物を探すのに使う
-  function push(R, c, b) {
+  // b: その手で描いた物の外接矩形 [x0, y0, x1, y1]（S）。選択ツールのクリックで選ぶ物を探すのに使う。
+  // t: その手で変わった文字の物と、もう一方の状態の組 [[物, 状態], …]。画素の変化がない手は R を空、c を null にする
+  function push(R, c, b, t) {
     grow(R);
     while (hist.length > hpos) free(hist.pop());
     let pix = 0;
     for (let i = 0; i < R.length; i += 6) pix += R[i + 2] * R[i + 3];
-    hist.push({ R, c, pix, b });
+    hist.push({ R, c, pix, b, t });
     hpos++;
     hpix += pix;
     // メモリ上限: 画面 8 枚分または 200 手
@@ -627,7 +630,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   function free(h) {
     hpix -= h.pix;
-    h.c.width = h.c.height = 0;
+    if (h.c) h.c.width = h.c.height = 0;
   }
   // 矩形群を棚詰め (shelf packing) で 1 枚のアトラスに配置し、その大きさのキャンバスを返す
   function pack(R) {
@@ -666,18 +669,22 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     src.width = src.height = 0;
     h.c = cur;
   }
+  function swapAll(h) {
+    if (h.c) swap(h);
+    if (h.t) swapText(h);
+  }
   function undo() {
     settle();
     if (act !== -1 || !hpos) return;
     finishHandoff();
-    swap(hist[--hpos]);
+    swapAll(hist[--hpos]);
     syncHist();
   }
   function redo() {
     settle();
     if (act !== -1 || hpos >= hist.length) return;
     finishHandoff();
-    swap(hist[hpos++]);
+    swapAll(hist[hpos++]);
     syncHist();
   }
   // 全消去はページ全体（見えていない所も含む）。元に戻せるように、全タイルをアトラスに退避してから消す
@@ -685,11 +692,12 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (act !== -1) return;
     settle();
     finishHandoff();
-    const R = [];
+    const R = [], P = tlist.map(o => [o, tSnap(o)]);
     for (const k of dtiles.keys()) R.push((k % 65536) * DT, ((k / 65536) | 0) * DT, DT, DT, 0, 0);
-    if (!R.length) return;
-    push(R, gather(R, pack(R)));
+    if (!R.length && !P.length) return;
+    push(R, R.length ? gather(R, pack(R)) : null, null, P.length ? P : null);
     for (const t of dtiles.values()) t.x.clearRect(0, 0, DT, DT);
+    for (const p of P) tApply(p[0], null);
     cbx0 = cby0 = cbx1 = cby1 = 0;
   }
 
@@ -753,7 +761,12 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const x = e.clientX * dpr, y = e.clientY * dpr;
     if (t === 'select') { selDown(e, x * sk + sox, y * sk + soy); return; }
     if (t === 'fill') { floodFill(x, y); return; }
-    if (t === 'text') { textAt(e.clientX, e.clientY); return; }
+    if (t === 'text') {
+      const o = textHit(x * sk + sox, y * sk + soy);
+      if (o) editText(o);
+      else textAt(e.clientX, e.clientY);
+      return;
+    }
 
     act = e.pointerId; aType = type; sTool = t;
     const c = CFG[t];
@@ -767,6 +780,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       mode = 2;
       const p = sW / 2 + 2;
       markBox(x - p, y - p, x + p, y + p); // 削る前に該当タイルを退避
+      if (tlist.length) eraseText(x, y, x, y, sW / 2);
       ePts[0] = x * sk + sox; ePts[1] = y * sk + soy;
       erasePts(1);
     } else {
@@ -920,6 +934,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       lt = t;
       nPts++;
       markSeg(bx, by, x, y, sW / 2 + 2); // 描く（erasePts）より前に呼ぶので、削られる前の画素を退避できる
+      if (tlist.length) eraseText(bx, by, x, y, sW / 2);
       ePts[k * 2] = x * sk + sox; ePts[k * 2 + 1] = y * sk + soy;
       bx = x; by = y;
       if (x < x0) x0 = x; else if (x > x1) x1 = x;
@@ -1020,6 +1035,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     raf = requestAnimationFrame(tick);
     // ポインタが止まったら古い予測線を消す（行き過ぎた線が残らないように）
     if (pn && ts - lt > PRED_TTL) { pn = 0; drawTail(); }
+    if (tHit !== tShown) showErased();
   }
 
   function onUp(e) {
@@ -1060,13 +1076,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     } else if (m === 4) {
       selUp();
     } else if (m === 2) {
-      // 退避しておいたタイルを 1 枚のアトラスにまとめて履歴へ
-      const R = tileRects(false);
+      // 退避しておいたタイルを 1 枚のアトラスにまとめて履歴へ。触れた文字の物も同じ手で消す
+      const R = tileRects(false), P = takeErased(false);
+      let ac = null;
       if (R.length) {
-        const ac = pack(R).getContext('2d');
+        ac = pack(R).getContext('2d');
         for (let k = 0, i = 0; i < R.length; k++, i += 6) ac.drawImage(tsave[k].c, 0, 0, R[i + 2], R[i + 3], R[i + 4], R[i + 5], R[i + 2], R[i + 3]);
-        push(R, ac.canvas);
       }
+      if (R.length || P) push(R, ac && ac.canvas, null, P);
     }
     resetTiles();
     mode = 0;
@@ -1078,6 +1095,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     stopStroke();
     if (m === 4) selAbort();
     else if (m === 2) {
+      takeErased(true);
       // 退避しておいた画素を戻す（表示タイルが無かった所は、何も消していない）
       const R = tileRects(false);
       for (let k = 0, i = 0; i < R.length; k++, i += 6) {
@@ -1316,8 +1334,12 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 浮かせる時に元の範囲を面から消し、確定で「元の範囲」と「置いた範囲」を 1 手として積む
   // 枠（b）は中身より少し外に出し、どの向きも最低 SEL_MIN にする（細い線でも移動とつまみを押し分けられる）
   const SEL_MIN = 24;
-  const selEl = el('div', 'sel'), selC = el('canvas'), selB = el('b');
-  selEl.append(selC, selB);
+  // 浮かせた画素（selC）と選んだ文字の物は入れ物（selIn）に入れ、入れ物の transform で一緒に拡大縮小する
+  const selEl = el('div', 'sel'), selIn = el('div', 'si'), selC = el('canvas'), selB = el('b');
+  selIn.append(selC);
+  selEl.append(selIn, selB);
+  const selT = []; // 選んだ文字の物と、選んだ時の状態の組
+  let bX0 = 0, bY0 = 0, bW0 = 1, bH0 = 1; // 選んだ時の枠（S）
   // つまみの位置（枠に対する割合）: 左上・上・右上・右・右下・下・左下・左
   const HND = [0, 0, 0.5, 0, 1, 0, 1, 0.5, 1, 1, 0.5, 1, 0, 1, 0, 0.5];
   const HCUR = ['nwse-resize', 'ns-resize', 'nesw-resize', 'ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize', 'ew-resize'];
@@ -1348,13 +1370,22 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     st.height = selH / sdpr + 'px';
     bs.left = bs.right = px;
     bs.top = bs.bottom = py;
+    if (!mq) selIn.style.transform = `scale(${selW / bW0},${selH / bH0})`;
     if (!selEl.parentNode) sbox.append(selEl);
   }
-  // S の矩形の中の描いた物を浮かせる。枠は中身の外接矩形に詰める。何もなければ false
-  function liftSel(x, y, w, h) {
+  // S の矩形の中の描いた物を浮かせる。withTexts なら、矩形に収まる文字の物も一緒に選ぶ。何もなければ false
+  function liftSel(x, y, w, h, withTexts) {
+    liftRaster(x, y, w, h);
+    const T = [];
+    if (withTexts) for (const o of tlist) if (o.x >= x && o.y >= y && o.x + o.w <= x + w && o.y + o.h <= y + h) T.push(o);
+    return beginSel(T);
+  }
+  // 矩形の中の画素を selC へ浮かせ、面から消す。範囲は中身の外接矩形に詰める（何もなければ srcW = 0）
+  function liftRaster(x, y, w, h) {
+    srcW = srcH = 0;
     // 描いた範囲の外は透明と分かっているので、重なる所だけを 1 回で読む
     const ax = max(0, x, cbx0), ay = max(0, y, cby0), ex = min(x + w, cbx1), ey = min(y + h, cby1);
-    if (cbx1 <= cbx0 || ex <= ax || ey <= ay) return false;
+    if (cbx1 <= cbx0 || ex <= ax || ey <= ay) return;
     const gw = ex - ax, gh = ey - ay, rc = gather(rect1(ax, ay, gw, gh), newCanvas(gw, gh));
     const d = new Uint32Array(rc.getContext('2d').getImageData(0, 0, gw, gh).data.buffer);
     let bx0 = gw, by0 = -1, bx1 = -1, by1 = -1;
@@ -1368,43 +1399,89 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       if (by0 < 0) by0 = j;
       by1 = j;
     }
-    if (by0 < 0) { rc.width = rc.height = 0; return false; }
-    srcX = ax + bx0; srcY = ay + by0; srcW = bx1 - bx0 + 1; srcH = by1 - by0 + 1;
-    selC.width = srcW;
-    selC.height = srcH;
-    selC.getContext('2d').drawImage(rc, bx0, by0, srcW, srcH, 0, 0, srcW, srcH);
+    if (by0 >= 0) {
+      srcX = ax + bx0; srcY = ay + by0; srcW = bx1 - bx0 + 1; srcH = by1 - by0 + 1;
+      selC.width = srcW;
+      selC.height = srcH;
+      selC.getContext('2d').drawImage(rc, bx0, by0, srcW, srcH, 0, 0, srcW, srcH);
+      forTiles(srcX, srcY, srcW, srcH, false, (t, ox, oy, ix, iy, iw, ih) => t.x.clearRect(ix - ox, iy - oy, iw, ih));
+    }
     rc.width = rc.height = 0;
-    forTiles(srcX, srcY, srcW, srcH, false, (t, ox, oy, ix, iy, iw, ih) => t.x.clearRect(ix - ox, iy - oy, iw, ih));
-    selX = srcX; selY = srcY; selW = srcW; selH = srcH;
+  }
+  // 浮かせた画素（あれば）と文字の物 T をまとめて選ぶ。枠は全部の外接矩形
+  function beginSel(T) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    if (srcW) { x0 = srcX; y0 = srcY; x1 = srcX + srcW; y1 = srcY + srcH; }
+    for (const o of T) { x0 = min(x0, o.x); y0 = min(y0, o.y); x1 = max(x1, o.x + o.w); y1 = max(y1, o.y + o.h); }
+    if (x1 <= x0 || y1 <= y0) return false;
+    bX0 = x0; bY0 = y0; bW0 = x1 - x0; bH0 = y1 - y0;
+    const cs = selC.style, is = selIn.style;
+    cs.display = srcW ? '' : 'none';
+    cs.left = (srcX - bX0) / sdpr + 'px';
+    cs.top = (srcY - bY0) / sdpr + 'px';
+    cs.width = srcW / sdpr + 'px';
+    cs.height = srcH / sdpr + 'px';
+    is.width = bW0 / sdpr + 'px';
+    is.height = bH0 / sdpr + 'px';
+    selT.length = 0;
+    for (const o of T) {
+      selT.push([o, tSnap(o)]);
+      o.el.style.left = (o.x - bX0) / sdpr + 'px';
+      o.el.style.top = (o.y - bY0) / sdpr + 'px';
+      selIn.append(o.el);
+    }
+    // 文字だけのときは辺のつまみを出さず、拡大縮小は常に比を保つ
+    selEl.classList.toggle('only', !srcW);
+    selX = bX0; selY = bY0; selW = bW0; selH = bH0;
     sel = true;
     showSel(false);
     if (!selHint) { selHint = true; say('ドラッグで移動 ・ 角で拡大縮小 ・ Delete で削除 ・ Esc で確定', 3000); }
     return true;
   }
-  // 浮かせた中身を今の枠に描き込む。del なら置かずに消すだけ。動かしていなければ元に戻すだけで履歴は増やさない
+  // 浮かせた中身を今の枠に描き込み、文字の物を枠に合わせて動かす。del なら置かずに消す。
+  // 何も変わっていなければ元に戻すだけで、履歴は増やさない。変わっていれば 1 手として積む
   function dropSel(del) {
     if (!sel) return;
     sel = false;
     selEl.remove();
     hoverCur = '';
     updateCursor();
-    const dx = round(selX), dy = round(selY), dw = max(1, round(selW)), dh = max(1, round(selH));
-    if (!del && dx === srcX && dy === srcY && dw === srcW && dh === srcH) paintSel(srcX, srcY, srcW, srcH);
-    else {
-      const R = del ? rect1(srcX, srcY, srcW, srcH) : [srcX, srcY, srcW, srcH, 0, 0, dx, dy, dw, dh, 0, 0];
-      const atlas = gather(R, pack(R)), c = atlas.getContext('2d');
-      // 保存する画素は「浮かせる前」にそろえる。元の範囲は今は空なので、中身を元の位置に重ねれば戻る
-      for (let i = 0; i < R.length; i += 6) {
-        c.save();
-        c.beginPath();
-        c.rect(R[i + 4], R[i + 5], R[i + 2], R[i + 3]);
-        c.clip();
-        c.drawImage(selC, R[i + 4] + srcX - R[i], R[i + 5] + srcY - R[i + 1]);
-        c.restore();
+    const sx = selW / bW0, sy = selH / bH0, k = sqrt(sx * sy);
+    const dx = round(selX + (srcX - bX0) * sx), dy = round(selY + (srcY - bY0) * sy);
+    const dw = max(1, round(srcW * sx)), dh = max(1, round(srcH * sy));
+    let changed = !!del || (srcW > 0 && (dx !== srcX || dy !== srcY || dw !== srcW || dh !== srcH));
+    // 文字は CSS px の整数に丸めた位置と大きさにする（拡大縮小しても描き直すのでぼやけない）
+    const next = selT.map(([o, st0]) => {
+      const st = del ? null : [o.s, round((selX + (o.x - bX0) * sx) / sdpr) * sdpr, round((selY + (o.y - bY0) * sy) / sdpr) * sdpr,
+        max(4, round(o.fs / sdpr * k)) * sdpr, o.c, o.a];
+      if (st && !sameSt(st, st0)) changed = true;
+      return st;
+    });
+    if (!changed) {
+      if (srcW) paintSel(srcX, srcY, srcW, srcH);
+      for (const p of selT) tApply(p[0], p[1]);
+    } else {
+      let R = [], atlas = null;
+      if (srcW) {
+        R = del ? rect1(srcX, srcY, srcW, srcH) : [srcX, srcY, srcW, srcH, 0, 0, dx, dy, dw, dh, 0, 0];
+        atlas = gather(R, pack(R));
+        const c = atlas.getContext('2d');
+        // 保存する画素は「浮かせる前」にそろえる。元の範囲は今は空なので、中身を元の位置に重ねれば戻る
+        for (let i = 0; i < R.length; i += 6) {
+          c.save();
+          c.beginPath();
+          c.rect(R[i + 4], R[i + 5], R[i + 2], R[i + 3]);
+          c.clip();
+          c.drawImage(selC, R[i + 4] + srcX - R[i], R[i + 5] + srcY - R[i + 1]);
+          c.restore();
+        }
+        if (!del) paintSel(dx, dy, dw, dh);
       }
-      if (!del) paintSel(dx, dy, dw, dh);
-      push(R, atlas, del ? null : [dx, dy, dx + dw, dy + dh]);
+      const P = selT.map(p => [p[0], p[1]]);
+      for (let i = 0; i < selT.length; i++) tApply(selT[i][0], next[i]);
+      push(R, atlas, srcW && !del ? [dx, dy, dx + dw, dy + dh] : null, P.length ? P : null);
     }
+    selT.length = 0;
     selC.width = selC.height = 0;
   }
   function paintSel(x, y, w, h) {
@@ -1426,6 +1503,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const fx = selX - px, fy = selY - py, fw = selW + 2 * px, fh = selH + 2 * py;
     if (X > fx + r && X < fx + fw - r && Y > fy + r && Y < fy + fh - r) return -1;
     for (let i = 0; i < 16; i += 2) {
+      if (!srcW && i % 4) continue; // 文字だけのときは角のつまみだけ
       if (abs(X - fx - HND[i] * fw) <= r && abs(Y - fy - HND[i + 1] * fh) <= r) return i / 2;
     }
     return X >= fx && X <= fx + fw && Y >= fy && Y <= fy + fh ? -1 : -2;
@@ -1436,8 +1514,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (c !== hoverCur) { hoverCur = c; pad.style.cursor = c; }
   }
   function selDown(e, X, Y) {
-    const hit = sel ? selHit(X, Y) : -2;
-    if (hit === -2) dropSel();
+    let hit = sel ? selHit(X, Y) : -2;
+    if (hit === -2) {
+      dropSel();
+      // 文字の物は押したらそのまま選び、同じドラッグで動かせる
+      const o = textHit(X, Y);
+      if (o) { srcW = srcH = 0; beginSel([o]); hit = -1; }
+    }
     act = e.pointerId; aType = e.pointerType; mode = 4;
     try { pad.setPointerCapture(act); } catch (_) { }
     dragX = X; dragY = Y; begX = selX; begY = selY; begW = selW; begH = selH;
@@ -1462,6 +1545,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // つまみの反対側を固定し、押した所からの移動量だけ伸び縮みさせる。角は縦横比を保つ（free なら保たない）。
   // 比を保つ倍率は (w, h) を (begW, begH) の向きへ射影して求める（細長い物でも少しの縦の動きで暴れない）。裏返しにはしない
   function scaleSel(X, Y, free) {
+    if (!srcW) free = false;
     const hx = HND[sH * 2], hy = HND[sH * 2 + 1], m = 2 * sdpr, dX = X - dragX, dY = Y - dragY;
     const fx = begX + (1 - hx) * begW, fy = begY + (1 - hy) * begH;
     let w = hx === 0.5 ? begW : max(m, hx ? begW + dX : begW - dX);
@@ -1481,7 +1565,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       selEl.remove();
       if (selW > 3 * sdpr || selH > 3 * sdpr) {
         const x = floor(selX), y = floor(selY);
-        liftSel(x, y, ceil(selX + selW) - x, ceil(selY + selH) - y);
+        liftSel(x, y, ceil(selX + selW) - x, ceil(selY + selH) - y, true);
       } else pickSel(dragX, dragY);
     }
     sDrag = 0;
@@ -1507,7 +1591,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       const a = (b[2] - b[0]) * (b[3] - b[1]);
       if (a <= ba) { ba = a; best = b; }
     }
-    if (best) liftSel(best[0] - r, best[1] - r, best[2] - best[0] + 2 * r, best[3] - best[1] + 2 * r);
+    if (best) liftSel(best[0] - r, best[1] - r, best[2] - best[0] + 2 * r, best[3] - best[1] + 2 * r, false);
   }
   function nudgeSel(k, step) {
     const d = step * sdpr;
@@ -1518,12 +1602,111 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     showSel(false);
   }
 
-  // ---------- 文字（入力中は本物の textarea を重ねるので IME がそのまま使える。確定したら面に描き込む） ----------
-  let ta = null, taX = 0, taCY = 0, mctx = null;
+  // ---------- 文字（入力中は本物の textarea を重ねるので IME がそのまま使える） ----------
+  // 確定した文字は「物」として面の中の要素（.to）に置く。あとから選んで動かす・拡大縮小・書き直しができ、拡大してもぼやけない。
+  // 物の状態は [文字, x, y, 大きさ, 色, 濃さ]（x, y は行の箱の左上、大きさは文字の高さ。どれも S の px で、CSS px の整数に丸める）
+  let ta = null, taX = 0, taCY = 0, taObj = null, mctx = null;
+  const tlist = []; // 面に置いている文字の物（重なり順。後ろほど手前）
+  let tHit = 0, tShown = 0; // 消しゴムが触れた文字の数と、薄く表示した数
   // 入力欄のキーや文字はページへ渡さない（ページのショートカットやフォーカス管理が反応しないように）
   const TA_STOP = ['keydown', 'keyup', 'keypress', 'beforeinput', 'input', 'compositionstart', 'compositionupdate',
     'compositionend', 'paste', 'copy', 'cut', 'focusin', 'focusout'];
-  function textAt(cx, cy) {
+  const tNew = () => ({ el: el('div', 'to'), s: '', x: 0, y: 0, fs: 0, c: '', a: 1, w: 0, h: 0, on: false, hit: 0 });
+  const tSnap = o => [o.s, o.x, o.y, o.fs, o.c, o.a];
+  const sameSt = (p, q) => p[0] === q[0] && p[1] === q[1] && p[2] === q[2] && p[3] === q[3] && p[4] === q[4] && p[5] === q[5];
+  // 物を状態 st にする（null なら面から外す）
+  function tApply(o, st) {
+    if (!st) {
+      if (o.on) { o.el.remove(); tlist.splice(tlist.indexOf(o), 1); o.on = false; }
+      return;
+    }
+    [o.s, o.x, o.y, o.fs, o.c, o.a] = st;
+    const e = o.el, es = e.style;
+    e.textContent = o.s;
+    es.left = o.x / sdpr + 'px';
+    es.top = o.y / sdpr + 'px';
+    es.setProperty('--fs', o.fs / sdpr + 'px');
+    es.setProperty('--c', o.c);
+    es.setProperty('--a', o.a);
+    if (!o.on) { tlist.push(o); o.on = true; }
+    if (e.parentNode !== sbox) sbox.append(e);
+    o.w = e.offsetWidth * sdpr;
+    o.h = e.offsetHeight * sdpr;
+  }
+  // 履歴の手の文字の物を、今の状態と保存した状態で入れ替える（undo と redo で同じ処理）
+  function swapText(h) {
+    for (const p of h.t) {
+      const cur = p[0].on ? tSnap(p[0]) : null;
+      tApply(p[0], p[1]);
+      p[1] = cur;
+    }
+  }
+  // S の点にある、いちばん手前の文字の物
+  function textHit(X, Y) {
+    const r = 3 * sdpr;
+    for (let i = tlist.length - 1; i >= 0; i--) {
+      const o = tlist[i];
+      if (X >= o.x - r && X <= o.x + o.w + r && Y >= o.y - r && Y <= o.y + o.h + r) return o;
+    }
+    return null;
+  }
+  // 書き出し用に、文字の物を S の px で描く。表示（CSS の行の中央寄せ）と同じ基線にする
+  function paintText(g, o, X, Y) {
+    const css = o.fs / sdpr;
+    if (!mctx) mctx = newCanvas(1, 1).getContext('2d');
+    mctx.font = `600 ${css}px ${FONT}`; // レイアウトは CSS px の書体の寸法で決まる
+    const m = mctx.measureText('Hg');
+    const A = round(m.fontBoundingBoxAscent || css * 0.8), D = round(m.fontBoundingBoxDescent || css * 0.2);
+    const base = (o.y / sdpr + floor((css * LH - A - D) / 2) + A) * sdpr - Y, lines = o.s.split('\n');
+    g.save();
+    g.globalAlpha = o.a;
+    g.fillStyle = o.c;
+    g.font = `600 ${o.fs}px ${FONT}`;
+    g.textBaseline = 'alphabetic';
+    for (let i = 0; i < lines.length; i++) g.fillText(lines[i], o.x - X, base + i * o.fs * LH);
+    g.restore();
+  }
+  // 消しゴムの線分（V）が触れた文字に印を付ける。入力のたびに呼ばれるので、割り当てのない計算だけにする
+  let lbA = 0, lbB = 1;
+  function lbEdge(p, q) {
+    if (p === 0) return q >= 0;
+    const r = q / p;
+    if (p < 0) { if (r > lbB) return false; if (r > lbA) lbA = r; }
+    else { if (r < lbA) return false; if (r < lbB) lbB = r; }
+    return true;
+  }
+  function eraseText(ax, ay, bx, by, rad) {
+    const x0 = ax * sk + sox, y0 = ay * sk + soy, dx = (bx - ax) * sk, dy = (by - ay) * sk, r = rad * sk;
+    for (let i = 0; i < tlist.length; i++) {
+      const o = tlist[i];
+      if (o.hit) continue;
+      lbA = 0; lbB = 1;
+      if (lbEdge(-dx, x0 - o.x + r) && lbEdge(dx, o.x + o.w + r - x0) && lbEdge(-dy, y0 - o.y + r) && lbEdge(dy, o.y + o.h + r - y0)) {
+        o.hit = 1;
+        tHit++;
+      }
+    }
+  }
+  // 触れた文字を薄く見せる（tick から 1 フレームに 1 回）
+  function showErased() {
+    for (let i = 0; i < tlist.length; i++) tlist[i].el.classList.toggle('gone', !!tlist[i].hit);
+    tShown = tHit;
+  }
+  // 消しゴムを離した: 触れた文字を外し、履歴用の組を返す。abort なら印を消すだけ
+  function takeErased(abort) {
+    if (!tHit) return null;
+    const P = [];
+    for (let i = 0; i < tlist.length; i++) {
+      const o = tlist[i];
+      if (o.hit) { o.hit = 0; o.el.classList.remove('gone'); P.push([o, tSnap(o)]); }
+    }
+    tHit = tShown = 0;
+    if (abort) return null;
+    for (const p of P) tApply(p[0], null);
+    return P;
+  }
+
+  function textAt(cx, cy, value) {
     ta = el('textarea', 'tx', { spellcheck: 'false', wrap: 'off', rows: '1', 'aria-label': '文字' });
     taX = cx; taCY = cy; // クリックした点が 1 行目の高さの中央になるように置く
     for (const t of TA_STOP) ta.addEventListener(t, stop);
@@ -1536,9 +1719,24 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         wrap.focus({ preventScroll: true });
       }
     });
+    if (value) ta.value = value;
     wrap.append(ta);
     styleTa();
     ta.focus({ preventScroll: true });
+    if (value) ta.setSelectionRange(value.length, value.length);
+  }
+  // 確定した文字を書き直す: 物の書式を今の書式として拾い、同じ位置に入力欄を出す（物はその間だけ隠す）
+  function editText(o) {
+    settle();
+    if (tool !== 'text') setTool('text');
+    CFG.text.size = o.fs / sdpr;
+    CFG.text.alpha = o.a;
+    setColor(o.c);
+    syncTool(false);
+    mapNow();
+    taObj = o;
+    o.el.classList.add('ed');
+    textAt((o.x - sox) / sdpr, (o.y - soy) / sdpr + CFG.text.size * LH / 2, o.s);
   }
   function styleTa() {
     const c = CFG.text, s = ta.style;
@@ -1556,48 +1754,27 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     s.width = ta.scrollWidth + 2 + 'px';
     s.height = ta.scrollHeight + 'px';
   }
-  // 入力欄と同じ位置・書体・色・濃さで、外接矩形の範囲のタイルへ直接描く（live を通さないので二重に見えない）
+  // 入力欄の中身を文字の物として面に置く（書き直しなら物を更新し、空なら消す）。1 手として履歴に積む
   function commitText() {
     if (!ta) return;
-    const e = ta, v = e.value.replace(/\s+$/, '');
-    ta = null;
+    const e = ta, v = e.value.replace(/\s+$/, ''), o = taObj;
+    ta = taObj = null;
     e.remove();
-    if (!v || act !== -1) return;
-    finishHandoff();
+    if (o) o.el.classList.remove('ed');
     mapNow();
     sizeSurface();
-    const c = CFG.text, fs = c.size * dpr, lh = fs * LH, lines = v.split('\n'), f = `600 ${fs}px ${FONT}`;
-    if (!mctx) mctx = newCanvas(1, 1).getContext('2d');
-    mctx.font = f;
-    let w = 0;
-    for (const l of lines) w = max(w, mctx.measureText(l).width);
-    // CSS は行の高さの中で文字（ascent + descent）を上下中央に置く。同じ基線を求める（CSS px で整数に丸めて計算）
-    mctx.font = `600 ${c.size}px ${FONT}`; // レイアウトは CSS px の書体の寸法で決まる
-    const m = mctx.measureText('Hg');
-    const A = round(m.fontBoundingBoxAscent || c.size * 0.8), D = round(m.fontBoundingBoxDescent || c.size * 0.2);
-    const tc = taCY - c.size * LH / 2, x = taX * dpr, top = tc * dpr;
-    const base = (tc + floor((c.size * LH - A - D) / 2) + A) * dpr;
-    const p = fs * 0.25 + 2;
-    const X0 = max(0, floor((x - p) * sk + sox)), Y0 = max(0, floor((top - p) * sk + soy));
-    const X1 = ceil((x + w + p) * sk + sox), Y1 = ceil((top + lines.length * lh + p) * sk + soy);
-    if (X1 <= X0 || Y1 <= Y0) return;
-    const R = rect1(X0, Y0, X1 - X0, Y1 - Y0);
-    const atlas = gather(R, pack(R));
-    forTiles(X0, Y0, X1 - X0, Y1 - Y0, true, (t, ox, oy, ix, iy, iw, ih) => {
-      const g = t.x;
-      g.save();
-      g.beginPath();
-      g.rect(ix - ox, iy - oy, iw, ih);
-      g.clip();
-      g.setTransform(sk, 0, 0, sk, sox - ox, soy - oy);
-      g.globalAlpha = c.alpha;
-      g.fillStyle = color;
-      g.font = f;
-      g.textBaseline = 'alphabetic';
-      for (let i = 0; i < lines.length; i++) g.fillText(lines[i], x, base + i * lh);
-      g.restore();
-    });
-    push(R, atlas, [X0, Y0, X1, Y1]);
+    const c = CFG.text, st = [v, round(taX + sox / sdpr) * sdpr, round(taCY - c.size * LH / 2 + soy / sdpr) * sdpr,
+      max(4, round(c.size)) * sdpr, color, c.alpha];
+    if (o) {
+      const prev = tSnap(o);
+      if (v && sameSt(prev, st)) return;
+      tApply(o, v ? st : null);
+      push([], null, null, [[o, prev]]);
+    } else if (v) {
+      const n = tNew();
+      tApply(n, st);
+      push([], null, null, [[n, null]]);
+    }
   }
 
   // ---------- 書き出し ----------
@@ -1608,6 +1785,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const c = newCanvas(cw, ch), cx = c.getContext('2d', opts);
     forTiles(X, Y, cw, ch, false, (t, tox, toy, ix, iy, iw, ih) =>
       cx.drawImage(t.c, ix - tox, iy - toy, iw, ih, ix - X, iy - Y, iw, ih));
+    // 文字の物は線より手前にあるので、あとから重ねる
+    for (const o of tlist) if (o.x < X + cw && o.y < Y + ch && o.x + o.w > X && o.y + o.h > Y) paintText(cx, o, X, Y);
     return [c, cx];
   }
   function exportBlob() {
@@ -1724,6 +1903,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   pad.addEventListener('pointercancel', onLost);
   pad.addEventListener('lostpointercapture', onLost);
   pad.addEventListener('contextmenu', e => e.preventDefault());
+  // 選択ツールで文字の物をダブルクリックすると書き直す
+  pad.addEventListener('dblclick', e => {
+    if (tool !== 'select' || act !== -1) return;
+    settle();
+    mapNow();
+    const o = textHit(e.clientX * sdpr + sox, e.clientY * sdpr + soy);
+    if (o) editText(o);
+  });
   // ページ側のリスナー（解析スクリプトやドラッグ処理など）に入力を渡さず、メインスレッドの負荷を減らす
   const stop = e => e.stopPropagation();
   for (const t of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'pointerover', 'pointerout',
@@ -1822,7 +2009,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 
   // ---------- 起動 ----------
   const stats = () => ({
-    width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, selection: sel ? [selX, selY, selW, selH] : null, history: hist.length, historyPixels: hpix, events: nEv, points: nPts,
+    width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, selection: sel ? [selX, selY, selW, selH] : null, texts: tlist.length, history: hist.length, historyPixels: hpix, events: nEv, points: nPts,
     desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, nativePrediction: nativePred, inkTrail: !!inkP,
   });
   win[NS] = { version: VERSION, toggle, show, hide, close, destroy, undo, redo, clear: clearAll, tool: setTool, color: setColor, stats, pixels };

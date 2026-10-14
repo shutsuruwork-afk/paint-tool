@@ -4,18 +4,18 @@
 
 ## 現在地
 
-- 最終更新: 2026-10-14、T-003 の完了時
-- ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない。HEAD は T-003 のコミット（`git log --grep T-003`）
-- CI: GitHub Actions「Pages」は main へのプッシュごとに test → deploy。T-003 のプッシュの結果は TASKS.md ではなく Actions で確かめる
-- 公開: https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）の 2 か所。版は v1.1.0
-- 人の操作待ち: なし。R-003 で着手順が決まった（T-003 → T-006 → T-005 → T-004 → T-009）。使ってみて分かることはユーザーがフィードバックしてくれる
-- 次の一手: T-006（閉じる × で絵が確認なしに消えないようにする）に着手する。ユーザーからスクロール追従の使用感のフィードバックが来たら、そちらを先に見る
+- 最終更新: 2026-10-14、T-006 の完了時
+- ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない。HEAD は T-006 のコミット（`git log --grep T-006`）
+- CI: GitHub Actions「Pages」は main へのプッシュごとに test → deploy。T-003 のプッシュ（run 38595502374）は成功。T-006 のプッシュの結果は Actions で確かめる
+- 公開: https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）の 2 か所。版は v1.2.0
+- 人の操作待ち: なし。着手順は R-003 で決まった（T-003 → T-006 → T-005 → T-004 → T-009）。使ってみて分かることはユーザーがフィードバックしてくれる
+- 次の一手: T-005（色・太さ・ツール・ツールバー位置を次回の起動でも覚えておく）に着手する。保存先を先に調べる（ページの localStorage を汚さない方法）。ユーザーからフィードバックが来たら、そちらを先に見る
 
 ## 始め方
 
 ```sh
 npm install          # terser 5.36.0 と playwright 1.56.1（ブラウザは /opt/pw-browsers にある）
-npm test             # ビルドしてから Playwright のテスト 26 件
+npm test             # ビルドしてから Playwright のテスト 28 件
 npm run bench        # 性能計測（メインスレッドの占有時間）
 ```
 
@@ -30,14 +30,14 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
   - 履歴（push / swap / pack / gather / grow、undo / redo / clearAll）。gather は面のタイルからアトラスへ、swap はアトラスと面を入れ替える
   - ストローク状態と入力: onDown（finishHandoff → mapNow）→ onMove（inkMove, readPred, drawTail / eraseMove → erasePts / drawShape）→ onUp → endStroke（commitLive → 2 フレーム後に finishHandoff）。abortStroke はパームリジェクションで使う
   - タイル（markBox / markSeg / markCurve / markShape / tileRects / resetTiles）。印は面の座標で Set に付ける
-  - 塗りつぶし（floodFill）、書き出し（capture / exportBlob / save / copyImg / pixels）、HUD（D キー）、キーボード（onKey）、表示制御（show / hide / toggle / destroy）、起動
+  - お知らせ（`say(msg, ms, act, fn)`。fn を渡すとボタン付き）、塗りつぶし（floodFill）、書き出し（capture / exportBlob / save / copyImg / pixels）、HUD（D キー）、キーボード（onKey）、表示制御（show / hide / toggle / close → endBye / reopen / onByeKey、destroy）、起動
 - `src/install.html`: インストールページのテンプレート（本文のみ）。`%%BOOKMARKLET_HREF%%` などを build.mjs が置き換える
 - `build.mjs`: terser で圧縮し、`dist/paint.min.js`、`dist/bookmarklet.txt`、`docs/index.html` を作る
-- `test/paint.test.mjs`（テスト 26 件）、`test/helpers.mjs`（サーバー〈`/long` は縦 3000px、`/offset` は html に余白〉・起動・画素の読み取り `readMain` / `screenPixel`・`scrollTo`）、`test/bench.mjs`
+- `test/paint.test.mjs`（テスト 28 件）、`test/helpers.mjs`（サーバー〈`/long` は縦 3000px、`/offset` は html に余白〉・起動・画素の読み取り `readMain` / `screenPixel`・`scrollTo`）、`test/bench.mjs`
 - `.github/workflows/pages.yml`: main へのプッシュでテストしてから docs/ を Pages に公開。PR ではテストだけ
 - `.claude/`: CLAUDE.md（概要と読み込み）、`rules/`（tasks / handoff / human）、TASKS.md、HANDOFF.md、Stop フック（`hooks/check-handoff.mjs`）
 - `.human/`: ユーザーとの非同期のやりとり。`ideas/`（ユーザーのアイデア、1 件 1 ファイル）、`requests.md`（Claude からの判断・作業のお願い）
-- 公開 API: `window.__paintBookmarklet` の `version / toggle / show / hide / destroy / undo / redo / clear / tool(name) / color(hex) / stats() / pixels(x, y, w, h)`。テストとベンチがこれを使う。`pixels` は画面の CSS 座標の矩形を面から読み戻す（確定した絵だけ。live は含まない）。`stats()` に `surface`（面の大きさ）と `tiles`（表示タイルの数）がある
+- 公開 API: `window.__paintBookmarklet` の `version / toggle / show / hide / close / destroy / undo / redo / clear / tool(name) / color(hex) / stats() / pixels(x, y, w, h)`。テストとベンチがこれを使う。`pixels` は画面の CSS 座標の矩形を面から読み戻す（確定した絵だけ。live は含まない）。`stats()` に `surface`（面の大きさ）と `tiles`（表示タイルの数）がある
 
 ## 不変条件（壊すと困る）
 
@@ -51,7 +51,8 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - 半透明の線は live / pred に不透明で描き、2 枚をまとめたグループに CSS の opacity をかける。opacity はツールや濃さが変わった時点で `liveAlpha()` が先に合わせておく（描き始めの 1 フレームが濃くならないように）。確定時に globalAlpha で一度だけ面に合成する。
 - scroll / wheel のリスナーは登録しない（テストで確かめている）。スクロールはブラウザに任せる。
 - innerHTML・style 属性・外部リソースは使わない（CSP と Trusted Types への対策）。
-- 2 回目の実行は表示の切り替えだけ（`window.__paintBookmarklet` で判定）。
+- 2 回目の実行は表示の切り替えだけ（`window.__paintBookmarklet` で判定）。閉じた後の取り消し待ち（`byeT`）の間は、show / toggle が reopen になる。
+- × は `close()`（描いた物があれば BYE_MS = 8 秒の取り消し待ち。その後に destroy）。API の `destroy()` はすぐに解放する（テストで確かめている）。取り消し待ちの間は visible = false で、入力のリスナーも外れている。
 
 ## 決定事項と理由
 
@@ -62,6 +63,7 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - 面の密度は起動時の dpr で固定する。表示倍率を変えても絵を作り直さず、sk で座標を換算する（ブラウザが拡大縮小して表示する）。
 - 面は documentElement 直下の absolute 配置で、html のずれ（margin・border・position）は getBoundingClientRect から求めた hdx / hdy で打ち消す。contain: strict と overflow: clip で、はみ出してスクロール範囲を広げない。
 - 範囲外にしたもの: ページ内の一部だけがスクロールする要素（Gmail など。T-017 の候補）、描いた後に本文が動くことによるずれ、「画面に固定」モード（動画や地図の上に描く用。T-016 の候補）。
+- 閉じる（×）は確認ダイアログではなく、8 秒の取り消し（お知らせのボタン・Ctrl/⌘+Z・ブックマークレット）にした（T-006）。確認は毎回 1 手増えるが、取り消しなら閉じる人の手間は変わらない。残り時間は CSS のアニメーションのバーで見せる（JS は動かない）。何も描いていなければすぐ閉じる。
 - 塗りつぶしは見えている画面の範囲だけで行う。文書全体を読み戻すと長いページで重いため。
 - Delegated Ink Trail は Windows だけで使う。他の OS では API があっても OS が描かない可能性があり、その場合に予測線まで失うため。
 - pointerrawupdate のリスナーは描画中だけ登録する（登録しているだけでコストがかかる）。図形は 1 フレームに 1 回で足りるので使わない。
@@ -81,20 +83,27 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - Playwright の mouse で viewport の外（負の座標）からドラッグを始めると、pointerdown がツールに届かない。
 - `page.evaluate(CODE)` は CSP を通さずに実行する（Firefox のブックマークレットに相当）。本物の `javascript:` URL として実行するには `location.href = BOOKMARKLET` を使う（CSP のないページでだけ動く）。
 - Artifact のビューアはダウンロードをブロックするので、そこでは PNG 保存ボタンが反応しない。
+- 取り消し待ちの Ctrl+Z で reopen すると、同じ keydown の途中で onKey が登録される。DOM は配送中に足されたリスナーを呼ばないので、絵の undo までは進まない（テストで確かめている）。順序を変えるときは注意。
+- テストで「ページの上にツールがかぶっていない」を見るときは、elementFromPoint が `PAINT-BOOKMARKLET` かどうかで判定する（下にあるのは本文の段落など、場所で変わる）。
 
 ## 検証の方法
 
-- `npm test` で見ていること: 起動とトグル・破棄、速い線が途切れない、undo / redo が画素単位で一致、消しゴム（右クリック含む）、半透明の重なり、四角と塗りつぶし（隙間・漏れ）、筆圧、パームリジェクション、ページへのイベント漏れ、入力欄にフォーカスがあるときのショートカット、厳格な CSP と Trusted Types、リサイズ、図形と Shift、PNG 保存、塗りつぶしの壁と再着色、rawupdate と pointermove の重複処理。スクロール追従: 描いてからのスクロール、スクロール後の描画と undo / redo（目印の要素との位置）、スクロール後の塗りつぶし・消しゴム・PNG、端に描いてもスクロール範囲が広がらない、ページが縮むと面も縮む、html に余白があるページ、確定時のちらつきと半透明の opacity の事前設定、scroll / wheel リスナーがない、@2x、表示倍率の変更（CDP で dpr 1.5）。
+- `npm test` で見ていること: 起動とトグル・破棄、速い線が途切れない、undo / redo が画素単位で一致、消しゴム（右クリック含む）、半透明の重なり、四角と塗りつぶし（隙間・漏れ）、筆圧、パームリジェクション、ページへのイベント漏れ、入力欄にフォーカスがあるときのショートカット、厳格な CSP と Trusted Types、リサイズ、図形と Shift、PNG 保存、塗りつぶしの壁と再着色、rawupdate と pointermove の重複処理。閉じる: 8 秒後に破棄、ボタン・Ctrl+Z・ブックマークレットで戻る（入力欄の Ctrl+Z は横取りしない）、戻すまでページをクリックできる、何も描いていなければすぐ閉じる。スクロール追従: 描いてからのスクロール、スクロール後の描画と undo / redo（目印の要素との位置）、スクロール後の塗りつぶし・消しゴム・PNG、端に描いてもスクロール範囲が広がらない、ページが縮むと面も縮む、html に余白があるページ、確定時のちらつきと半透明の opacity の事前設定、scroll / wheel リスナーがない、@2x、表示倍率の変更（CDP で dpr 1.5）。
 - 未確認: Firefox と Safari での動作、実際のペンタブレット、Windows の Ink Trail、実 GPU での desynchronized の効果、実機でのスクロールの滑らかさ（タイルが多いとき）、Gmail などの内側スクロールのサイトでの見え方。
 
 ## 外部の状態
 
 - GitHub: shutsuruwork-afk/paint-tool（public）。ブランチは main と feature/paint-bookmarklet
-- Actions: Pages ワークフロー。run 38550725208（05f8ca8）で初めて deploy まで成功。configure-pages@v5 と deploy-pages@v4 に Node 20 非推奨の警告が出るが、動作はしている
+- Actions: Pages ワークフロー。run 38550725208（05f8ca8）で初めて deploy まで成功。T-003（f88cd16）は run 38595502374 で成功。configure-pages@v5 と deploy-pages@v4 に Node 20 非推奨の警告が出るが、動作はしている
 - Pages: 公開中。Source は「GitHub Actions」。URL は https://shutsuruwork-afk.github.io/paint-tool/
 - Artifact: https://claude.ai/artifact/Aj3XQxn6Q7EUaiHjYAFbve（インストールページ、非公開）。`docs/index.html` の本文だけの版
 
 ## 完了ログ（新しい順）
+
+### T-006 閉じる（×）を押しても、しばらくは絵を元に戻せるようにする — 2026-10-14
+- 変更: × を押すと絵とツールバーが消え、画面の下に「絵を消して閉じました［元に戻す］」と残り時間のバーが 8 秒出る。その間はボタン・Ctrl/⌘+Z・ブックマークレットで絵も履歴も戻る。8 秒たつと今までどおりすべて解放する。何も描いていなければすぐ閉じる。API に `close()` を足し、`destroy()` はすぐ解放のまま。版を 1.2.0 にした。README とインストールページに書いた。
+- 確認: `npm test` 28 件が通過（2 件追加、1 件を 8 秒後の破棄に変更）。入力欄の判定を外すと、入力欄の Ctrl+Z を横取りしてテストが落ちることを確かめた。お知らせの見た目をスクリーンショットで確かめた。入力のホットパスは変えていないのでベンチは流していない。
+- 残課題: 8 秒が短すぎないか・長すぎないかは使用感待ち。隠す（Esc）の状態が分かりにくい件は T-008 のまま。
 
 ### T-003 絵をページに貼り付け、スクロールしても一緒に動くようにする — 2026-10-14
 - 変更: 確定した絵を、画面固定の main キャンバスから、ページ座標に置いた canvas タイルの「面」へ移した。描いている途中の線は今までどおり画面固定で、確定時に面へ移す。履歴・消しゴム・塗りつぶし・全消去・PNG 保存・コピーを面の座標で動くように書き換えた。確定時のちらつきを受け渡し（2 フレーム後に live を消す）で防ぎ、半透明の線の opacity をツール変更時に先に合わせるようにした。API に `pixels()` を足し、版を 1.1.0 にした。README とインストールページの説明・計測表・できないことを更新し、Artifact も更新した。

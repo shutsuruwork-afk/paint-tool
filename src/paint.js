@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.1.0';
+  const VERSION = '1.2.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -31,6 +31,7 @@
   const PRED_MS = 12;   // 予測 API が無い環境で外挿する時間 (ms)
   const PRED_TTL = 40;  // 入力が途絶えてから予測線を消すまでの時間 (ms)
   const FILL_TOL = 48;  // 塗りつぶしの色許容差 (0-255)
+  const BYE_MS = 8000;  // 閉じる（×）を取り消せる時間 (ms)
 
   const PALETTE = ['#111111', '#ffffff', '#e53935', '#fb8c00', '#fdd835', '#43a047', '#1e88e5', '#8e24aa'];
   const BGS = ['', '#ffffff', '#1d1f23'];
@@ -97,6 +98,12 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 .ci{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;border:0;padding:0}
 .t{position:absolute;left:50%;bottom:28px;transform:translateX(-50%);padding:8px 14px;border-radius:8px;background:#202228;box-shadow:0 4px 16px #0007;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap}
 .t.on{opacity:1}
+.t button{all:unset;display:none;margin:-4px -8px -4px 10px;padding:4px 8px;border-radius:6px;color:#8fb3ff;font-weight:600;cursor:pointer}
+.t button:hover{background:#ffffff1a}.t button:focus-visible{outline:2px solid #3d7cff}
+.t.act{pointer-events:auto}.t.act button{display:inline-block}
+.bye .t::after{content:"";position:absolute;left:10px;right:10px;bottom:3px;height:2px;border-radius:1px;background:#8fb3ff;transform-origin:left;animation:bye ${BYE_MS}ms linear forwards}
+@keyframes bye{to{transform:scaleX(0)}}
+.bye>:not(.t){display:none}
 .hud{position:absolute;left:8px;bottom:8px;padding:6px 8px;border-radius:6px;background:#000c;color:#8f8;font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;white-space:pre;pointer-events:none}
 @media (pointer:coarse){.b{width:38px;height:38px}.c{width:30px}.r{height:38px}.r input{width:84px}}
 `;
@@ -178,6 +185,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const pad = el('div', 'p');
   const bar = el('div', 'bar', { role: 'toolbar', 'aria-label': 'Paint' });
   const toast = el('div', 't', { role: 'status' });
+  const toastM = el('span'), toastB = el('button', '', { type: 'button' });
+  toast.append(toastM, toastB);
   wrap.append(grp, pad, bar, toast);
   shadow.append(wrap);
 
@@ -313,7 +322,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const passB = btn('ページ操作モード (V) — 絵を残したままページを操作', I.pass, togglePass);
   bar.append(bgB, passB, btn('PNG で保存 (Ctrl/⌘+S)', I.save, save));
   if (HAS_CLIP) bar.append(btn('画像をクリップボードにコピー', I.copy, copyImg));
-  bar.append(sep(), btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hide), btn('閉じる（絵は破棄）', I.close, destroy));
+  bar.append(sep(), btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hide), btn('閉じる（8 秒間は元に戻せます）', I.close, close));
 
   // ボタンがフォーカスを奪うと Space/Enter で誤作動するため、クリックでのフォーカス移動を抑止
   bar.addEventListener('pointerdown', e => { if (e.target.closest('.b')) e.preventDefault(); });
@@ -418,13 +427,22 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     }
     pad.style.cursor = cur;
   }
-  let toastT = 0;
-  function say(msg) {
-    toast.textContent = msg;
+  let toastT = 0, toastFn = null;
+  // fn を渡すと、押せるボタン（act）付きで ms だけ出す（閉じるの取り消しに使う）
+  function say(msg, ms = 1800, act, fn) {
+    toastM.textContent = msg;
+    toastB.textContent = act || '';
+    toastFn = fn || null;
+    toast.classList.toggle('act', !!fn);
     toast.classList.add('on');
     clearTimeout(toastT);
-    toastT = setTimeout(() => toast.classList.remove('on'), 1800);
+    toastT = setTimeout(unsay, ms);
   }
+  function unsay() {
+    toast.classList.remove('on', 'act');
+    toastFn = null;
+  }
+  toastB.addEventListener('click', () => { if (toastFn) toastFn(); });
 
   // ---------- キャンバスのサイズ管理 ----------
   // live / pred は画面の大きさ。拡大時だけ作り直す（中身は描いている途中の線だけなので引き継がない）
@@ -1303,6 +1321,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     } catch (_) { }
   }
   function show() {
+    if (byeT) { reopen(); return; }
     if (visible) return;
     visible = true;
     hs.setProperty('display', 'block', 'important');
@@ -1323,10 +1342,46 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (doc.activeElement === host) wrap.blur();
   }
   function toggle() { visible ? hide() : show(); }
+  // 閉じる（×）: 描いた物があれば、BYE_MS の間はお知らせのボタン・Ctrl/⌘+Z・ブックマークレットで取り消せる。
+  // その間は hide と同じく絵も入力のリスナーも外し、お知らせだけを残す（ページの操作を邪魔しない）
+  let byeT = 0;
+  function close() {
+    if (byeT) return;
+    if (!hist.length) { destroy(); return; }
+    hide();
+    wrap.classList.add('bye');
+    hs.setProperty('display', 'block', 'important');
+    topLayer();
+    win.addEventListener('keydown', onByeKey, true);
+    byeT = setTimeout(destroy, BYE_MS);
+    say('絵を消して閉じました', BYE_MS, '元に戻す', reopen);
+  }
+  function endBye() {
+    clearTimeout(byeT);
+    byeT = 0;
+    win.removeEventListener('keydown', onByeKey, true);
+    wrap.classList.remove('bye');
+  }
+  function reopen() {
+    if (!byeT) return;
+    endBye();
+    unsay();
+    show();
+  }
+  function onByeKey(e) {
+    if (e.isComposing || isEditable(e) || !(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
+    if ((e.key || '').toLowerCase() === 'z' || e.code === 'KeyZ') {
+      e.preventDefault();
+      e.stopPropagation();
+      reopen();
+    }
+  }
   function destroy() {
+    if (byeT) endBye();
     hide();
     if (hud) toggleHud();
     clearTimeout(toastT);
+    toastFn = null;
     finishHandoff();
     while (hist.length) free(hist.pop());
     for (const c of [liveC, predC]) c.width = c.height = 0;
@@ -1344,7 +1399,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, history: hist.length, historyPixels: hpix, events: nEv, points: nPts,
     desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, nativePrediction: nativePred, inkTrail: !!inkP,
   });
-  win[NS] = { version: VERSION, toggle, show, hide, destroy, undo, redo, clear: clearAll, tool: setTool, color: setColor, stats, pixels };
+  win[NS] = { version: VERSION, toggle, show, hide, close, destroy, undo, redo, clear: clearAll, tool: setTool, color: setColor, stats, pixels };
   setColor(color);
   syncTool(false);
   syncHist();

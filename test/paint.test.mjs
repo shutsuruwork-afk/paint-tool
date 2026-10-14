@@ -30,7 +30,7 @@ const setSlider = (page, idx, v) => shadowEval(page, (root, [i, v]) => {
   r.dispatchEvent(new Event('input'));
 }, [idx, v]);
 
-test('javascript: URL で起動し、再実行で非表示/再表示、閉じるで完全に破棄される', async () => {
+test('javascript: URL で起動し、再実行で非表示/再表示、閉じると 8 秒後に完全に破棄される', async () => {
   const { page, errors } = await fresh();
   const st = () => page.evaluate(() => {
     const h = document.querySelector('paint-bookmarklet');
@@ -45,8 +45,88 @@ test('javascript: URL で起動し、再実行で非表示/再表示、閉じる
   // 非表示→再表示でも絵は残る
   assert.ok((await alphaStats(page, 100, 290, 300, 20)).max > 200);
   await click(page, '[title^="閉じる"]');
+  // 描いた物があるので、しばらくは取り消せる状態で残る
+  assert.equal(await page.evaluate(() => !!window.__paintBookmarklet), true);
+  await page.waitForFunction(() => !window.__paintBookmarklet, null, { timeout: 12000 });
   assert.equal(await st(), 'removed');
-  assert.equal(await page.evaluate(() => window.__paintBookmarklet), undefined);
+  assert.equal(await page.evaluate(() => !!document.querySelector('paint-bookmarklet-surface')), false);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('× で閉じても、元に戻す・Ctrl+Z・ブックマークレットで絵も履歴も戻る。戻すまではページを操作できる', async () => {
+  const { page, errors } = await fresh();
+  await drag(page, [[100, 300], [400, 300]]);
+  await drag(page, [[100, 400], [400, 400]]);
+  const s = await checksum(page);
+  await page.evaluate(() => { window.__clicks = 0; document.addEventListener('click', () => window.__clicks++); });
+  const state = () => page.evaluate(() => {
+    const sf = document.querySelector('paint-bookmarklet-surface');
+    const r = document.querySelector('paint-bookmarklet').shadowRoot, t = r.querySelector('.t');
+    return {
+      surf: getComputedStyle(sf).display,
+      bar: getComputedStyle(r.querySelector('.bar')).display,
+      toast: t.classList.contains('on') && t.classList.contains('act') ? t.textContent : '',
+      cover: document.elementFromPoint(900, 200).nodeName === 'PAINT-BOOKMARKLET',
+    };
+  });
+  const closed = { surf: 'none', bar: 'none', toast: '絵を消して閉じました元に戻す', cover: false };
+  const open = { surf: 'block', bar: 'flex', toast: '', cover: true };
+  assert.deepEqual(await state(), open);
+
+  // 1) お知らせのボタンで戻す。戻すまではページのクリックが届く
+  await click(page, '[title^="閉じる"]');
+  assert.deepEqual(await state(), closed);
+  await page.mouse.click(900, 200);
+  assert.equal(await page.evaluate(() => window.__clicks), 1);
+  const b = await shadowEval(page, root => {
+    const r = root.querySelector('.t button').getBoundingClientRect();
+    return [r.x + r.width / 2, r.y + r.height / 2];
+  });
+  await page.mouse.click(b[0], b[1]);
+  assert.deepEqual(await state(), open);
+  assert.equal(await checksum(page), s);
+  // 履歴も残っている
+  await page.keyboard.press('Control+z');
+  assert.notEqual(await checksum(page), s);
+  await page.keyboard.press('Control+Shift+z');
+  assert.equal(await checksum(page), s);
+
+  // 2) Ctrl+Z で戻す（1 回だけ戻り、絵の undo までは進まない）
+  await click(page, '[title^="閉じる"]');
+  assert.deepEqual(await state(), closed);
+  await page.keyboard.press('Control+z');
+  assert.deepEqual(await state(), open);
+  assert.equal(await checksum(page), s);
+
+  // 3) ページの入力欄での Ctrl+Z は横取りしない。ブックマークレットを押すと戻る
+  await click(page, '[title^="閉じる"]');
+  await page.click('#inp');
+  await page.keyboard.type('ab');
+  await page.keyboard.press('Control+z');
+  assert.deepEqual(await state(), closed);
+  await runBookmarklet(page);
+  assert.deepEqual(await state(), open);
+  assert.equal(await checksum(page), s);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('何も描いていなければ × ですぐに閉じる。API の destroy は描いた後でもすぐに破棄する', async () => {
+  const { page, errors } = await fresh();
+  const gone = () => page.evaluate(() =>
+    !window.__paintBookmarklet && !document.querySelector('paint-bookmarklet') && !document.querySelector('paint-bookmarklet-surface'));
+  await click(page, '[title^="閉じる"]');
+  assert.equal(await gone(), true);
+  await runBookmarklet(page);
+  await drag(page, [[100, 300], [400, 300]]);
+  await page.evaluate(() => window.__paintBookmarklet.destroy());
+  assert.equal(await gone(), true);
+  // 取り消し待ちの間に destroy しても、あとでタイマーが動いてエラーにならない
+  await runBookmarklet(page);
+  await drag(page, [[100, 300], [400, 300]]);
+  await page.evaluate(() => { const a = window.__paintBookmarklet; a.close(); a.destroy(); });
+  assert.equal(await gone(), true);
   assert.deepEqual(errors, []);
   await page.close();
 });

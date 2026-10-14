@@ -224,6 +224,85 @@ test('その他のパネルに全消去・背景・保存が名前付きで並�
   await page.close();
 });
 
+const textBox = page => shadowEval(page, root => {
+  const t = root.querySelector('.tx');
+  return t ? { value: t.value, focused: root.activeElement === t, color: t.style.getPropertyValue('--c') } : null;
+});
+const hist = page => page.evaluate(() => window.__paintBookmarklet.stats().history);
+// 範囲の中でいちばん濃い画素の RGBA
+const inkAt = async (page, x, y, w, h) => {
+  const d = await readMain(page, x, y, w, h);
+  let best = 0;
+  for (let i = 3; i < d.length; i += 4) if (d[i] > d[best + 3]) best = i - 3;
+  return d.slice(best, best + 4);
+};
+
+test('文字ツール: クリックした所に入力欄が出て日本語も打てる。入力中はショートカットもページへのキーも止まる', async () => {
+  const { page, errors } = await fresh();
+  await page.evaluate(() => {
+    window.__keys = 0;
+    for (const t of ['keydown', 'keyup', 'input', 'beforeinput', 'focusin']) document.addEventListener(t, () => window.__keys++);
+  });
+  await page.keyboard.press('t');
+  assert.match(await toolOn(page), /^文字/);
+  await page.evaluate(() => { window.__keys = 0; }); // ショートカットの keyup はページに届く（keydown は止めている）
+  await page.mouse.click(200, 450);
+  assert.deepEqual(await textBox(page), { value: '', focused: true, color: '#e53935' });
+  // ツールのショートカットの文字（p / e / l）を打っても、ツールは変わらない
+  await page.keyboard.type('pele');
+  await page.keyboard.press('Enter');
+  await page.keyboard.insertText('日本語');
+  assert.equal((await textBox(page)).value, 'pele\n日本語');
+  assert.match(await toolOn(page), /^文字/);
+  assert.equal(await page.evaluate(() => window.__keys), 0);
+  // 外をクリックすると確定する（そのクリックでは新しい入力欄を出さない）
+  await page.mouse.click(700, 600);
+  assert.equal(await textBox(page), null);
+  assert.equal(await hist(page), 1);
+  const ink = await inkAt(page, 190, 430, 200, 70);
+  assert.ok(ink[3] === 255 && ink[0] > 200 && ink[1] < 90, `ink ${ink}`);
+  assert.ok((await alphaStats(page, 190, 430, 200, 70)).count > 200);
+  await page.keyboard.press('Control+z');
+  assert.equal((await alphaStats(page, 0, 0, 1000, 700)).count, 0);
+  await page.keyboard.press('Control+Shift+z');
+  assert.ok((await alphaStats(page, 190, 430, 200, 70)).count > 200);
+  // 何も打たずに外を押すと、何も残らない
+  await page.mouse.click(500, 560);
+  assert.ok(await textBox(page));
+  await page.mouse.click(500, 640);
+  assert.equal(await textBox(page), null);
+  assert.equal(await hist(page), 1);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('文字は Esc・ツールの切り替えでも確定し、入力中に変えた色で描かれる。スクロールにも付いていく', async () => {
+  const { page } = await fresh('/long');
+  await scrollTo(page, 400);
+  await page.keyboard.press('t');
+  await page.mouse.click(150, 500); // 文書の y = 900
+  await page.keyboard.type('Hi');
+  // 入力中に色を変えると、入力欄にすぐ反映される（フォーカスは入力欄に残る）
+  await mouseClick(page, '[aria-label^="色・"]');
+  await mouseClick(page, '.pn.on [aria-label="色 7"]');
+  assert.deepEqual(await textBox(page), { value: 'Hi', focused: true, color: '#1e88e5' });
+  await page.keyboard.press('Escape');
+  assert.equal(await textBox(page), null);
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('paint-bookmarklet')).display), 'block');
+  assert.deepEqual((await inkAt(page, 140, 480, 60, 40)).slice(0, 3), [0x1e, 0x88, 0xe5]);
+  await scrollTo(page, 300);
+  assert.ok((await alphaStats(page, 140, 580, 60, 40)).count > 50);
+  assert.equal((await alphaStats(page, 140, 480, 60, 40)).count, 0);
+  // ツールの切り替えで確定
+  await page.mouse.click(500, 200);
+  await page.keyboard.type('Yo');
+  await click(page, '[aria-label^="ペン"]');
+  assert.equal(await textBox(page), null);
+  assert.equal(await hist(page), 2);
+  assert.ok((await alphaStats(page, 490, 180, 60, 40)).count > 50);
+  await page.close();
+});
+
 test('速いマウス移動でも線が途切れない（全中間点を取りこぼさない）', async () => {
   const { page } = await fresh();
   const pts = [];

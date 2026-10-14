@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.3.0';
+  const VERSION = '1.4.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -47,8 +47,12 @@
     rect: { size: 4, alpha: 1 },
     ellipse: { size: 4, alpha: 1 },
     fill: { size: 0, alpha: 1 },
+    text: { size: 24, alpha: 1 },
   };
-  const KEYMAP = { p: 'pen', h: 'marker', e: 'eraser', l: 'line', a: 'arrow', r: 'rect', o: 'ellipse', f: 'fill' };
+  const KEYMAP = { p: 'pen', h: 'marker', e: 'eraser', l: 'line', a: 'arrow', r: 'rect', o: 'ellipse', f: 'fill', t: 'text' };
+  // 文字の書体。入力欄（CSS）と確定時の fillText で同じものを使う
+  const FONT = 'system-ui,-apple-system,"Segoe UI","Hiragino Sans","Yu Gothic UI",sans-serif';
+  const LH = 1.25; // 文字の行の高さ（文字の大きさに対する比）
 
   const I = {
     grip: 'M9 6v.01M9 12v.01M9 18v.01M15 6v.01M15 12v.01M15 18v.01',
@@ -60,6 +64,7 @@
     rect: 'M4 6h16v12H4z',
     ellipse: 'M3 12a9 6.5 0 1 0 18 0a9 6.5 0 1 0-18 0',
     fill: 'M5 12l7-7 7 7-7 7zM5 12h14M21 18.5a1.5 1.5 0 0 1-3 0c0-1.2 1.5-3 1.5-3s1.5 1.8 1.5 3z',
+    text: 'M5 7V5h14v2M12 5v14M9 19h6',
     drop: 'M13 6l5 5M15.5 3.5a2.1 2.1 0 0 1 3 0l2 2a2.1 2.1 0 0 1 0 3L18 11M15 8l-9 9v3h3l9-9',
     undo: 'M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3',
     redo: 'M15 14l5-5-5-5M20 9H9a5 5 0 0 0 0 10h3',
@@ -116,6 +121,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 .bye .t::after{content:"";position:absolute;left:10px;right:10px;bottom:3px;height:2px;border-radius:1px;background:#8fb3ff;transform-origin:left;animation:bye ${BYE_MS}ms linear forwards}
 @keyframes bye{to{transform:scaleX(0)}}
 .bye>:not(.t){display:none}
+.tx{all:unset;position:absolute;box-sizing:content-box;white-space:pre;overflow:hidden;resize:none;pointer-events:auto;cursor:text;color:var(--c);opacity:var(--a);caret-color:var(--c);font:600 var(--fs)/${LH} ${FONT};outline:1px dashed #3d7cffb0;outline-offset:5px;-webkit-user-select:text;user-select:text}
 .hud{position:absolute;left:8px;bottom:8px;padding:6px 8px;border-radius:6px;background:#000c;color:#8f8;font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;white-space:pre;pointer-events:none}
 @media (pointer:coarse){.b{width:38px;height:38px}.c{width:30px}.r{height:38px}}
 `;
@@ -287,6 +293,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     rect: '四角形 (R) — Shift で正方形 / Alt で中心から',
     ellipse: '楕円 (O) — Shift で正円 / Alt で中心から',
     fill: '塗りつぶし (F)',
+    text: '文字 (T) — クリックした所に入力。外を押すか Esc で確定',
   };
   const SHAPES = ['line', 'arrow', 'rect', 'ellipse'];
   const pnl = () => el('div', 'pn');
@@ -302,7 +309,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }, 'dd');
   const shapeD = shapeB.querySelector('path');
   shapeP.append(row(...SHAPES.map(t => toolBtns[t] = btn(TITLES[t], I[t], () => { setTool(t); closePanel(); }))));
-  bar.append(shapeB, toolBtns.fill = btn(TITLES.fill, I.fill, () => setTool('fill')), sep());
+  bar.append(shapeB, toolBtns.text = btn(TITLES.text, I.text, () => setTool('text')),
+    toolBtns.fill = btn(TITLES.fill, I.fill, () => setTool('fill')), sep());
 
   // 色と太さ: 今の色・太さ・濃さを点で見せる。パネルにパレット・カスタム色・スポイト・太さ・濃さ
   const styleP = pnl();
@@ -428,6 +436,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 
   // ---------- UI 同期（ホットパス外でのみ呼ぶ） ----------
   function setTool(t) {
+    if (t !== 'text') commitText();
     tool = t;
     syncTool(false);
   }
@@ -450,6 +459,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     alphaO.value = tool === 'eraser' ? '—' : round(c.alpha * 100) + '%';
     sizeW.classList.toggle('dis', tool === 'fill');
     alphaW.classList.toggle('dis', tool === 'eraser');
+    sizeW.firstChild.textContent = tool === 'text' ? '大きさ' : '太さ';
+    if (ta) styleTa();
     syncDot();
     updateCursor();
     liveAlpha();
@@ -479,6 +490,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     swBtns.forEach((b, i) => { const on = PALETTE[i] === color; b.classList.toggle('on', on); hit = hit || on; });
     customB.classList.toggle('on', !hit);
     customB.style.setProperty('--c', color);
+    if (ta) styleTa();
     syncDot();
   }
   function syncHist() {
@@ -500,6 +512,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   function togglePass() {
     if (act !== -1) endStroke();
+    commitText();
     pass = !pass;
     wrap.classList.toggle('pass', pass);
     passB.classList.toggle('on', pass);
@@ -507,7 +520,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   // カーソル画像は OS/コンポジタが描くので遅延ゼロ（DOM で追従させるとフレーム遅れが出る）
   function updateCursor() {
-    let cur = 'crosshair';
+    let cur = tool === 'text' ? 'text' : 'crosshair';
     if (tool === 'pen' || tool === 'marker' || tool === 'eraser') {
       const d = max(6, round(CFG[tool].size)), s = d + 4, m = s / 2, r = d / 2;
       if (s <= 128) {
@@ -643,12 +656,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     h.c = cur;
   }
   function undo() {
+    commitText();
     if (act !== -1 || !hpos) return;
     finishHandoff();
     swap(hist[--hpos]);
     syncHist();
   }
   function redo() {
+    commitText();
     if (act !== -1 || hpos >= hist.length) return;
     finishHandoff();
     swap(hist[hpos++]);
@@ -657,6 +672,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 全消去はページ全体（見えていない所も含む）。元に戻せるように、全タイルをアトラスに退避してから消す
   function clearAll() {
     if (act !== -1) return;
+    commitText();
     finishHandoff();
     const R = [];
     for (const k of dtiles.keys()) R.push((k % 65536) * DT, ((k / 65536) | 0) * DT, DT, DT, 0, 0);
@@ -712,6 +728,11 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const erase = b === 2 || b === 5 || (e.buttons & 32) !== 0;
     if (b !== 0 && !erase) return;
     e.preventDefault();
+    // 入力中の文字があれば確定する。文字ツールのままなら、このクリックは確定だけ（新しい入力欄は出さない）
+    if (ta) {
+      commitText();
+      if (!erase && tool === 'text') { wrap.focus({ preventScroll: true }); return; }
+    }
     if (doc.activeElement !== host) wrap.focus({ preventScroll: true });
     if ((win.devicePixelRatio || 1) !== dpr) fit();
     finishHandoff();
@@ -719,6 +740,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const t = erase ? 'eraser' : tool;
     const x = e.clientX * dpr, y = e.clientY * dpr;
     if (t === 'fill') { floodFill(x, y); return; }
+    if (t === 'text') { textAt(e.clientX, e.clientY); return; }
 
     act = e.pointerId; aType = type; sTool = t;
     const c = CFG[t];
@@ -1270,6 +1292,88 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     lastFillMs = now() - t0;
   }
 
+  // ---------- 文字（入力中は本物の textarea を重ねるので IME がそのまま使える。確定したら面に描き込む） ----------
+  let ta = null, taX = 0, taCY = 0, mctx = null;
+  // 入力欄のキーや文字はページへ渡さない（ページのショートカットやフォーカス管理が反応しないように）
+  const TA_STOP = ['keydown', 'keyup', 'keypress', 'beforeinput', 'input', 'compositionstart', 'compositionupdate',
+    'compositionend', 'paste', 'copy', 'cut', 'focusin', 'focusout'];
+  function textAt(cx, cy) {
+    ta = el('textarea', 'tx', { spellcheck: 'false', wrap: 'off', rows: '1', 'aria-label': '文字' });
+    taX = cx; taCY = cy; // クリックした点が 1 行目の高さの中央になるように置く
+    for (const t of TA_STOP) ta.addEventListener(t, stop);
+    ta.addEventListener('input', fitTa);
+    ta.addEventListener('keydown', e => {
+      if (e.isComposing || e.keyCode === 229) return;
+      if (e.key === 'Escape' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
+        e.preventDefault();
+        commitText();
+        wrap.focus({ preventScroll: true });
+      }
+    });
+    wrap.append(ta);
+    styleTa();
+    ta.focus({ preventScroll: true });
+  }
+  function styleTa() {
+    const c = CFG.text, s = ta.style;
+    s.setProperty('--c', color);
+    s.setProperty('--a', c.alpha);
+    s.setProperty('--fs', c.size + 'px');
+    s.left = taX + 'px';
+    s.top = taCY - c.size * LH / 2 + 'px';
+    fitTa();
+  }
+  // 中身に合わせて入力欄を広げる（折り返さない。改行でだけ行が増える）
+  function fitTa() {
+    const s = ta.style;
+    s.width = s.height = '0';
+    s.width = ta.scrollWidth + 2 + 'px';
+    s.height = ta.scrollHeight + 'px';
+  }
+  // 入力欄と同じ位置・書体・色・濃さで、外接矩形の範囲のタイルへ直接描く（live を通さないので二重に見えない）
+  function commitText() {
+    if (!ta) return;
+    const e = ta, v = e.value.replace(/\s+$/, '');
+    ta = null;
+    e.remove();
+    if (!v || act !== -1) return;
+    finishHandoff();
+    mapNow();
+    sizeSurface();
+    const c = CFG.text, fs = c.size * dpr, lh = fs * LH, lines = v.split('\n'), f = `600 ${fs}px ${FONT}`;
+    if (!mctx) mctx = newCanvas(1, 1).getContext('2d');
+    mctx.font = f;
+    let w = 0;
+    for (const l of lines) w = max(w, mctx.measureText(l).width);
+    // CSS は行の高さの中で文字（ascent + descent）を上下中央に置く。同じ基線を求める（CSS px で整数に丸めて計算）
+    mctx.font = `600 ${c.size}px ${FONT}`; // レイアウトは CSS px の書体の寸法で決まる
+    const m = mctx.measureText('Hg');
+    const A = round(m.fontBoundingBoxAscent || c.size * 0.8), D = round(m.fontBoundingBoxDescent || c.size * 0.2);
+    const tc = taCY - c.size * LH / 2, x = taX * dpr, top = tc * dpr;
+    const base = (tc + floor((c.size * LH - A - D) / 2) + A) * dpr;
+    const p = fs * 0.25 + 2;
+    const X0 = max(0, floor((x - p) * sk + sox)), Y0 = max(0, floor((top - p) * sk + soy));
+    const X1 = ceil((x + w + p) * sk + sox), Y1 = ceil((top + lines.length * lh + p) * sk + soy);
+    if (X1 <= X0 || Y1 <= Y0) return;
+    const R = rect1(X0, Y0, X1 - X0, Y1 - Y0);
+    const atlas = gather(R, pack(R));
+    forTiles(X0, Y0, X1 - X0, Y1 - Y0, true, (t, ox, oy, ix, iy, iw, ih) => {
+      const g = t.x;
+      g.save();
+      g.beginPath();
+      g.rect(ix - ox, iy - oy, iw, ih);
+      g.clip();
+      g.setTransform(sk, 0, 0, sk, sox - ox, soy - oy);
+      g.globalAlpha = c.alpha;
+      g.fillStyle = color;
+      g.font = f;
+      g.textBaseline = 'alphabetic';
+      for (let i = 0; i < lines.length; i++) g.fillText(lines[i], x, base + i * lh);
+      g.restore();
+    });
+    push(R, atlas);
+  }
+
   // ---------- 書き出し ----------
   // 面のうち、画面の (x, y, w, h)（CSS px）に見えている範囲を 1 枚のキャンバスに写す
   function capture(x, y, w, h, opts) {
@@ -1281,6 +1385,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     return [c, cx];
   }
   function exportBlob() {
+    commitText();
     const [c, x] = capture(0, 0, wrap.clientWidth, wrap.clientHeight);
     if (bg) {
       x.globalCompositeOperation = 'destination-over';
@@ -1423,6 +1528,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function hide() {
     if (!visible) return;
     if (act !== -1) endStroke();
+    commitText();
     closePanel();
     visible = false;
     listen(false);

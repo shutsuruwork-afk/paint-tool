@@ -208,7 +208,7 @@ tbody th { font-weight: 700; min-width: 8em; }
 
 <main class="page">
   <header>
-    <p class="eyebrow">Bookmarklet · v1.3.0 · %%SIZE%%（gzip %%GZIP%%）</p>
+    <p class="eyebrow">Bookmarklet · v1.4.0 · %%SIZE%%（gzip %%GZIP%%）</p>
     <h1>ペイント<br>ブックマークレット</h1>
     <p class="lead">開いているページの上に、<span class="mark">そのまま描ける<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d="M18 40C8 22 52 6 108 7s92 13 84 30-62 20-112 17S4 38 30 16" vector-effect="non-scaling-stroke"/></svg></span>ペイントツールです。ブックマークを押すだけで起動し、拡張機能もアカウントも要りません。入力から線が画面に出るまでの遅延を減らす仕組みを、ブラウザが対応している限りすべて使います。</p>
     <div class="actions">
@@ -280,6 +280,7 @@ tbody th { font-weight: 700; min-width: 8em; }
       <li><span class="k"><kbd>A</kbd></span>矢印</li>
       <li><span class="k"><kbd>R</kbd></span>四角形</li>
       <li><span class="k"><kbd>O</kbd></span>楕円</li>
+      <li><span class="k"><kbd>T</kbd></span>文字（日本語入力対応）</li>
       <li><span class="k"><kbd>F</kbd></span>塗りつぶし</li>
       <li><span class="k"><kbd>I</kbd></span>スポイト</li>
       <li><span class="k"><kbd>1</kbd>〜<kbd>8</kbd></span>色を選ぶ</li>
@@ -320,6 +321,7 @@ tbody th { font-weight: 700; min-width: 8em; }
       <li>消しゴムは、削る直前のタイルだけを退避します。消し始めに画面全体をコピーする待ち時間がありません。</li>
       <li>キャンバスの確保や合成処理の初回コストは、起動直後のまだ描いていない時間に済ませます。</li>
       <li>塗りつぶしは描いた範囲と画面が重なる部分だけを読み戻し、塗る範囲を矩形パスにまとめて GPU に 1 回で塗らせます。</li>
+      <li>文字は入力中だけ本物の入力欄を重ねるので、日本語の変換がそのまま使えます。確定すると、入力欄と同じ位置に絵として描き込みます。</li>
       <li>筆の大きさを示すカーソルは CSS カーソル画像なので、OS が遅れなく描きます。</li>
       <li>UI は Shadow DOM と CSSOM だけで組むので、ページの CSS、CSP の style-src、Trusted Types の影響を受けません。</li>
     </ul>

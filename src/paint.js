@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.6.0';
+  const VERSION = '1.6.1';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -448,6 +448,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function setTool(t) {
     if (t !== 'text') commitText();
     if (t !== 'select') dropSel();
+    if (pass) togglePass(); // ツールを選んだら描くつもりなので、ページ操作モードは解除する
     tool = t;
     syncTool(false);
   }

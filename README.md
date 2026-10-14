@@ -37,7 +37,7 @@
 | `Ctrl`+`Z` / `Ctrl`+`Shift`+`Z`・`Ctrl`+`Y` | 元に戻す / やり直す（Mac は `⌘` も可） |
 | `Delete` | 全消去（元に戻せます） |
 | `B` | 背景を透明・白・黒に切り替え |
-| `V` | ページ操作モード（絵を残したままページをクリック・入力できる） |
+| `V` | ページ操作モード（絵を残したままページをクリック・入力できる。ツールを選ぶと描画に戻る） |
 | `Ctrl`+`S` | PNG で保存 |
 | `D` | 計測表示（入力レート、1 件の処理時間、入力→描画の遅れ、使われている機能） |
 | `Esc` | 隠す（ブックマークレットをもう一度押すと再表示） |
@@ -147,7 +147,7 @@
 ```sh
 npm install
 npm run build   # src/paint.js → dist/paint.min.js, dist/bookmarklet.txt, docs/index.html
-npm test        # Playwright（Chromium）で 38 項目の動作テスト
+npm test        # Playwright（Chromium）で 39 項目の動作テスト
 npm run bench   # 性能計測
 ```
 

@@ -541,6 +541,23 @@ test('文字の物: 消しゴムでなぞると消え（なぞっている間は
   await page.close();
 });
 
+test('ページ操作モードでツールを選ぶ（ボタンでもキーでも）と、描画モードに戻ってすぐ描ける', async () => {
+  const { page } = await fresh();
+  const passOn = () => shadowEval(page, root => root.querySelector('.w').classList.contains('pass'));
+  await page.keyboard.press('v');
+  assert.equal(await passOn(), true);
+  await mouseClick(page, '.bar [aria-label^="蛍光ペン"]');
+  assert.equal(await passOn(), false);
+  assert.match(await toolOn(page), /^蛍光ペン/);
+  await drag(page, [[100, 400], [400, 400]], 5);
+  assert.ok((await alphaStats(page, 90, 380, 320, 40)).count > 1000);
+  await page.keyboard.press('v');
+  await page.keyboard.press('p');
+  assert.equal(await passOn(), false);
+  assert.match(await toolOn(page), /^ペン/);
+  await page.close();
+});
+
 test('速いマウス移動でも線が途切れない（全中間点を取りこぼさない）', async () => {
   const { page } = await fresh();
   const pts = [];

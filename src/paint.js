@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.6.1';
+  const VERSION = '1.7.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -50,6 +50,12 @@
     text: { size: 24, alpha: 1 },
     select: { size: 0, alpha: 1 },
   };
+  // インストールページで選んだ既定。ブックマークレットを作るときに、下の文字列を JSON の文字列に置き換える
+  let DEF = null;
+  try { DEF = JSON.parse('__PAINT_DEFAULTS__'); } catch (_) { }
+  if (!DEF || typeof DEF !== 'object') DEF = {};
+  // 文字に触れる: ペンなどを選んでいても、文字の上を押すと選んで動かし、もう一度押すと書き直せる
+  const TOUCH = { pen: 1, marker: 1, line: 1, arrow: 1, rect: 1, ellipse: 1, fill: 1 };
   const KEYMAP = { p: 'pen', h: 'marker', e: 'eraser', l: 'line', a: 'arrow', r: 'rect', o: 'ellipse', f: 'fill', t: 'text', s: 'select' };
   // 文字の書体。入力欄（CSS）と確定時の fillText で同じものを使う
   const FONT = 'system-ui,-apple-system,"Segoe UI","Hiragino Sans","Yu Gothic UI",sans-serif';
@@ -218,7 +224,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   shadow.append(wrap);
 
   // ---------- 状態 ----------
-  let tool = 'pen', color = PALETTE[2], bg = 0, pass = false, visible = false;
+  let tool = 'pen', color = PALETTE[2], bg = 0, pass = false, visible = false, touchText = DEF.touchText !== false;
   let dpr = win.devicePixelRatio || 1, W = 0, H = 0, grpA = 1, pendingFit = false, rz = 0;
   // 履歴タイル: ストロークが触れた T×T タイル（面の座標）だけを記録し、確定・undo・消しゴムの退避をその範囲に限定する。
   // 文書は大きいので、印は配列ではなく Set で持つ。番号は 行 × 65536 + 列
@@ -473,7 +479,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     sizeW.classList.toggle('dis', noSize);
     alphaW.classList.toggle('dis', noAlpha);
     sizeW.firstChild.textContent = tool === 'text' ? '大きさ' : '太さ';
-    if (ta) styleTa();
+    // 入力中の文字は、文字ツールの大きさ・濃さのスライダーを動かしたときだけ追従する
+    if (ta && fromSlider && tool === 'text') { taFs = CFG.text.size; taA = CFG.text.alpha; styleTa(); }
     syncDot();
     updateCursor();
     liveAlpha();
@@ -503,7 +510,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     swBtns.forEach((b, i) => { const on = PALETTE[i] === color; b.classList.toggle('on', on); hit = hit || on; });
     customB.classList.toggle('on', !hit);
     customB.style.setProperty('--c', color);
-    if (ta) styleTa();
+    if (ta) { taC = color; styleTa(); }
     syncDot();
   }
   function syncHist() {
@@ -541,7 +548,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         cur = `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${m | 0} ${m | 0},crosshair`;
       }
     }
-    pad.style.cursor = cur;
+    pad.style.cursor = toolCur = hoverCur = cur;
   }
   let toastT = 0, toastFn = null;
   // fn を渡すと、押せるボタン（act）付きで ms だけ出す（閉じるの取り消しに使う）
@@ -749,18 +756,21 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (b !== 0 && !erase) return;
     e.preventDefault();
     // 入力中の文字があれば確定する。文字ツールのままなら、このクリックは確定だけ（新しい入力欄は出さない）
+    // 入力中の文字があれば確定する。このクリックは確定だけ（新しい入力欄も線も出さない）
     if (ta) {
       commitText();
-      if (!erase && tool === 'text') { wrap.focus({ preventScroll: true }); return; }
+      wrap.focus({ preventScroll: true });
+      return;
     }
     if (doc.activeElement !== host) wrap.focus({ preventScroll: true });
     if ((win.devicePixelRatio || 1) !== dpr) fit();
     finishHandoff();
     mapNow();
     const t = erase ? 'eraser' : tool;
-    if (t !== 'select') dropSel();
-    const x = e.clientX * dpr, y = e.clientY * dpr;
-    if (t === 'select') { selDown(e, x * sk + sox, y * sk + soy); return; }
+    const x = e.clientX * dpr, y = e.clientY * dpr, X = x * sk + sox, Y = y * sk + soy;
+    // 文字に触れる: 選んでいる物か文字の上を押したら、どの道具でも選択ツールと同じに扱う
+    if (t === 'select' || (touchText && TOUCH[t] && ((sel && selHit(X, Y) !== -2) || textHit(X, Y)))) { selDown(e, X, Y); return; }
+    dropSel();
     if (t === 'fill') { floodFill(x, y); return; }
     if (t === 'text') {
       const o = textHit(x * sk + sox, y * sk + soy);
@@ -816,7 +826,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function onMove(e) {
     if (e.pointerId !== act) {
       if (e.pointerType === 'pen') lastPen = e.timeStamp; // ホバー中のペンもパームリジェクションに使う
-      if (sel && act === -1) selHover(e);
+      if (act === -1 && (sel || (tlist.length && (tool === 'select' || (touchText && TOUCH[tool]))))) selHover(e);
       return;
     }
     const t0 = hud ? now() : 0;
@@ -1350,7 +1360,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     h.style.top = HND[i + 1] * 100 + '%';
     selB.append(h);
   }
-  let sel = false, selHint = false, sDrag = 0, sH = 0, hoverCur = '';
+  let sel = false, selHint = false, sDrag = 0, sH = 0, sWas = false, hoverCur = '', toolCur = '';
   let selX = 0, selY = 0, selW = 0, selH = 0;     // 今の枠（S、小数のまま持つ）
   let srcX = 0, srcY = 0, srcW = 0, srcH = 0;     // 浮かせた元の範囲（S、整数）
   let dragX = 0, dragY = 0, begX = 0, begY = 0, begW = 0, begH = 0; // ドラッグ開始時のポインタと枠
@@ -1445,7 +1455,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (!sel) return;
     sel = false;
     selEl.remove();
-    hoverCur = '';
     updateCursor();
     const sx = selW / bW0, sy = selH / bH0, k = sqrt(sx * sy);
     const dx = round(selX + (srcX - bX0) * sx), dy = round(selY + (srcY - bY0) * sy);
@@ -1509,13 +1518,15 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     }
     return X >= fx && X <= fx + fw && Y >= fy && Y <= fy + fh ? -1 : -2;
   }
+  // ポインタの下が枠のつまみ・枠の中・文字なら、それに合ったカーソルにする（それ以外は道具のカーソル）
   function selHover(e) {
-    const k = selHit(e.clientX * sdpr + sox, e.clientY * sdpr + soy);
-    const c = k >= 0 ? HCUR[k] : k === -1 ? 'move' : 'default';
+    const X = e.clientX * sdpr + sox, Y = e.clientY * sdpr + soy, k = sel ? selHit(X, Y) : -2;
+    const c = k >= 0 ? HCUR[k] : k === -1 || textHit(X, Y) ? 'move' : toolCur;
     if (c !== hoverCur) { hoverCur = c; pad.style.cursor = c; }
   }
   function selDown(e, X, Y) {
     let hit = sel ? selHit(X, Y) : -2;
+    sWas = hit !== -2;
     if (hit === -2) {
       dropSel();
       // 文字の物は押したらそのまま選び、同じドラッグで動かせる
@@ -1568,6 +1579,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         const x = floor(selX), y = floor(selY);
         liftSel(x, y, ceil(selX + selW) - x, ceil(selY + selH) - y, true);
       } else pickSel(dragX, dragY);
+    } else if (sDrag === 2 && sWas && !srcW && selT.length === 1 && selX === begX && selY === begY) {
+      // 選んでいる文字をもう一度押して、動かさずに離した: 書き直す（ダブルクリックもこれになる）
+      const o = selT[0][0];
+      sDrag = 0;
+      dropSel();
+      editText(o);
+      return;
     }
     sDrag = 0;
   }
@@ -1607,6 +1625,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 確定した文字は「物」として面の中の要素（.to）に置く。あとから選んで動かす・拡大縮小・書き直しができ、拡大してもぼやけない。
   // 物の状態は [文字, x, y, 大きさ, 色, 濃さ]（x, y は行の箱の左上、大きさは文字の高さ。どれも S の px で、CSS px の整数に丸める）
   let ta = null, taX = 0, taCY = 0, taObj = null, mctx = null;
+  let taFs = 24, taC = '', taA = 1; // 入力欄の書式（大きさは CSS px）。新しい文字は今の設定、書き直しはその物の書式
   const tlist = []; // 面に置いている文字の物（重なり順。後ろほど手前）
   let tHit = 0, tShown = 0; // 消しゴムが触れた文字の数と、薄く表示した数
   // 入力欄のキーや文字はページへ渡さない（ページのショートカットやフォーカス管理が反応しないように）
@@ -1708,6 +1727,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
 
   function textAt(cx, cy, value) {
+    if (!value) { taFs = CFG.text.size; taC = color; taA = CFG.text.alpha; }
     ta = el('textarea', 'tx', { spellcheck: 'false', wrap: 'off', rows: '1', 'aria-label': '文字' });
     taX = cx; taCY = cy; // クリックした点が 1 行目の高さの中央になるように置く
     for (const t of TA_STOP) ta.addEventListener(t, stop);
@@ -1726,26 +1746,22 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     ta.focus({ preventScroll: true });
     if (value) ta.setSelectionRange(value.length, value.length);
   }
-  // 確定した文字を書き直す: 物の書式を今の書式として拾い、同じ位置に入力欄を出す（物はその間だけ隠す）
+  // 確定した文字を書き直す: その物の書式のまま同じ位置に入力欄を出す（物はその間だけ隠す）。道具と今の色は変えない
   function editText(o) {
     settle();
-    if (tool !== 'text') setTool('text');
-    CFG.text.size = o.fs / sdpr;
-    CFG.text.alpha = o.a;
-    setColor(o.c);
-    syncTool(false);
     mapNow();
     taObj = o;
     o.el.classList.add('ed');
-    textAt((o.x - sox) / sdpr, (o.y - soy) / sdpr + CFG.text.size * LH / 2, o.s);
+    taFs = o.fs / sdpr; taC = o.c; taA = o.a;
+    textAt((o.x - sox) / sdpr, (o.y - soy) / sdpr + taFs * LH / 2, o.s);
   }
   function styleTa() {
-    const c = CFG.text, s = ta.style;
-    s.setProperty('--c', color);
-    s.setProperty('--a', c.alpha);
-    s.setProperty('--fs', c.size + 'px');
+    const s = ta.style;
+    s.setProperty('--c', taC);
+    s.setProperty('--a', taA);
+    s.setProperty('--fs', taFs + 'px');
     s.left = taX + 'px';
-    s.top = taCY - c.size * LH / 2 + 'px';
+    s.top = taCY - taFs * LH / 2 + 'px';
     fitTa();
   }
   // 中身に合わせて入力欄を広げる（折り返さない。改行でだけ行が増える）
@@ -1764,8 +1780,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (o) o.el.classList.remove('ed');
     mapNow();
     sizeSurface();
-    const c = CFG.text, st = [v, round(taX + sox / sdpr) * sdpr, round(taCY - c.size * LH / 2 + soy / sdpr) * sdpr,
-      max(4, round(c.size)) * sdpr, color, c.alpha];
+    const st = [v, round(taX + sox / sdpr) * sdpr, round(taCY - taFs * LH / 2 + soy / sdpr) * sdpr,
+      max(4, round(taFs)) * sdpr, taC, taA];
     if (o) {
       const prev = tSnap(o);
       if (v && sameSt(prev, st)) return;
@@ -1904,14 +1920,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   pad.addEventListener('pointercancel', onLost);
   pad.addEventListener('lostpointercapture', onLost);
   pad.addEventListener('contextmenu', e => e.preventDefault());
-  // 選択ツールで文字の物をダブルクリックすると書き直す
-  pad.addEventListener('dblclick', e => {
-    if (tool !== 'select' || act !== -1) return;
-    settle();
-    mapNow();
-    const o = textHit(e.clientX * sdpr + sox, e.clientY * sdpr + soy);
-    if (o) editText(o);
-  });
   // ページ側のリスナー（解析スクリプトやドラッグ処理など）に入力を渡さず、メインスレッドの負荷を減らす
   const stop = e => e.stopPropagation();
   for (const t of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'pointerover', 'pointerout',

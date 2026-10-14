@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CODE, startServer, launch, openPage, runBookmarklet, shadowEval, readMain, alphaStats, drag, click, toolOn,
-  screenPixel, scrollTo,
+  screenPixel, scrollTo, withDefaults, runCode,
 } from './helpers.mjs';
 
 let server, browser;
@@ -468,7 +468,9 @@ test('文字の物: 押してそのまま動かせ、角で拡大すると文字
   await page.keyboard.type(' world');
   await page.keyboard.press('Escape');
   assert.deepEqual(await textInfo(page), [{ s: 'Hello world', fs: '48px', ed: false, gone: false }]);
+  assert.match(await toolOn(page), /^選択/, '書き直しても道具は変わらない');
   // 文字ツールで文字を押しても書き直せる。空にして確定すると消える
+  await page.keyboard.press('t');
   await page.mouse.click(t2.x + 10, t2.y + t2.h / 2);
   assert.equal((await textBox(page)).value, 'Hello world');
   await page.keyboard.press('Control+a');
@@ -556,6 +558,61 @@ test('ページ操作モードでツールを選ぶ（ボタンでもキーで�
   assert.equal(await passOn(), false);
   assert.match(await toolOn(page), /^ペン/);
   await page.close();
+});
+
+test('文字に触れる: ペンのまま文字を押して動かし、もう一度押すと書き直し（道具と色はそのまま）。外から描く線は描ける。設定で切れる', async () => {
+  const { page, errors } = await fresh();
+  await page.keyboard.press('t');
+  await page.mouse.click(200, 300);
+  await page.keyboard.type('Memo');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('p');
+  const t0 = await textRect(page);
+  // 文字の上では移動のカーソル、外ではペンのカーソル
+  const cursor = () => shadowEval(page, root => root.querySelector('.p').style.cursor);
+  await page.mouse.move(t0.x + 5, t0.y + t0.h / 2);
+  assert.equal(await cursor(), 'move');
+  await page.mouse.move(600, 600);
+  assert.match(await cursor(), /^url\(/);
+  // ペンのまま、文字を押して引くと動く（線は描かれない）
+  await drag(page, [[t0.x + 5, t0.y + t0.h / 2], [t0.x + 155, t0.y + t0.h / 2 + 50]], 5);
+  const t1 = await textRect(page);
+  assert.ok(near(t1.x, t0.x + 150, 1) && near(t1.y, t0.y + 50, 1), JSON.stringify(t1));
+  assert.match(await toolOn(page), /^ペン/);
+  // 選んでいる文字をもう一度押すと書き直し。道具はペンのまま
+  await page.mouse.click(t1.x + 5, t1.y + t1.h / 2);
+  assert.deepEqual(await textBox(page), { value: 'Memo', focused: true, color: '#e53935' });
+  await page.keyboard.type('!');
+  await page.keyboard.press('Escape');
+  assert.equal((await textInfo(page))[0].s, 'Memo!');
+  assert.match(await toolOn(page), /^ペン/);
+  assert.equal(await hist(page), 3); // 追加・移動・書き直し
+  // 外から描き始めて文字の上を通る線は描ける。色を変えても文字の色は変わらない
+  await page.keyboard.press('7');
+  const t2 = await textRect(page);
+  await drag(page, [[100, 500], [t2.x + 20, t2.y + t2.h / 2], [700, 500]], 8);
+  assert.equal(await hist(page), 4);
+  assert.deepEqual(await textRect(page), t2);
+  assert.equal(await page.evaluate(() => document.querySelector('paint-bookmarklet-surface').shadowRoot.querySelector('.to').style.getPropertyValue('--c')), '#e53935');
+  const ink = await inkAt(page, 100, 490, 30, 20);
+  assert.ok(near(ink[0], 0x1e) && near(ink[1], 0x88) && near(ink[2], 0xe5), `ink ${ink}`);
+  assert.deepEqual(errors, []);
+  await page.close();
+
+  // 設定で切ると、文字の上からでもペンで描ける（文字は動かない）
+  const o2 = await openPage(browser, server.base + '/');
+  await runCode(o2.page, withDefaults(CODE, { touchText: false }));
+  await o2.page.keyboard.press('t');
+  await o2.page.mouse.click(200, 300);
+  await o2.page.keyboard.type('Memo');
+  await o2.page.keyboard.press('Escape');
+  await o2.page.keyboard.press('p');
+  const u0 = await textRect(o2.page);
+  await drag(o2.page, [[u0.x + 5, u0.y + u0.h / 2], [u0.x + 155, u0.y + u0.h / 2 + 50]], 5);
+  assert.deepEqual(await textRect(o2.page), u0);
+  assert.equal(await hist(o2.page), 2);
+  assert.deepEqual(o2.errors, []);
+  await o2.page.close();
 });
 
 test('速いマウス移動でも線が途切れない（全中間点を取りこぼさない）', async () => {

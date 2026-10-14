@@ -48,6 +48,14 @@ export async function runBookmarklet(page) {
   else await page.waitForTimeout(50);
 }
 
+// インストールページと同じように、既定（JSON）を埋め込んだコードを作る
+export const withDefaults = (code, d) => code.replace(/(["'])__PAINT_DEFAULTS__\1/, () => JSON.stringify(JSON.stringify(d)));
+// コードを直接実行して起動する（CSP を通さない。既定を埋め込んだ版を試すとき用）
+export async function runCode(page, code) {
+  await page.evaluate(c => (0, eval)(c), code);
+  await page.waitForFunction(() => !!window.__paintBookmarklet);
+}
+
 export const shadowEval = (page, fn, arg) =>
   page.evaluate(([src, a]) => {
     const root = document.querySelector('paint-bookmarklet').shadowRoot;

@@ -9,8 +9,8 @@
 
 ## 入れ方
 
-1. `docs/index.html` をブラウザで開き、赤い「Paint」ボタンをブックマークバーへドラッグします
-   （GitHub Pages を `docs/` から公開すれば、そのページから入れられます）。
+1. インストールページ **https://shutsuruwork-afk.github.io/paint-tool/** を開き、赤い「Paint」ボタンをブックマークバーへドラッグします。
+   同じページはリポジトリの `docs/index.html` にもあります。
 2. 描きたいページで、追加したブックマークを押します。もう一度押すと、絵を残したまま隠れます。
 
 ドラッグできない環境では、[`dist/bookmarklet.txt`](dist/bookmarklet.txt) の 1 行をそのままブックマークの URL 欄に貼り付けます。
@@ -105,6 +105,8 @@ npm run build   # src/paint.js → dist/paint.min.js, dist/bookmarklet.txt, docs
 npm test        # Playwright（Chromium）で 16 項目の動作テスト
 npm run bench   # 性能計測
 ```
+
+`main` へのプッシュで GitHub Actions（`.github/workflows/pages.yml`）がテストを実行し、通れば `docs/` を GitHub Pages に公開します。プルリクエストではテストだけを実行します。
 
 | パス | 内容 |
 | --- | --- |

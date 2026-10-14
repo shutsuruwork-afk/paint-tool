@@ -24,11 +24,17 @@ const escAttr = s => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/<
 const kb = n => (n / 1024).toFixed(1) + ' KB';
 const gz = gzipSync(code).length;
 const tpl = await readFile('src/install.html', 'utf8');
+// 置き換え後の文字列は必ず関数で渡す。文字列で渡すと、コードの中の "$&" などが置き換えの特殊な記号として解釈される
+// （圧縮で変数名が $ になったときに、ボタンの中身が壊れたことがある）
 const page = tpl
-  .replaceAll('%%BOOKMARKLET_HREF%%', escAttr(bookmarklet))
-  .replaceAll('%%SIZE%%', kb(bookmarklet.length))
-  .replaceAll('%%GZIP%%', kb(gz))
+  .replaceAll('%%BOOKMARKLET_HREF%%', () => escAttr(bookmarklet))
+  .replaceAll('%%SIZE%%', () => kb(bookmarklet.length))
+  .replaceAll('%%GZIP%%', () => kb(gz))
   .replace('%%INLINE_CODE%%', () => code.replace(/<\/(script)/gi, '<\\/$1'));
+// ボタンの href が、そのままブックマークレットになっているかを確かめる
+const unesc = t => t.replace(/&lt;/g, '<').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+const hrefs = [...page.matchAll(/href="(javascript:[^"]*)"/g)].map(m => unesc(m[1]));
+if (!hrefs.length || hrefs.some(h => h !== bookmarklet)) throw new Error('install page bookmarklet href is corrupted');
 // テンプレートは本文のみ（<title> と <style> から始まる）。GitHub Pages 用に文書として包む
 await mkdir('docs', { recursive: true });
 await writeFile('docs/index.html', `<!doctype html>\n<html lang="ja">\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n${page}</html>\n`);

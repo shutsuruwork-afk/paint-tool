@@ -1,7 +1,8 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
-  CODE, startServer, launch, openPage, runBookmarklet, shadowEval, readMain, alphaStats, drag, click, toolOn,
+  CODE, BOOKMARKLET, startServer, launch, openPage, runBookmarklet, shadowEval, readMain, alphaStats, drag, click, toolOn,
   screenPixel, scrollTo, withDefaults, runCode,
 } from './helpers.mjs';
 
@@ -613,6 +614,15 @@ test('文字に触れる: ペンのまま文字を押して動かし、もう一
   assert.equal(await hist(o2.page), 2);
   assert.deepEqual(o2.errors, []);
   await o2.page.close();
+});
+
+test('インストールページの「Paint」ボタンの中身が、そのままのブックマークレットになっている', async () => {
+  const html = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8');
+  const m = html.match(/id="bm" class="bm" href="([^"]*)"/);
+  assert.ok(m);
+  const href = m[1].replace(/&lt;/g, '<').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+  assert.equal(href, BOOKMARKLET);
+  assert.equal(decodeURIComponent(href.slice(11)), CODE.trim());
 });
 
 test('速いマウス移動でも線が途切れない（全中間点を取りこぼさない）', async () => {

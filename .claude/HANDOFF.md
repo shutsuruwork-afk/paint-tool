@@ -4,18 +4,18 @@
 
 ## 現在地
 
-- 最終更新: 2026-10-14、T-022 の完了時
-- ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない。HEAD は T-022 のコミット（`git log --grep T-022`）
-- CI: GitHub Actions「Pages」は main へのプッシュごとに test → deploy。T-019 まではすべて成功（T-019 は run 38608570433）。T-021・T-022 のプッシュの結果は Actions で確かめる
-- 公開: https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）の 2 か所。版は v1.7.0
+- 最終更新: 2026-10-14、T-023 の完了時（T-005 の途中で見つけた不具合の修正）
+- ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない。HEAD は T-023 のコミット（`git log --grep T-023`）
+- CI: GitHub Actions「Pages」は main へのプッシュごとに test → deploy。T-019 まではすべて成功（T-019 は run 38608570433）。T-021・T-022・T-023 のプッシュの結果は Actions で確かめる
+- 公開: https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）の 2 か所。版は v1.7.1
 - 人の操作待ち: なし。R-004 は C に決まった（インストールページの既定＋サイトごとに覚える）。ユーザーのフィードバック（ideas/touch-text.md）で、ペンを選んでいても文字に触れたい（T-022、済み。設定の入り・切りはインストールページから＝T-005）、ツールを選んだらページ操作モードを解除（T-021、済み）が来た
-- 次の一手: T-005（設定を覚える。インストールページの設定に touchText も入れる）→ R-005 のおすすめの順（T-008 → T-007 → T-012 → T-016 → T-011 → T-017）
+- 次の一手: T-005（途中の変更を `git stash` に退避してある。`git stash pop` で戻して続ける）（設定を覚える。インストールページの設定に touchText も入れる）→ R-005 のおすすめの順（T-008 → T-007 → T-012 → T-016 → T-011 → T-017）
 
 ## 始め方
 
 ```sh
 npm install          # terser 5.36.0 と playwright 1.56.1（ブラウザは /opt/pw-browsers にある）
-npm test             # ビルドしてから Playwright のテスト 40 件
+npm test             # ビルドしてから Playwright のテスト 41 件
 npm run bench        # 性能計測（メインスレッドの占有時間）
 ```
 
@@ -32,8 +32,8 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
   - タイル（markBox / markSeg / markCurve / markShape / tileRects / resetTiles）。印は面の座標で Set に付ける
   - お知らせ（`say(msg, ms, act, fn)`。fn を渡すとボタン付き）、塗りつぶし（floodFill）、選択（settle / showSel / liftSel → liftRaster + beginSel / dropSel / paintSel / selHit / selHover / selDown / selMove / scaleSel / selUp / selAbort / pickSel / nudgeSel。浮かせた画素は selC、選んだ文字の物の組は selT、どちらも入れ物 selIn に入れて transform で拡大縮小。枠は selEl と selB）、文字（物: tlist / tNew / tSnap / tApply / swapText / textHit / paintText（書き出し用）/ eraseText・showErased・takeErased（消しゴム）。入力: textAt / editText / styleTa / fitTa / commitText。入力欄は `ta`、書き直し中の物は `taObj`）、書き出し（capture / exportBlob / save / copyImg / pixels）、HUD（D キー）、キーボード（onKey）、表示制御（show / hide / toggle / close → endBye / reopen / onByeKey、destroy）、起動
 - `src/install.html`: インストールページのテンプレート（本文のみ）。`%%BOOKMARKLET_HREF%%` などを build.mjs が置き換える
-- `build.mjs`: terser で圧縮し、`dist/paint.min.js`、`dist/bookmarklet.txt`、`docs/index.html` を作る
-- `test/paint.test.mjs`（テスト 40 件）、`test/helpers.mjs`（既定を埋め込んだコードを作る `withDefaults` と直接起動する `runCode`、サーバー〈`/long` は縦 3000px、`/offset` は html に余白〉・起動・画素の読み取り `readMain` / `screenPixel`・`scrollTo`）、`test/bench.mjs`
+- `build.mjs`: terser で圧縮し、`dist/paint.min.js`、`dist/bookmarklet.txt`、`docs/index.html` を作る。インストールページのボタンの href がブックマークレットと一致するかを、書き出す前に確かめる
+- `test/paint.test.mjs`（テスト 41 件）、`test/helpers.mjs`（既定を埋め込んだコードを作る `withDefaults` と直接起動する `runCode`、サーバー〈`/long` は縦 3000px、`/offset` は html に余白〉・起動・画素の読み取り `readMain` / `screenPixel`・`scrollTo`）、`test/bench.mjs`
 - `.github/workflows/pages.yml`: main へのプッシュでテストしてから docs/ を Pages に公開。PR ではテストだけ
 - `.claude/`: CLAUDE.md（概要と読み込み）、`rules/`（tasks / handoff / human）、TASKS.md、HANDOFF.md、Stop フック（`hooks/check-handoff.mjs`）
 - `.human/`: ユーザーとの非同期のやりとり。`ideas/`（ユーザーのアイデア、1 件 1 ファイル）、`requests.md`（Claude からの判断・作業のお願い）
@@ -83,6 +83,7 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 
 ## 落とし穴
 
+- build.mjs のテンプレートの置き換えは、置き換え後の文字列を必ず関数で渡す。`replaceAll(目印, 文字列)` だと、コードの中の `$&` などが特殊な記号として解釈される。圧縮で変数名が `$` になった T-010（v1.5.0）から T-022（v1.7.0）まで、インストールページのボタンの中身が壊れていた（T-023 で修正）。テストは dist/bookmarklet.txt を使っていたので気づかなかった。今はビルドとテストの両方で、ボタンの href を確かめている。
 - 合成した PointerEvent の timeStamp は生成時刻になる。pointerdown より前に作った move は重複として捨てられる（ベンチで一度これにハマった）。
 - headless での getImageData の読み戻しは数百 ms かかることがある。時間に依存するテスト（パームリジェクションの 500ms）は、イベントを全部撃ってから検証する。
 - headless Chromium は SwiftShader（ソフトウェア GPU）で動く。GPU 寄りの処理時間は実機より悲観的に出る。初回だけ遅いのはバッキングの確保が原因（→ warm）。キャンバスの確保は面積に比例して重い。
@@ -102,7 +103,7 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 
 ## 検証の方法
 
-- `npm test` で見ていること: 起動とトグル・破棄、ページ操作モードがツールの選択で解除される、速い線が途切れない、undo / redo が画素単位で一致、消しゴム（右クリック含む）、半透明の重なり、四角と塗りつぶし（隙間・漏れ）、筆圧、パームリジェクション、ページへのイベント漏れ、入力欄にフォーカスがあるときのショートカット、厳格な CSP と Trusted Types、リサイズ、図形と Shift、PNG 保存、塗りつぶしの壁と再着色、rawupdate と pointermove の重複処理。文字に触れる: ペンのまま文字を押して移動・もう一度押して書き直し・道具と色がそのまま・外から描く線は描ける・文字の上のカーソル・touchText を切ると描ける。文字の物: 押してそのまま移動、角で拡大すると文字の大きさが変わる、ダブルクリックと文字ツールで書き直し、空で消える、1 手ずつの undo / redo、消しゴムで薄くなって消える、囲むと線と一緒に動く、全消去と undo。選択: 囲むと中身に詰めた枠、動かさずに確定しても履歴が増えない、細い線の移動、移動の undo / redo が画素単位で一致、何もない所は選ばれない、クリックで最小の物、角の比を保った縮小、辺の片方向、矢印キー、Delete と undo、スクロール追従、ツール切り替えで確定。文字: 入力欄の位置とフォーカス、ショートカットにならない、ページへキーが漏れない、外のクリック・Esc・ツール切り替えで確定、空なら残らない、undo / redo、入力中の色の変更、スクロール追従。ツールバー: 1 段で 520px 以下、図形ボタンとパネル、色と太さのパネル（色を選んでも開いたまま、描き始めで閉じる、Esc はまずパネル）、その他のメニュー、右下の隅では内側（上）に開く。閉じる: 8 秒後に破棄、ボタン・Ctrl+Z・ブックマークレットで戻る（入力欄の Ctrl+Z は横取りしない）、戻すまでページをクリックできる、何も描いていなければすぐ閉じる。スクロール追従: 描いてからのスクロール、スクロール後の描画と undo / redo（目印の要素との位置）、スクロール後の塗りつぶし・消しゴム・PNG、端に描いてもスクロール範囲が広がらない、ページが縮むと面も縮む、html に余白があるページ、確定時のちらつきと半透明の opacity の事前設定、scroll / wheel リスナーがない、@2x、表示倍率の変更（CDP で dpr 1.5）。
+- `npm test` で見ていること: インストールページのボタンの中身がブックマークレットと一致する、起動とトグル・破棄、ページ操作モードがツールの選択で解除される、速い線が途切れない、undo / redo が画素単位で一致、消しゴム（右クリック含む）、半透明の重なり、四角と塗りつぶし（隙間・漏れ）、筆圧、パームリジェクション、ページへのイベント漏れ、入力欄にフォーカスがあるときのショートカット、厳格な CSP と Trusted Types、リサイズ、図形と Shift、PNG 保存、塗りつぶしの壁と再着色、rawupdate と pointermove の重複処理。文字に触れる: ペンのまま文字を押して移動・もう一度押して書き直し・道具と色がそのまま・外から描く線は描ける・文字の上のカーソル・touchText を切ると描ける。文字の物: 押してそのまま移動、角で拡大すると文字の大きさが変わる、ダブルクリックと文字ツールで書き直し、空で消える、1 手ずつの undo / redo、消しゴムで薄くなって消える、囲むと線と一緒に動く、全消去と undo。選択: 囲むと中身に詰めた枠、動かさずに確定しても履歴が増えない、細い線の移動、移動の undo / redo が画素単位で一致、何もない所は選ばれない、クリックで最小の物、角の比を保った縮小、辺の片方向、矢印キー、Delete と undo、スクロール追従、ツール切り替えで確定。文字: 入力欄の位置とフォーカス、ショートカットにならない、ページへキーが漏れない、外のクリック・Esc・ツール切り替えで確定、空なら残らない、undo / redo、入力中の色の変更、スクロール追従。ツールバー: 1 段で 520px 以下、図形ボタンとパネル、色と太さのパネル（色を選んでも開いたまま、描き始めで閉じる、Esc はまずパネル）、その他のメニュー、右下の隅では内側（上）に開く。閉じる: 8 秒後に破棄、ボタン・Ctrl+Z・ブックマークレットで戻る（入力欄の Ctrl+Z は横取りしない）、戻すまでページをクリックできる、何も描いていなければすぐ閉じる。スクロール追従: 描いてからのスクロール、スクロール後の描画と undo / redo（目印の要素との位置）、スクロール後の塗りつぶし・消しゴム・PNG、端に描いてもスクロール範囲が広がらない、ページが縮むと面も縮む、html に余白があるページ、確定時のちらつきと半透明の opacity の事前設定、scroll / wheel リスナーがない、@2x、表示倍率の変更（CDP で dpr 1.5）。
 - 未確認: 実際の IME（headless では insertText で代用）、Firefox と Safari での動作、実際のペンタブレット、Windows の Ink Trail、実 GPU での desynchronized の効果、実機でのスクロールの滑らかさ（タイルが多いとき）、Gmail などの内側スクロールのサイトでの見え方。
 
 ## 外部の状態
@@ -113,6 +114,12 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - Artifact: https://claude.ai/artifact/Aj3XQxn6Q7EUaiHjYAFbve（インストールページ、非公開）。`docs/index.html` の本文だけの版
 
 ## 完了ログ（新しい順）
+
+### T-023 インストールページの「Paint」ボタンの中身が壊れていたのを直す — 2026-10-14
+- 結果: v1.5.0（T-010）から v1.7.0（T-022）まで、公開中のインストールページのボタン（ドラッグして入れるブックマークレット）が壊れていて、その間に入れたブックマークは動かない。原因は build.mjs の `replaceAll` に文字列を渡していたことで、圧縮後のコードの `$&` が「一致した文字列」に置き換わっていた。「このページで試す」と `dist/bookmarklet.txt` は無事だった。T-005 の作業中に見つけた。
+- 変更: 置き換えをすべて関数で渡すようにした。ビルドの最後に、ボタンの href がブックマークレットと一致するかを確かめ、違えば止める。テストを 1 件足した（ボタンの href を復号すると dist のコードと一致する）。版を 1.7.1 にした。
+- 確認: 古い書き方に戻すとビルドが止まることを確かめた。`npm test` 41 件が通過。
+- 残課題: ユーザーに、v1.5.0〜v1.7.0 の間に入れたブックマークを入れ直してもらう必要がある（チャットで伝えた）。
 
 ### T-022 ペンなどを選んでいても文字に触れて、選ぶ・動かす・書き直すができるようにする（設定で切れる） — 2026-10-14
 - 変更: ペン・蛍光ペン・図形・塗りつぶしでも、文字を押すと選べ、そのまま引けば動く。選んだ文字をもう一度押す（ダブルクリックでも）と書き直し。書き直しで道具と今の色は変わらない。文字の上ではカーソルが移動の形。設定 touchText（既定は入り）を、ブックマークレットに埋め込む既定（`'__PAINT_DEFAULTS__'`）から読むようにした。版を 1.7.0 にした。ユーザーの提案（ideas/touch-text.md）。
@@ -159,11 +166,8 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - 確認: `npm test` 16 件が通過。
 - 残課題: 圧縮版（dist/、ブックマークレット）には著作権表示のコメントを入れていない（サイズを優先）。本人の配布なので問題はない。
 
-### T-002 インストールページを GitHub Pages で公開する — 2026-10-14
-- 結果: ユーザーが public 化と Source の設定（R-001）を済ませ、run 38550725208 の deploy が成功。公開 URL は https://shutsuruwork-afk.github.io/paint-tool/ （deploy ジョブのログの environment url で確認）。
-- 確認できていないこと: 公開ページを直接開いての表示確認（作業環境から github.io につながらないため）。
-
 ### それより前（1 行に畳んだもの）
+- T-002 インストールページを GitHub Pages で公開（R-001 でユーザーが Source を設定。run 38550725208）— 2026-10-14
 - T-014 `.human/`（ideas・requests.md と rules/human.md）を作り、アイデアとお願いのやりとりを始めた — 2026-10-14
 - T-001 タスクとハンドオフの運用ルール（.claude/ の CLAUDE.md・rules・TASKS・HANDOFF・Stop フック）— 2026-10-14
 - 初版: 低遅延ペイント本体、インストールページ、テスト 16 件、ベンチ（b663793）

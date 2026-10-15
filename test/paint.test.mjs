@@ -167,6 +167,8 @@ test('ツールバーは 1 段で幅 520px 以下。図形は最後に使った�
   const { page, errors } = await fresh();
   const bar = await rectOf(page, '.bar');
   assert.ok(bar.w <= 520 && bar.h <= 50, JSON.stringify(bar));
+  // 起動時のお知らせは「Esc で隠す」だけ
+  assert.equal(await shadowEval(page, root => root.querySelector('.t.on').textContent), 'Esc で隠す');
   const shapeTitle = () => shadowEval(page, root => root.querySelector('.bar > .shp').title);
   // 図形ボタン: 押すと最後の図形（最初は直線）になるだけ。図形のときにもう一度押すとパネルが開く（ペンと同じ）
   await mouseClick(page, '.bar > .shp');

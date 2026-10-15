@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.15.0';
+  const VERSION = '1.15.1';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -2515,5 +2515,5 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   show();
   placeBar();
   ready = true;
-  say('Esc で隠す ・ V でページ操作 ・ ? で操作の一覧');
+  say('Esc で隠す');
 })();

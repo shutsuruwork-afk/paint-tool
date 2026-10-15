@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.15.2';
+  const VERSION = '1.16.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -34,6 +34,7 @@
   const PRED_TTL = 40;  // 入力が途絶えてから予測線を消すまでの時間 (ms)
   const FILL_TOL = 48;  // 塗りつぶしの色許容差 (0-255)
   const BYE_MS = 8000;  // 閉じる（×）を取り消せる時間 (ms)
+  const PAGE = 'https://shutsuruwork-afk.github.io/paint-tool/'; // インストールページ
   const HINT_MS = 4000; // 隠したときに「ブックマークレットで再表示」を出す時間 (ms)
 
   const PALETTE = ['#111111', '#ffffff', '#e53935', '#fb8c00', '#fdd835', '#43a047', '#1e88e5', '#8e24aa'];
@@ -94,6 +95,7 @@
     copy: 'M9 9h11v11H9zM5 15H4V4h11v1',
     hide: 'M5 12h14',
     pin: 'M9 4h6M10 4v6l-3 4h10l-3-4V4M12 14v6',
+    prefs: 'M4 7h9M17 7h3M15 5v4M4 17h3M11 17h9M9 15v4',
     calc: 'M6 3h12v18H6zM9 7h6M9 11.5h.01M12 11.5h.01M15 11.5h.01M9 15h.01M12 15h.01M15 15h.01M9 18.5h.01M12 18.5h.01M15 18.5h.01',
     fountain: 'M12 2.5l5.5 8L12 21.5l-5.5-11zM12 10.5v5M12 15.5a.6.6 0 1 0 0 .01',
     brush: 'M19.5 3.5l1 1-8 9.5-2.5-2.5zM10 11.5c-2.6-.4-5 1.4-5 4.3 0 2-1 3.3-2.5 4.2 4.6.6 9.7-.9 9.9-5.6',
@@ -433,7 +435,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const passB = btn('ページ操作モード (V) — 絵を残したままページを操作', I.pass, togglePass);
   // その他: 名前とショートカット付きのメニュー。keep なら押しても閉じない（背景を続けて切り替えられる）
   const moreP = pnl();
-  const moreB = btn('その他（全消去・背景・保存・コピー・電卓・画面に固定）', I.more, () => togglePanel(moreP, moreB));
+  const moreB = btn('その他（全消去・背景・保存・コピー・電卓・画面に固定・デフォルトの変更）', I.more, () => togglePanel(moreP, moreB));
   // sw なら入り・切りのスイッチ（role="switch"。状態は aria-checked で持ち、つまみは CSS で動かす）
   const item = (title, label, key, d, fn, keep, sw) => {
     const b = btn(title, d, () => { if (!keep) closePanel(); fn(); }, 'mi');
@@ -457,6 +459,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     say(calc ? '電卓: 文字に計算式を書くと答えが出ます（Tab で書き込み）' : '電卓: 切');
   }, true, true);
   const [fixB] = item('画面に固定 — スクロールしても絵が画面の同じ所に留まる（動画や地図の上に描くとき）', '画面に固定', '', I.pin, toggleFixed, true, true);
+  // デフォルトの変更: インストールページの設定を新しいタブで開く。今のブックマークの既定（DEF）を渡して、フォームに読み込ませる。
+  // 設定はこのページに集め、メニューの項目は増やさない
+  item('デフォルトの変更 — インストールページで、起動したときの色・太さ・動きを選ぶ（新しいタブ）', 'デフォルトの変更', '', I.prefs, () =>
+    win.open(PAGE + '#defaults=' + encodeURIComponent(JSON.stringify(DEF)), '_blank', 'noopener'));
   bar.append(undoB, redoB, sep(), passB, moreB, sep(),
     btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hideHint), btn('閉じる（8 秒間は元に戻せます）', I.close, close),
     shapeP, penP, styleP, moreP);
@@ -2218,7 +2224,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       ["文字の入力中", "{Esc}・{Ctrl}+{Enter}・外を押すと確定"],
       ["{Tab}", "電卓が入りのとき、薄く出た答えを書き込む"],
       ["ツールバー", "どこを押しても、引けば動かせる"],
-      ["その他（⋯）", "全消去・背景・保存・コピー・電卓・画面に固定（スクロールしても絵が画面に留まる）"]
+      ["その他（⋯）", "全消去・背景・保存・コピー・電卓・画面に固定（スクロールしても絵が画面に留まる）・デフォルトの変更（インストールページを開く）"]
     ]]
   ]/*HELP*/;
   // 一覧は初めて開いたときに作る。開いている間は、外を押すと閉じるだけ（線は描かない）

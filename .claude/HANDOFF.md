@@ -4,10 +4,10 @@
 
 ## 現在地
 
-- 最終更新: 2026-10-15、T-036 の完了時
-- ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない。HEAD は T-036 のコミット（`git log --grep T-036`）
+- 最終更新: 2026-10-15、T-038 の完了時
+- ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない。HEAD は T-038 のコミット（`git log --grep T-038`）
 - CI: GitHub Actions「Pages」は main へのプッシュごとに test → deploy。T-035 の run 25（38776463956）まで test・deploy とも成功（run 16〜23 は T-032 で直した原因で落ちていた）。T-008・T-007・T-016 は main へまとめてプッシュした。その結果は Actions で確かめる
-- 公開: https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）の 2 か所。版は v1.15.2
+- 公開: https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）の 2 か所。版は v1.16.0
 - 人の操作待ち: なし。R-004 は C に決まった（インストールページの既定＋サイトごとに覚える）。ユーザーのフィードバック（ideas/touch-text.md）で、ペンを選んでいても文字に触れたい（T-022、済み。設定の入り・切りはインストールページの「最初の設定」＝T-005、済み）、ツールを選んだらページ操作モードを解除（T-021、済み）が来た
 - 次の一手: チャット（2026-10-15）で決めた分（T-008・T-007・T-016）は終わった。ユーザーの使用感を待つ。残りの候補は T-018・T-013・T-031・T-020（T-011・T-017 は後回しと決まった）
 
@@ -15,7 +15,7 @@
 
 ```sh
 npm install          # terser 5.36.0 と playwright 1.56.1（ブラウザは /opt/pw-browsers にある）
-npm test             # ビルドしてから Playwright のテスト 52 件
+npm test             # ビルドしてから Playwright のテスト 53 件
 npm run bench        # 性能計測（メインスレッドの占有時間）
 ```
 
@@ -34,7 +34,7 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
   - お知らせ（`say(msg, ms, act, fn, xfn, inl)`。fn を渡すとボタン付き、xfn を渡すと × 付き、inl ならボタンを文の続きに置く）、塗りつぶし（floodFill）、選択（settle / showSel / liftSel → liftRaster + beginSel / dropSel / paintSel / selHit / selHover / selDown / selMove / scaleSel / selUp / selAbort / pickSel / nudgeSel。浮かせた画素は selC、選んだ文字の物の組は selT、どちらも入れ物 selIn に入れて transform で拡大縮小。枠は selEl と selB）、文字（物: tlist / tNew / tSnap / tApply / swapText / textHit / paintText（書き出し用）/ eraseText・showErased・takeErased（消しゴム）。入力: textAt / editText / styleTa / fitTa / commitText。電卓: updateGhost / acceptGhost / calcLine（薄い答えは ghostEl）。入力欄は `ta`、書き直し中の物は `taObj`）、書き出し（capture / exportBlob / save / copyImg / pixels）、HUD（D キー）、操作の一覧（HELP / openHelp / closeHelp。? キー）、キーボード（onKey）、設定（applyPrefs / snapPrefs / remember → savePrefs / loadSite / placeBar。DEF ＋ サイトの保存）、表示制御（show / hide / hideHint → endHint / toggle / close → endBye / reopen / onByeKey、destroy）、起動
 - `src/install.html`: インストールページのテンプレート（本文のみ）。`%%BOOKMARKLET_HREF%%` などを build.mjs が置き換える。「最初の設定」のフォームは、選んだ既定（組み込みの既定との差分）を JSON にして、ボタンの href の `'__PAINT_DEFAULTS__'` を置き換える。フォームの状態はインストールページ自身の localStorage（`paint-defaults`）に残す。組み込みの既定（BUILTIN と PALETTE）は src/paint.js と手で合わせる（テストで一致を確かめている）
 - `build.mjs`: src/paint.js の HELP（`/*HELP*/` の間の JSON）を読んで、インストールページの `%%HELP%%` にショートカットの一覧を書き出す。terser で圧縮し、`dist/paint.min.js`、`dist/bookmarklet.txt`、`docs/index.html` を作る。「このページで試す」用の埋め込み版は、既定の目印を `window.__paintBookmarkletDefaults` を読む式に変える（eval を使わない）。目印が 1 つだけあることも確かめる。インストールページのボタンの href がブックマークレットと一致するかを、書き出す前に確かめる
-- `test/paint.test.mjs`（テスト 52 件）、`test/helpers.mjs`（既定を埋め込んだコードを作る `withDefaults` と直接起動する `runCode`、サーバー〈`/install` はビルドしたインストールページ〉〈`/long` は縦 3000px、`/offset` は html に余白〉・起動・画素の読み取り `readMain` / `screenPixel`・`scrollTo`）、`test/bench.mjs`
+- `test/paint.test.mjs`（テスト 53 件）、`test/helpers.mjs`（既定を埋め込んだコードを作る `withDefaults` と直接起動する `runCode`、サーバー〈`/install` はビルドしたインストールページ〉〈`/long` は縦 3000px、`/offset` は html に余白〉・起動・画素の読み取り `readMain` / `screenPixel`・`scrollTo`）、`test/bench.mjs`
 - `.github/workflows/pages.yml`: main へのプッシュでテストしてから docs/ を Pages に公開。PR ではテストだけ
 - `.claude/`: CLAUDE.md（概要と読み込み）、`rules/`（tasks / handoff / human）、TASKS.md、HANDOFF.md、Stop フック（`hooks/check-handoff.mjs`）
 - `.human/`: ユーザーとの非同期のやりとり。`ideas/`（ユーザーのアイデア、1 件 1 ファイル）、`requests.md`（Claude からの判断・作業のお願い）
@@ -82,6 +82,7 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - 消しゴムは触れた文字の物を丸ごと消す（なぞる間は薄く、離して消す）。当たり判定は線分と外接矩形の Liang–Barsky で、入力ごとの計算に割り当てはない。薄く見せる DOM の更新は tick（毎フレーム 1 回）。
 - 選択（T-010）は方式 C の画素の部分（ideas/select-box.md でユーザーが C を選んだ）。浮かせた中身は面の中の canvas（selC）で、動かす間は枠の left / top / width / height だけを変える。確定は「元の範囲」と「置いた範囲」の 2 矩形を 1 手にする。動かさずに確定したら元に戻すだけで履歴は増やさない。クリックで選ぶ物は、クリックした所に画素がある手のうち外接矩形が最小の物。拡大縮小は押した所からの移動量で計算し、角は (w, h) を元の向きへ射影した倍率で比を保つ（細長い物で max 比を使うと少しの縦の動きで暴れたため）。枠は中身から外へ出して最低 24 CSS px（細い線の中央を押すと上下のつまみに当たって移動できなかったため）。
 - 設定の記憶は C（R-004 でユーザーが決定）: インストールページで選んだ既定で始まり、サイトで変えた所はそのサイトの localStorage（キー `paint-bookmarklet`）に差分だけを書く。サイトをまたいで自動で共有する方法はない（保存領域はサイトごとに分かれる）ので、共通の既定はブックマークレットの中に埋め込む。差分だけにしたので、あとでインストールページの既定を変えると、サイトで触っていない所には新しい既定が効く。touchText はインストールページだけで選ぶ（ツールの中に切り替えは置いていない）。背景・ページ操作モード・計測表示は覚えない。
+- デフォルトの変更（T-038、ユーザーの提案）: その他のメニューから、インストールページ（PAGE、Pages の URL を直書き）を新しいタブで開く。今のブックマークの DEF を `#defaults=<JSON>` で渡し、ページはそれをフォームに読み込んで保存し、ハッシュを `#defaults` に戻して設定の節（id="defaults"）を見せる。設定はページに集め、メニューの項目は増やさない方針（サイトをまたいで設定を共有する方法はないので、変えたらドラッグし直す）。
 - 入り・切りの項目（その他のメニューの電卓・画面に固定、インストールページの入り・切り）はスイッチの形にする（T-036、ユーザーが画像で示した）。メニューは role="switch" と aria-checked で状態を持ち、つまみ（.sw）は CSS だけで動かす。色はツールが青（#3d7cff）、インストールページはページの赤（チェックボックスのまま appearance: none で見た目だけ変える）。
 - 操作の一覧（T-007、ユーザーの決定）: ? キーで画面の中央に重ねて出す。ツールバーにはボタンを置かない。中身は paint.js の HELP 1 か所に持ち、build.mjs がインストールページにも同じ物を書き出す（食い違わない。テストで両方の行を比べている）。キーは `{…}` で書き、Mac では Ctrl を ⌘ にして出す。DOM は初めて開いたときに作る。外を押すと閉じるだけで、その押下は描画に渡さない。起動時のお知らせは「Esc で隠す」だけ（T-037、ユーザーの要望。? や V は一覧で分かる）。日本語の文字列は圧縮後に \u エスケープになるので、一覧の分でブックマークレットが約 4 KB 増えた。
 - ツールを選ぶ（setTool）とページ操作モードを解除する（T-021、ユーザーの提案）。ツールを選ぶのは描くつもりのときなので。色や太さの変更では解除しない。
@@ -131,6 +132,11 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 
 ## 完了ログ（新しい順）
 
+### T-038 その他のメニューに「デフォルトの変更」を足し、インストールページの設定を開く — 2026-10-15
+- 変更: その他のメニューに「デフォルトの変更」を足した。押すと、インストールページの設定の所が新しいタブで開き、今使っているブックマークの既定（色・太さ・動き）がフォームに読み込まれている。変えたら「Paint」ボタンをドラッグし直す（ページに案内を出す）。操作の一覧と README に書いた。版を 1.16.0 にした。ユーザーの提案（チャット: 設定をインストールページに集めて、その他の項目を増やさない。項目名は「デフォルトの変更」的な）。
+- 確認: テストを 1 件足した（開く URL と渡す既定、新しいタブ、メニューが閉じる、ページがフォームとボタンに読み込んで設定の所を見せる、試すとその既定で始まる）。ページの読み込み処理を外すとテストが落ちることを確かめた。`npm test` 53 件が通過。
+- 残課題: なし。
+
 ### T-036 入り・切りの項目を、スイッチ（つまみが左右に動く形）で見せる — 2026-10-15
 - 変更: その他のメニューの電卓・画面に固定を、「電卓: 入」の文字と青い背景から、名前とスイッチ（入りは青い地につまみが右）にした。インストールページの入り・切りの 3 項目も、同じ形のスイッチ（ページの赤）にした。版を 1.15.2 にした。ユーザーの要望（チャット、スイッチの画像付き）。
 - 確認: 電卓のテストを、文字ではなく aria-checked で確かめる形にした。ツールのメニューとインストールページ（明るい・暗い表示）のスクリーンショットで見た目を確かめた。`npm test` 52 件が通過。
@@ -177,12 +183,8 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - 確認: 起動と destroy を同じタスクで行ってから待つ確認を、destroy のテストに足した。直す前は手元でも必ず落ち、直した後は通る。`npm test` 49 件が通過。
 - 残課題: なし。
 
-### T-029 電卓: 文字に計算式を書くと答えが薄く出て、Tab で書き込める — 2026-10-15
-- 変更: その他のメニューに電卓の入り・切りを足した（インストールページの「最初の設定」でも選べ、サイトごとに覚える）。入りのとき、文字の入力中にカーソルのある行が計算式なら、行の後ろに答えを薄く出し、Tab で書き込む。計算は自前の小さな計算器（eval なし）。版を 1.10.0 にした。README とインストールページに書いた。ユーザーの idea2（ideas/hands-on-review-1）。
-- 確認: `npm test` 49 件が通過（1 件追加。インストールページのテストに電卓の既定の一致も足した）。Tab の preventDefault を外すとテストが落ちることを確かめた。スクリーンショットで薄い答えの位置を確かめた。`npm run bench` は 4.8〜7.9 µs（比較用の素朴な実装も遅く、マシンの揺れ。入力経路は変えていない）。
-- 残課題: 電卓そのもの（ボタンで打つ電卓）は T-031 の候補。日付や電話番号も式として答えが出る（電卓は既定で切り）。
-
 ### それより前（1 行に畳んだもの）
+- T-029 電卓（文字に書いた計算式の答えを薄く出し、Tab で書き込む。calcLine の再帰下降、eval なし）— 2026-10-15
 - T-028 ペンの種類（ペン・万年筆・筆・鉛筆）。ペンのときにもう一度押すと種類のパネル — 2026-10-15
 - T-030 説明文を実際の確認に合わせる（GitHub でも Chrome で動く、絵はディスクに保存しない）— 2026-10-15
 - T-027 閉じた後のお知らせに × を付け、8 秒待たずにすぐ閉じられる（say の xfn）— 2026-10-15

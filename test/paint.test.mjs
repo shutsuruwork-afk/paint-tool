@@ -886,6 +886,40 @@ test('インストールページで選んだ設定入りのブックマーク�
   await page.close();
 });
 
+test('その他の「デフォルトの変更」で、今のブックマークの既定を持ってインストールページの設定が新しいタブで開き、フォームに読み込まれる', async () => {
+  const { page, errors } = await openPage(browser, server.base + '/');
+  const d = { color: '#1e88e5', size: { pen: 10 }, touchText: false };
+  await runCode(page, withDefaults(CODE, d));
+  await page.evaluate(() => { window.__opened = []; window.open = (...a) => { window.__opened.push(a); return null; }; });
+  await mouseClick(page, '[aria-label^="その他"]');
+  await mouseClick(page, '.pn.on [aria-label^="デフォルトの変更"]');
+  const opened = await page.evaluate(() => window.__opened);
+  assert.equal(opened.length, 1);
+  const [url, target, feat] = opened[0];
+  const head = 'https://shutsuruwork-afk.github.io/paint-tool/#defaults=';
+  assert.ok(url.startsWith(head), url);
+  assert.deepEqual(JSON.parse(decodeURIComponent(url.slice(head.length))), d);
+  assert.equal(target, '_blank');
+  assert.match(feat, /noopener/);
+  assert.equal(await openPanels(page), 0);
+  // インストールページは、届いた既定をフォームとボタンに読み込み、設定の所を見せる
+  const { page: ip, errors: ie } = await openPage(browser, server.base + '/install' + url.slice(url.indexOf('#')));
+  assert.equal(await ip.isChecked('[aria-label="色 7"]'), true);
+  assert.equal(await ip.inputValue('#p-pen'), '10');
+  assert.equal(await ip.isChecked('#p-touch'), false);
+  assert.equal(await ip.evaluate(() => location.hash), '#defaults');
+  assert.ok(await ip.evaluate(() => { const r = document.getElementById('defaults').getBoundingClientRect(); return r.top < innerHeight && r.bottom > 0; }));
+  await ip.click('#try');
+  const p = await prefs(ip);
+  assert.equal(p.color, '#1e88e5');
+  assert.equal(p.size.pen, 10);
+  assert.equal(p.touchText, false);
+  assert.deepEqual(ie, []);
+  await ip.close();
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('サイトで変えた色・太さ・道具・ツールバーの位置を覚えて次回はその続きから。既定から変えた所だけを書き、背景は覚えない', async () => {
   const { page, errors } = await fresh();
   await page.waitForTimeout(500);

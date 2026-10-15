@@ -240,7 +240,7 @@ tbody th { font-weight: 700; min-width: 8em; }
 
 <main class="page">
   <header>
-    <p class="eyebrow">Bookmarklet · v1.15.2 · %%SIZE%%（gzip %%GZIP%%）</p>
+    <p class="eyebrow">Bookmarklet · v1.16.0 · %%SIZE%%（gzip %%GZIP%%）</p>
     <h1>ペイント<br>ブックマークレット</h1>
     <p class="lead">開いているページの上に、<span class="mark">そのまま描ける<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d="M18 40C8 22 52 6 108 7s92 13 84 30-62 20-112 17S4 38 30 16" vector-effect="non-scaling-stroke"/></svg></span>ペイントツールです。ブックマークを押すだけで起動し、拡張機能もアカウントも要りません。入力から線が画面に出るまでの遅延を減らす仕組みを、ブラウザが対応している限りすべて使います。</p>
     <div class="actions">
@@ -261,7 +261,7 @@ tbody th { font-weight: 700; min-width: 8em; }
     <p class="aside">色と太さは、ツールバーの点のボタンを押すと選べます。太さは <kbd>[</kbd> <kbd>]</kbd> でも変えられます。取り消しは <kbd>Ctrl</kbd>+<kbd>Z</kbd>、隠すときは <kbd>Esc</kbd>。<kbd>D</kbd> を押すと、入力 1 件の処理時間や使われている機能がその場で表示されます。</p>
   </section>
 
-  <section aria-labelledby="pref-h">
+  <section id="defaults" aria-labelledby="pref-h">
     <h2 id="pref-h">最初の設定</h2>
     <p>起動したときの色・太さ・ツールバーの位置と、動きを選べます。選ぶと上の「Paint」ボタンの中身が変わるので、選び終えてからブックマークバーへドラッグしてください。すでに入れたブックマークは、前の設定のままです。</p>
     <form id="prefs" class="prefs" onsubmit="return false">
@@ -424,10 +424,25 @@ function runPaint() {%%INLINE_CODE%%}
     colorsEl.insertBefore(r, colorsEl.lastElementChild);
   });
   const sizes = ['pen', 'marker', 'eraser', 'text'];
-  let cur = load();
+  // ツールの「デフォルトの変更」から開いたときは、そのブックマークの既定が #defaults=… で届くので、それを読み込む
+  let fromTool = false;
+  let cur = fromHash() || load();
+  function fromHash() {
+    const m = /^#defaults=(.*)$/.exec(location.hash);
+    if (!m) return null;
+    let v = null;
+    try { v = JSON.parse(decodeURIComponent(m[1])); } catch (_) { }
+    try { history.replaceState(null, '', '#defaults'); } catch (_) { }
+    if (!v || typeof v !== 'object') return null;
+    fromTool = true;
+    return merge(v);
+  }
   function load() {
     let v = null;
     try { v = JSON.parse(localStorage.getItem(KEY)); } catch (_) { }
+    return merge(v);
+  }
+  function merge(v) {
     const d = JSON.parse(JSON.stringify(BUILTIN));
     if (v && typeof v === 'object') {
       if (typeof v.color === 'string') d.color = v.color;
@@ -483,7 +498,11 @@ function runPaint() {%%INLINE_CODE%%}
   $('p-calc').addEventListener('change', e => { cur.calc = e.target.checked; update(); });
   $('p-once').addEventListener('change', e => { cur.pickOnce = e.target.checked; update(); });
   $('p-reset').addEventListener('click', () => { cur = JSON.parse(JSON.stringify(BUILTIN)); update(); });
-  show();
+  if (fromTool) {
+    update();
+    state.textContent = '使っているブックマークの設定を読み込みました。変えたら「Paint」ボタンをドラッグし直してください。';
+    $('defaults').scrollIntoView();
+  } else show();
   // このページで試すときは eval を使わず、埋め込み版が読む変数で既定を渡す
   const tryPaint = () => {
     window.__paintBookmarkletDefaults = JSON.stringify(diff(cur));

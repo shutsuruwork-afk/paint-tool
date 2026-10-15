@@ -4,18 +4,18 @@
 
 ## 現在地
 
-- 最終更新: 2026-10-15、T-039 の完了時
-- ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない。HEAD は T-039 のコミット（`git log --grep T-039`）
-- CI: GitHub Actions「Pages」は main へのプッシュごとに test → deploy。T-016 の run 26（38784265330）まで test・deploy とも成功。T-037〜T-039 は main へまとめてプッシュした。その結果は Actions で確かめる
-- 公開: https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）の 2 か所。版は v1.16.1
+- 最終更新: 2026-10-15、T-040 の完了時
+- ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない。HEAD は T-040 のコミット（`git log --grep T-040`）
+- CI: GitHub Actions「Pages」は main へのプッシュごとに test → deploy。T-039 の run（38789274248）まで test・deploy とも成功。T-040 のプッシュの結果は Actions で確かめる
+- 公開: https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）の 2 か所。版は v1.17.0
 - 人の操作待ち: なし。R-004 は C に決まった（インストールページの既定＋サイトごとに覚える）。ユーザーのフィードバック（ideas/touch-text.md）で、ペンを選んでいても文字に触れたい（T-022、済み。設定の入り・切りはインストールページの「デフォルトの設定」＝T-005、済み）、ツールを選んだらページ操作モードを解除（T-021、済み）が来た
-- 次の一手: チャット（2026-10-15、2 回目）の分（T-037・T-036・T-038・T-039）は終わった。インストールページの並びはユーザーの確認待ち。残りの候補は T-018・T-013・T-031・T-020（T-011・T-017 は後回し）
+- 次の一手: ガラス風のツールバー（T-040）を実機で見てもらい、ぼけ具合・濃さ・既定にするかをユーザーに決めてもらう。インストールページの並びも確認待ち。残りの候補は T-018・T-013・T-031・T-020（T-011・T-017 は後回し）
 
 ## 始め方
 
 ```sh
 npm install          # terser 5.36.0 と playwright 1.56.1（ブラウザは /opt/pw-browsers にある）
-npm test             # ビルドしてから Playwright のテスト 53 件
+npm test             # ビルドしてから Playwright のテスト 54 件
 npm run bench        # 性能計測（メインスレッドの占有時間）
 ```
 
@@ -34,11 +34,11 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
   - お知らせ（`say(msg, ms, act, fn, xfn, inl)`。fn を渡すとボタン付き、xfn を渡すと × 付き、inl ならボタンを文の続きに置く）、塗りつぶし（floodFill）、選択（settle / showSel / liftSel → liftRaster + beginSel / dropSel / paintSel / selHit / selHover / selDown / selMove / scaleSel / selUp / selAbort / pickSel / nudgeSel。浮かせた画素は selC、選んだ文字の物の組は selT、どちらも入れ物 selIn に入れて transform で拡大縮小。枠は selEl と selB）、文字（物: tlist / tNew / tSnap / tApply / swapText / textHit / paintText（書き出し用）/ eraseText・showErased・takeErased（消しゴム）。入力: textAt / editText / styleTa / fitTa / commitText。電卓: updateGhost / acceptGhost / calcLine（薄い答えは ghostEl）。入力欄は `ta`、書き直し中の物は `taObj`）、書き出し（capture / exportBlob / save / copyImg / pixels）、HUD（D キー）、操作の一覧（HELP / openHelp / closeHelp。? キー）、キーボード（onKey）、設定（applyPrefs / snapPrefs / remember → savePrefs / loadSite / placeBar。DEF ＋ サイトの保存）、表示制御（show / hide / hideHint → endHint / toggle / close → endBye / reopen / onByeKey、destroy）、起動
 - `src/install.html`: インストールページのテンプレート（本文のみ）。並びは T-039 で、見出し（Paint ボタン・試す・目次）→ 入れ方 → 試し書き → デフォルトの設定（id="defaults"、動きはスイッチ）→ 使い方（機能の説明と操作の一覧 %%HELP%%）→ できないこと → 仕組みと計測（仕組み・低遅延機能の表・計測の表）にした。機能の説明は「使い方」に、技術の説明は「仕組みと計測」に分ける。`%%BOOKMARKLET_HREF%%` などを build.mjs が置き換える。「デフォルトの設定」のフォームは、選んだ既定（組み込みの既定との差分）を JSON にして、ボタンの href の `'__PAINT_DEFAULTS__'` を置き換える。フォームの状態はインストールページ自身の localStorage（`paint-defaults`）に残す。組み込みの既定（BUILTIN と PALETTE）は src/paint.js と手で合わせる（テストで一致を確かめている）
 - `build.mjs`: src/paint.js の HELP（`/*HELP*/` の間の JSON）を読んで、インストールページの `%%HELP%%` にショートカットの一覧を書き出す。terser で圧縮し、`dist/paint.min.js`、`dist/bookmarklet.txt`、`docs/index.html` を作る。「このページで試す」用の埋め込み版は、既定の目印を `window.__paintBookmarkletDefaults` を読む式に変える（eval を使わない）。目印が 1 つだけあることも確かめる。インストールページのボタンの href がブックマークレットと一致するかを、書き出す前に確かめる
-- `test/paint.test.mjs`（テスト 53 件）、`test/helpers.mjs`（既定を埋め込んだコードを作る `withDefaults` と直接起動する `runCode`、サーバー〈`/install` はビルドしたインストールページ〉〈`/long` は縦 3000px、`/offset` は html に余白〉・起動・画素の読み取り `readMain` / `screenPixel`・`scrollTo`）、`test/bench.mjs`
+- `test/paint.test.mjs`（テスト 54 件）、`test/helpers.mjs`（既定を埋め込んだコードを作る `withDefaults` と直接起動する `runCode`、サーバー〈`/install` はビルドしたインストールページ〉〈`/long` は縦 3000px、`/offset` は html に余白〉・起動・画素の読み取り `readMain` / `screenPixel`・`scrollTo`）、`test/bench.mjs`
 - `.github/workflows/pages.yml`: main へのプッシュでテストしてから docs/ を Pages に公開。PR ではテストだけ
 - `.claude/`: CLAUDE.md（概要と読み込み）、`rules/`（tasks / handoff / human）、TASKS.md、HANDOFF.md、Stop フック（`hooks/check-handoff.mjs`）
 - `.human/`: ユーザーとの非同期のやりとり。`ideas/`（ユーザーのアイデア、1 件 1 ファイル）、`requests.md`（Claude からの判断・作業のお願い）
-- 公開 API: `window.__paintBookmarklet` の `version / toggle / show / hide / close / destroy / undo / redo / clear / tool(name) / color(hex) / stats() / pixels(x, y, w, h)`。テストとベンチがこれを使う。`pixels` は画面の CSS 座標の矩形を面から読み戻す（確定した絵だけ。live は含まない）。`stats()` に `surface`（面の大きさ）と `tiles`（表示タイルの数）、`selection`（浮いている枠の S 座標、なければ null）、`texts`（置いている文字の物の数）、`fixed`（画面に固定）、`prefs`（色・道具・ペンの種類・電卓・道具ごとの太さと濃さ・ツールバーの位置・touchText・pickOnce）がある。`pixels` と PNG 保存には文字の物も描く（capture → paintText）
+- 公開 API: `window.__paintBookmarklet` の `version / toggle / show / hide / close / destroy / undo / redo / clear / tool(name) / color(hex) / stats() / pixels(x, y, w, h)`。テストとベンチがこれを使う。`pixels` は画面の CSS 座標の矩形を面から読み戻す（確定した絵だけ。live は含まない）。`stats()` に `surface`（面の大きさ）と `tiles`（表示タイルの数）、`selection`（浮いている枠の S 座標、なければ null）、`texts`（置いている文字の物の数）、`fixed`（画面に固定）、`prefs`（色・道具・ペンの種類・電卓・道具ごとの太さと濃さ・ツールバーの位置・touchText・pickOnce・glass）がある。`pixels` と PNG 保存には文字の物も描く（capture → paintText）
 
 ## 不変条件（壊すと困る）
 
@@ -83,6 +83,7 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - 選択（T-010）は方式 C の画素の部分（ideas/select-box.md でユーザーが C を選んだ）。浮かせた中身は面の中の canvas（selC）で、動かす間は枠の left / top / width / height だけを変える。確定は「元の範囲」と「置いた範囲」の 2 矩形を 1 手にする。動かさずに確定したら元に戻すだけで履歴は増やさない。クリックで選ぶ物は、クリックした所に画素がある手のうち外接矩形が最小の物。拡大縮小は押した所からの移動量で計算し、角は (w, h) を元の向きへ射影した倍率で比を保つ（細長い物で max 比を使うと少しの縦の動きで暴れたため）。枠は中身から外へ出して最低 24 CSS px（細い線の中央を押すと上下のつまみに当たって移動できなかったため）。
 - 設定の記憶は C（R-004 でユーザーが決定）: インストールページで選んだ既定で始まり、サイトで変えた所はそのサイトの localStorage（キー `paint-bookmarklet`）に差分だけを書く。サイトをまたいで自動で共有する方法はない（保存領域はサイトごとに分かれる）ので、共通の既定はブックマークレットの中に埋め込む。差分だけにしたので、あとでインストールページの既定を変えると、サイトで触っていない所には新しい既定が効く。touchText はインストールページだけで選ぶ（ツールの中に切り替えは置いていない）。背景・ページ操作モード・計測表示は覚えない。
 - デフォルトの変更（T-038、ユーザーの提案）: その他のメニューから、インストールページ（PAGE、Pages の URL を直書き）を新しいタブで開く。今のブックマークの DEF を `#defaults=<JSON>` で渡し、ページはそれをフォームに読み込んで保存し、ハッシュを `#defaults` に戻して設定の節（id="defaults"）を見せる。設定はページに集め、メニューの項目は増やさない方針（サイトをまたいで設定を共有する方法はないので、変えたらドラッグし直す）。
+- ガラス風のツールバー（T-040、ユーザーが試したいと言った。インストールページの「見た目」のスイッチ `glass`、既定は切り）: wrap に .glass を付け、バーとパネルの背景を消して ::before（z-index:-1）に半透明の地と backdrop-filter: blur(20px) saturate(1.8) を置く。バー自体に backdrop-filter を付けると、子のパネルの backdrop-filter がバーの中しか見なくなる（Backdrop Root）ので、::before に分けた。地は #1c1e24b8（ぼかしが弱くても下の文字がうるさくならない濃さ）。
 - 入り・切りの項目（その他のメニューの電卓・画面に固定、インストールページの入り・切り）はスイッチの形にする（T-036、ユーザーが画像で示した）。メニューは role="switch" と aria-checked で状態を持ち、つまみ（.sw）は CSS だけで動かす。色はツールが青（#3d7cff）、インストールページはページの赤（チェックボックスのまま appearance: none で見た目だけ変える）。
 - 操作の一覧（T-007、ユーザーの決定）: ? キーで画面の中央に重ねて出す。ツールバーにはボタンを置かない。中身は paint.js の HELP 1 か所に持ち、build.mjs がインストールページにも同じ物を書き出す（食い違わない。テストで両方の行を比べている）。キーは `{…}` で書き、Mac では Ctrl を ⌘ にして出す。DOM は初めて開いたときに作る。外を押すと閉じるだけで、その押下は描画に渡さない。起動時のお知らせは「Esc で隠す」だけ（T-037、ユーザーの要望。? や V は一覧で分かる）。日本語の文字列は圧縮後に \u エスケープになるので、一覧の分でブックマークレットが約 4 KB 増えた。
 - ツールを選ぶ（setTool）とページ操作モードを解除する（T-021、ユーザーの提案）。ツールを選ぶのは描くつもりのときなので。色や太さの変更では解除しない。
@@ -115,6 +116,7 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - テストの `toolOn()` は DOM の順で最初の `.b.on` を返す。図形はバーの shapeB がパネル内のボタンより先にあるので、shapeB の title（今の図形の名前で始まる）が返る。閉じたパネルの中のボタンも `element.click()` なら押せる（`[title^="PNG"]` など）。見えているかも確かめたいときは `mouseClick()` を使う。
 - 起動直後や fit() の後は、暖機（warm）が setTimeout で遅れて動く。すぐに destroy すると 0 の大きさのキャンバスを drawImage してページのエラーになる（手元では間に合って通り、CI でだけ落ちていた。T-032）。destroy で warmT と rz を止めている。遅れて動く処理を足すときは、destroy で止める
 - シャドウ DOM の CSS のクラス名は短く、`.g`（live のグループ）・`.p`（入力の板）・`.s`・`.t` などが全体に効く。新しい部品に同じ名前を付けると、position:absolute などが当たって崩れる（T-007 で一覧の行に `.g` を使って重なった）。足す前に CSS を grep する。
+- headless の Chromium（SwiftShader）は backdrop-filter のぼかしが弱く描かれる（高さ 40〜60px の要素では縞が透けて見える。ツールと関係のない素のページでも同じ）。ガラス風の見た目の確認は、実機のブラウザで行う（未確認）。
 - テストで「ページの上にツールがかぶっていない」を見るときは、elementFromPoint が `PAINT-BOOKMARKLET` かどうかで判定する（下にあるのは本文の段落など、場所で変わる）。
 
 ## 検証の方法
@@ -131,6 +133,11 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - Artifact: https://claude.ai/artifact/Aj3XQxn6Q7EUaiHjYAFbve（インストールページ、非公開）。`docs/index.html` の本文だけの版
 
 ## 完了ログ（新しい順）
+
+### T-040 ツールバーをガラス風（半透明・ぼかし）にできるようにする — 2026-10-15
+- 変更: インストールページの「デフォルトの設定」に「見た目 → ガラス風のツールバー」のスイッチを足した（既定は切り）。入れると、ツールバーとパネルが半透明になり、下のページをぼかして見せる（backdrop-filter）。「このページで試す」ですぐ見比べられる。版を 1.17.0 にした。README に書いた。ユーザーの要望（チャット: 試してみたい）。
+- 確認: テストを 1 件足した（既定は今までの見た目、入れるとバーとパネルにぼかしと透明の背景、インストールページのスイッチから効く）。インストールページのテストに glass の既定の一致を足した。白・暗い・色の多いページとインストールページの上のスクリーンショットで、ボタンが読めることを確かめた。`npm test` 54 件が通過。
+- 残課題: headless の Chromium ではぼかしが弱く描かれるので、ぼけ具合は実機で未確認（ユーザーに見てもらう）。ぼかしは下が変わるたびに GPU で描き直すので、ツールバーの下に描く・スクロールするときの実機の重さも未確認（既定は切りにした）。
 
 ### T-039 インストールページを整理する — 2026-10-15
 - 変更: インストールページを、入れる人の流れの順（入れ方 → 試し書き → デフォルトの設定 → 使い方 → できないこと → 仕組みと計測）に並べ替え、見出しの下に目次を付けた。「最初の設定」を「デフォルトの設定」に改め、動きの 3 項目を「名前・説明・スイッチ」の形にした。機能の説明（ペンと図形・色と太さ・文字・選択・電卓・画面に固定・ページ操作・隠す / 閉じる）を「使い方」に集め、操作の一覧をその中に入れた。技術の説明・低遅延機能の表・計測の表は「仕組みと計測」にまとめ、仕組みの箇条書きから機能の説明を外した。375px で見出しが 1 文字だけ折り返していたので、見出しの最小の大きさを下げた。README の呼び方もそろえた。版を 1.16.1 にした。ユーザーの要望（チャット: せっかくだし、ここで登録ページの整理をしたい）。
@@ -177,12 +184,8 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - 確認: テストを 1 件足した（既定の 2 回押しと、pickOnce の 1 回押しを、ペンと図形の両方で）。設定を読まないようにするとそのテストが落ちることを確かめた。図形ボタンの既存のテスト 2 件を 2 回押しに合わせた。インストールページのテストに pickOnce の既定の一致を足した。`npm test` 50 件が通過。
 - 残課題: なし。
 
-### T-033 「−」を元の「隠す（絵ごと）」に戻す — 2026-10-15
-- 変更: T-025 の「− で ＋ 1 つにたたむ」をやめ、「−」を元どおり絵ごと隠すボタン（Esc と同じ）にした。「＋」のボタン、その他のメニューの「隠す（絵も）」も外した。版を 1.11.0 にした。README を戻した。ユーザーのフィードバック（チャット: 合っているが、元の方がいい設計だった）。
-- 確認: T-025 のテストを「− で絵もツールバーも隠れ、ブックマークレットで絵も履歴も戻る」に置き換えた。`npm test` 49 件が通過。
-- 残課題: なし。
-
 ### それより前（1 行に畳んだもの）
+- T-033 「−」を元の「隠す（絵ごと）」に戻した（T-025 のたたむをやめた）— 2026-10-15
 - T-032 起動してすぐ destroy すると遅れた暖機がエラー（CI が run 16〜23 で落ちていた）。destroy で warmT と rz を止める — 2026-10-15
 - T-029 電卓（文字に書いた計算式の答えを薄く出し、Tab で書き込む。calcLine の再帰下降、eval なし）— 2026-10-15
 - T-028 ペンの種類（ペン・万年筆・筆・鉛筆）。ペンのときにもう一度押すと種類のパネル — 2026-10-15

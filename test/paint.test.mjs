@@ -234,6 +234,35 @@ test('? で操作の一覧が重なって出る（? ・Esc・外を押すと閉�
   await page.close();
 });
 
+test('ガラス風のツールバー: インストールページで入れると、ツールバーとパネルが半透明になり下をぼかす。既定は今までどおり', async () => {
+  const look = page => shadowEval(page, root => {
+    const bar = root.querySelector('.bar'), pn = root.querySelector('.pn');
+    return {
+      glass: root.querySelector('.w').classList.contains('glass'),
+      bar: getComputedStyle(bar).backgroundColor,
+      blur: getComputedStyle(bar, '::before').backdropFilter,
+      panel: getComputedStyle(pn, '::before').backdropFilter,
+    };
+  });
+  const { page, errors } = await fresh();
+  assert.deepEqual(await look(page), { glass: false, bar: 'rgb(32, 34, 40)', blur: 'none', panel: 'none' });
+  assert.equal((await prefs(page)).glass, false);
+  await page.close();
+  // インストールページのスイッチを入れて試すと、その見た目で始まる
+  const { page: ip, errors: ie } = await openPage(browser, server.base + '/install');
+  await ip.check('#p-glass');
+  await ip.click('#try');
+  const g = await look(ip);
+  assert.equal(g.glass, true);
+  assert.equal(g.bar, 'rgba(0, 0, 0, 0)');
+  assert.match(g.blur, /blur\(20px\)/);
+  assert.match(g.panel, /blur\(20px\)/);
+  assert.equal((await prefs(ip)).glass, true);
+  assert.deepEqual(ie, []);
+  assert.deepEqual(errors, []);
+  await ip.close();
+});
+
 test('ペンと図形の選択肢: 既定はどちらも、選んでいないときは押すとその道具になるだけで、もう一度押すと出る。インストールページで 1 回押しにできる', async () => {
   const { page, errors } = await fresh();
   const check = async (once) => {
@@ -845,6 +874,7 @@ test('インストールページで選んだ設定入りのブックマーク�
   assert.equal(p0.touchText, await page.isChecked('#p-touch'));
   assert.equal(p0.calc, await page.isChecked('#p-calc'));
   assert.equal(p0.pickOnce, await page.isChecked('#p-once'));
+  assert.equal(p0.glass, await page.isChecked('#p-glass'));
   await page.evaluate(() => window.__paintBookmarklet.destroy());
   // 選ぶと、ボタンの中身が変わる
   await page.click('[aria-label="色 7"]');

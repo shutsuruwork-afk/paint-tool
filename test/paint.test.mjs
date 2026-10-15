@@ -172,6 +172,38 @@ test('ツールバーは 1 段で幅 520px 以下。図形は最後に使った�
   await page.close();
 });
 
+test('ツールバーはボタンの上からでも引けば動き（そのボタンは押されない）、引かずに押せばボタンが効く。パネルのスライダーでは動かない', async () => {
+  const { page, errors } = await fresh();
+  const b0 = await rectOf(page, '.bar');
+  const m = await rectOf(page, '.bar > [aria-label^="蛍光ペン"]');
+  await page.mouse.move(m.x + m.w / 2, m.y + m.h / 2);
+  await page.mouse.down();
+  await page.mouse.move(m.x + m.w / 2 + 150, m.y + m.h / 2 + 200, { steps: 5 });
+  await page.mouse.up();
+  const b1 = await rectOf(page, '.bar');
+  assert.ok(near(b1.x, b0.x + 150, 1) && near(b1.y, b0.y + 200, 1), JSON.stringify(b1));
+  assert.match(await toolOn(page), /^ペン/);
+  // 少しぶれただけ（4px 未満）なら、ボタンが押される
+  const m2 = await rectOf(page, '.bar > [aria-label^="蛍光ペン"]');
+  await page.mouse.move(m2.x + m2.w / 2, m2.y + m2.h / 2);
+  await page.mouse.down();
+  await page.mouse.move(m2.x + m2.w / 2 + 2, m2.y + m2.h / 2 + 1);
+  await page.mouse.up();
+  assert.match(await toolOn(page), /^蛍光ペン/);
+  assert.deepEqual(await rectOf(page, '.bar'), b1);
+  // パネルのスライダーを引いても、ツールバーは動かない
+  await mouseClick(page, '[aria-label^="色・"]');
+  const sl = await rectOf(page, '.pn.on input[type=range]');
+  await page.mouse.move(sl.x + 4, sl.y + sl.h / 2);
+  await page.mouse.down();
+  await page.mouse.move(sl.x + 120, sl.y + sl.h / 2, { steps: 5 });
+  await page.mouse.up();
+  assert.deepEqual(await rectOf(page, '.bar'), b1);
+  assert.equal(await openPanels(page), 1);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('色と太さのパネル: 色を選んでも開いたまま、描き始めると閉じてその色で描ける。Esc はまずパネルを閉じる', async () => {
   const { page } = await fresh();
   await mouseClick(page, '[aria-label^="色・"]');

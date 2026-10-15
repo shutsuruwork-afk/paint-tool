@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.8.1';
+  const VERSION = '1.8.2';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -101,8 +101,9 @@ canvas{position:absolute;left:0;top:0;pointer-events:none}
 .g,.p{position:absolute;inset:0}
 .p{pointer-events:auto;touch-action:none;cursor:crosshair}
 .pass .p{pointer-events:none}
-.bar{position:absolute;left:0;top:0;display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:4px;max-width:calc(100% - 16px);box-sizing:border-box;background:#202228;border:1px solid #ffffff1f;border-radius:12px;box-shadow:0 6px 24px #0007;pointer-events:auto;touch-action:none;will-change:transform}
+.bar{position:absolute;left:0;top:0;cursor:grab;display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:4px;max-width:calc(100% - 16px);box-sizing:border-box;background:#202228;border:1px solid #ffffff1f;border-radius:12px;box-shadow:0 6px 24px #0007;pointer-events:auto;touch-action:none;will-change:transform}
 .b{all:unset;box-sizing:border-box;flex:none;width:30px;height:30px;display:grid;place-items:center;border-radius:8px;cursor:pointer;color:inherit}
+.bar.drag,.bar.drag *{cursor:grabbing}
 .b:hover{background:#ffffff1a}.b:active{background:#ffffff2e}
 .b.on{background:#3d7cff;color:#fff}
 .b:disabled{opacity:.3;cursor:default;background:none}
@@ -294,7 +295,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
 
   // ---------- ツールバー ----------
-  const grip = el('div', 'b grip', { title: 'ドラッグで移動' });
+  const grip = el('div', 'b grip', { title: 'ドラッグで移動（ツールバーのどこを引いても動かせます）' });
   grip.append(icon(I.grip));
   bar.append(grip);
 
@@ -434,23 +435,42 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     vw = wrap.clientWidth; vh = wrap.clientHeight;
     barW = bar.offsetWidth; barH = bar.offsetHeight;
   };
-  grip.addEventListener('pointerdown', e => {
-    e.preventDefault();
+  // ツールバーはどこを押しても、4px 以上引けば動かせる（引かずに離せば、そのボタンが押される）。
+  // パネルの中（スライダーなど）は除く。動かし始めるまでポインタを奪わないので、ボタンのクリックはそのまま届く
+  // 引いて離したあとのクリックは、ボタンを押したことにしない（次にツールバーを押したら印を消す）
+  let eatClick = false;
+  bar.addEventListener('click', e => { if (eatClick) { eatClick = false; e.stopPropagation(); e.preventDefault(); } }, true);
+  bar.addEventListener('pointerdown', e => {
+    eatClick = false;
+    if (e.button !== 0 || e.target.closest('.pn')) return;
     measureBar();
-    const ox = e.clientX - barX, oy = e.clientY - barY, id = e.pointerId;
-    try { grip.setPointerCapture(id); } catch (_) { }
-    const mv = ev => { if (ev.pointerId === id) moveBar(ev.clientX - ox, ev.clientY - oy); };
+    const sx = e.clientX, sy = e.clientY, ox = sx - barX, oy = sy - barY, id = e.pointerId;
+    let moving = false;
+    const mv = ev => {
+      if (ev.pointerId !== id) return;
+      if (!moving) {
+        if (abs(ev.clientX - sx) < 4 && abs(ev.clientY - sy) < 4) return;
+        moving = true;
+        closePanel();
+        bar.classList.add('drag');
+        try { bar.setPointerCapture(id); } catch (_) { }
+      }
+      moveBar(ev.clientX - ox, ev.clientY - oy);
+    };
     const up = ev => {
       if (ev.pointerId !== id) return;
+      win.removeEventListener('pointermove', mv, true);
+      win.removeEventListener('pointerup', up, true);
+      win.removeEventListener('pointercancel', up, true);
+      if (!moving) return;
+      bar.classList.remove('drag');
       barMoved = true;
       remember();
-      grip.removeEventListener('pointermove', mv);
-      grip.removeEventListener('pointerup', up);
-      grip.removeEventListener('pointercancel', up);
+      eatClick = true;
     };
-    grip.addEventListener('pointermove', mv);
-    grip.addEventListener('pointerup', up);
-    grip.addEventListener('pointercancel', up);
+    win.addEventListener('pointermove', mv, true);
+    win.addEventListener('pointerup', up, true);
+    win.addEventListener('pointercancel', up, true);
   });
 
   // ---------- UI 同期（ホットパス外でのみ呼ぶ） ----------

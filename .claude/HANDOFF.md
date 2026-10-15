@@ -4,18 +4,18 @@
 
 ## 現在地
 
-- 最終更新: 2026-10-15、T-024 の完了時
-- ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない。HEAD は T-024 のコミット（`git log --grep T-024`）
-- CI: GitHub Actions「Pages」は main へのプッシュごとに test → deploy。T-023 まではすべて成功（T-023 は run 38651159332）。T-005・T-024 のプッシュの結果は Actions で確かめる
-- 公開: https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）の 2 か所。版は v1.8.1
+- 最終更新: 2026-10-15、T-026 の完了時
+- ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない。HEAD は T-026 のコミット（`git log --grep T-026`）
+- CI: GitHub Actions「Pages」は main へのプッシュごとに test → deploy。T-023 まではすべて成功（T-023 は run 38651159332）。T-005・T-024・T-026 のプッシュの結果は Actions で確かめる
+- 公開: https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）の 2 か所。版は v1.8.2
 - 人の操作待ち: なし。R-004 は C に決まった（インストールページの既定＋サイトごとに覚える）。ユーザーのフィードバック（ideas/touch-text.md）で、ペンを選んでいても文字に触れたい（T-022、済み。設定の入り・切りはインストールページの「最初の設定」＝T-005、済み）、ツールを選んだらページ操作モードを解除（T-021、済み）が来た
-- 次の一手: ユーザーの実機レビュー（ideas/hands-on-review-1）から作ったタスクを TASKS.md の「次」の順に進める（T-026 → T-025 → T-027 → T-030 → T-028 → T-029）。その後は R-005 のおすすめの順
+- 次の一手: ユーザーの実機レビュー（ideas/hands-on-review-1）から作ったタスクを TASKS.md の「次」の順に進める（T-025 → T-027 → T-030 → T-028 → T-029）。その後は R-005 のおすすめの順
 
 ## 始め方
 
 ```sh
 npm install          # terser 5.36.0 と playwright 1.56.1（ブラウザは /opt/pw-browsers にある）
-npm test             # ビルドしてから Playwright のテスト 44 件
+npm test             # ビルドしてから Playwright のテスト 45 件
 npm run bench        # 性能計測（メインスレッドの占有時間）
 ```
 
@@ -26,14 +26,14 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 
 - `src/paint.js`: 本体。`// ---------- 名前 ----------` の節で区切ってある。
   - ホスト要素: 画面に固定する host（UI、live / pred、top layer）と、ページに貼り付ける surf（`paint-bookmarklet-surface`、確定した絵）の 2 つを documentElement 直下に置く。`pin()` で `!important` のインラインスタイルを当てる
-  - 状態、面（mapNow / origin / dtile / forTiles / sizeSurface）、ツールバー（TITLES、図形ボタン shapeB と lastShape、色と太さ styleB と点 dot、その他 moreB と item()、パネル shapeP / styleP / moreP と openPanel / closePanel / togglePanel、ドラッグ移動 moveBar / measureBar）、UI 同期（setTool / syncTool / syncDot / liveAlpha / setColor / syncBg …）、キャンバスのサイズ管理（fit, warm）
+  - 状態、面（mapNow / origin / dtile / forTiles / sizeSurface）、ツールバー（TITLES、図形ボタン shapeB と lastShape、色と太さ styleB と点 dot、その他 moreB と item()、パネル shapeP / styleP / moreP と openPanel / closePanel / togglePanel、ドラッグ移動 moveBar / measureBar。バーのどこを押しても 4px 引けば動く）、UI 同期（setTool / syncTool / syncDot / liveAlpha / setColor / syncBg …）、キャンバスのサイズ管理（fit, warm）
   - 履歴（push / swap / pack / gather / grow、undo / redo / clearAll）。gather は面のタイルからアトラスへ、swap はアトラスと面を入れ替える
   - ストローク状態と入力: onDown（finishHandoff → mapNow）→ onMove（inkMove, readPred, drawTail / eraseMove → erasePts / drawShape）→ onUp → endStroke（commitLive → 2 フレーム後に finishHandoff）。abortStroke はパームリジェクションで使う
   - タイル（markBox / markSeg / markCurve / markShape / tileRects / resetTiles）。印は面の座標で Set に付ける
   - お知らせ（`say(msg, ms, act, fn)`。fn を渡すとボタン付き）、塗りつぶし（floodFill）、選択（settle / showSel / liftSel → liftRaster + beginSel / dropSel / paintSel / selHit / selHover / selDown / selMove / scaleSel / selUp / selAbort / pickSel / nudgeSel。浮かせた画素は selC、選んだ文字の物の組は selT、どちらも入れ物 selIn に入れて transform で拡大縮小。枠は selEl と selB）、文字（物: tlist / tNew / tSnap / tApply / swapText / textHit / paintText（書き出し用）/ eraseText・showErased・takeErased（消しゴム）。入力: textAt / editText / styleTa / fitTa / commitText。入力欄は `ta`、書き直し中の物は `taObj`）、書き出し（capture / exportBlob / save / copyImg / pixels）、HUD（D キー）、キーボード（onKey）、設定（applyPrefs / snapPrefs / remember → savePrefs / loadSite / placeBar。DEF ＋ サイトの保存）、表示制御（show / hide / toggle / close → endBye / reopen / onByeKey、destroy）、起動
 - `src/install.html`: インストールページのテンプレート（本文のみ）。`%%BOOKMARKLET_HREF%%` などを build.mjs が置き換える。「最初の設定」のフォームは、選んだ既定（組み込みの既定との差分）を JSON にして、ボタンの href の `'__PAINT_DEFAULTS__'` を置き換える。フォームの状態はインストールページ自身の localStorage（`paint-defaults`）に残す。組み込みの既定（BUILTIN と PALETTE）は src/paint.js と手で合わせる（テストで一致を確かめている）
 - `build.mjs`: terser で圧縮し、`dist/paint.min.js`、`dist/bookmarklet.txt`、`docs/index.html` を作る。「このページで試す」用の埋め込み版は、既定の目印を `window.__paintBookmarkletDefaults` を読む式に変える（eval を使わない）。目印が 1 つだけあることも確かめる。インストールページのボタンの href がブックマークレットと一致するかを、書き出す前に確かめる
-- `test/paint.test.mjs`（テスト 44 件）、`test/helpers.mjs`（既定を埋め込んだコードを作る `withDefaults` と直接起動する `runCode`、サーバー〈`/install` はビルドしたインストールページ〉〈`/long` は縦 3000px、`/offset` は html に余白〉・起動・画素の読み取り `readMain` / `screenPixel`・`scrollTo`）、`test/bench.mjs`
+- `test/paint.test.mjs`（テスト 45 件）、`test/helpers.mjs`（既定を埋め込んだコードを作る `withDefaults` と直接起動する `runCode`、サーバー〈`/install` はビルドしたインストールページ〉〈`/long` は縦 3000px、`/offset` は html に余白〉・起動・画素の読み取り `readMain` / `screenPixel`・`scrollTo`）、`test/bench.mjs`
 - `.github/workflows/pages.yml`: main へのプッシュでテストしてから docs/ を Pages に公開。PR ではテストだけ
 - `.claude/`: CLAUDE.md（概要と読み込み）、`rules/`（tasks / handoff / human）、TASKS.md、HANDOFF.md、Stop フック（`hooks/check-handoff.mjs`）
 - `.human/`: ユーザーとの非同期のやりとり。`ideas/`（ユーザーのアイデア、1 件 1 ファイル）、`requests.md`（Claude からの判断・作業のお願い）
@@ -71,6 +71,7 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - ツールバーは「よく使う物だけバー、残りはパネル」にした（T-004、幅 1,159px → 446px）。図形は最後に使った物を出す 1 つのボタン、色・太さ・濃さは点のボタン 1 つ、全消去・背景・保存・コピーは名前とショートカット付きのメニュー。色替えはクリックが 1 手増えるが、数字キーは残る。不便なら最近の色をバーに出す案を検討する。縦置きや折りたたみは、幅が十分に縮んだので見送った。
 - 文字（T-009、T-019）は、入力中は本物の textarea（IME のため）、確定したら DOM の「物」（方式 C でユーザーが選んだ）。物にしたので、拡大縮小は文字の大きさを変えて描き直す（ぼやけない）、書き直しができる、四角と中の文字を別々に動かせる。代わりに文字は常に線より手前に出て、塗りつぶしは文字を壁にしない。書き出しは paintText で fillText し、基線は CSS の half-leading と同じ計算（CSS px の書体の寸法を整数に丸め、余白は切り捨て）。入力欄・DOM・書き出しのインクの外接矩形が 1x・1.5x・2x、13〜48px で一致した（2x・13px の下端だけ 1 デバイス px）。書体は 600 の system-ui、大きさは太さのスライダーと共用。書き直すときは、その物の色・大きさ・濃さを今の設定として拾う。
 - 文字に触れる（T-022、ユーザーの提案。`touchText`、既定は入り）: TOUCH の道具（ペン・蛍光ペン・図形・塗りつぶし）で、選んでいる物か文字の上を押したら selDown に回す（選択ツールと同じ動き）。外を押したら選択を外してその道具で描く。消しゴムと文字ツールは対象外。選んでいる文字をもう一度押して動かさずに離すと書き直し（sWas）で、ダブルクリックもこれになるので dblclick のリスナーは外した。書き直しの書式は入力欄だけが持つ（taFs / taC / taA）ので、道具と今の色は変わらない。入力中に色を選ぶと文字にも反映し、大きさ・濃さは文字ツールのスライダーを動かしたときだけ反映する。入力中に外を押すと、どの道具でも確定だけ（線は描かない）。
+- ツールバーはどこを押しても、4px 以上引けば移動（T-026、ユーザーの要望）。動かし始めるまでポインタを奪わない（奪うとクリックの対象がバーになり、ボタンが押せなくなる）。引いて離した後のクリックは `eatClick` の印で 1 回だけ捨て、印は次にバーを押したときに消す（タイマーで外すと、次のクリックが早いとそれまで捨ててしまった）。パネルの中（スライダー）は対象外。
 - 文字の入力欄には見えない余白 TA_PAD（10px）を付け、位置を余白の分だけ外へずらす（T-024、ユーザーの要望）。文字と点線の枠の見た目は変えずに、少し外れた所を押しても入力が続く。fitTa は余白を外して測る（Chrome の textarea の scrollWidth は左の余白だけを含み、右を含まないため）。
 - 消しゴムは触れた文字の物を丸ごと消す（なぞる間は薄く、離して消す）。当たり判定は線分と外接矩形の Liang–Barsky で、入力ごとの計算に割り当てはない。薄く見せる DOM の更新は tick（毎フレーム 1 回）。
 - 選択（T-010）は方式 C の画素の部分（ideas/select-box.md でユーザーが C を選んだ）。浮かせた中身は面の中の canvas（selC）で、動かす間は枠の left / top / width / height だけを変える。確定は「元の範囲」と「置いた範囲」の 2 矩形を 1 手にする。動かさずに確定したら元に戻すだけで履歴は増やさない。クリックで選ぶ物は、クリックした所に画素がある手のうち外接矩形が最小の物。拡大縮小は押した所からの移動量で計算し、角は (w, h) を元の向きへ射影した倍率で比を保つ（細長い物で max 比を使うと少しの縦の動きで暴れたため）。枠は中身から外へ出して最低 24 CSS px（細い線の中央を押すと上下のつまみに当たって移動できなかったため）。
@@ -107,7 +108,7 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 
 ## 検証の方法
 
-- `npm test` で見ていること: インストールページのボタンの中身がブックマークレットと一致する、最初の設定（インストールページの組み込みの既定が本体と一致・選ぶとボタンが変わる・このページで試す／別のサイトの javascript: URL の両方で効く・開き直しても残る・最初の状態に戻す）、サイトごとの記憶（変えなければ書かない・差分だけ書く・次回はその続き・背景は覚えない・DEF を変えると触っていない所に効く・localStorage が使えなくてもエラーにならない）、起動とトグル・破棄、ページ操作モードがツールの選択で解除される、速い線が途切れない、undo / redo が画素単位で一致、消しゴム（右クリック含む）、半透明の重なり、四角と塗りつぶし（隙間・漏れ）、筆圧、パームリジェクション、ページへのイベント漏れ、入力欄にフォーカスがあるときのショートカット、厳格な CSP と Trusted Types、リサイズ、図形と Shift、PNG 保存、塗りつぶしの壁と再着色、rawupdate と pointermove の重複処理。文字に触れる: ペンのまま文字を押して移動・もう一度押して書き直し・道具と色がそのまま・外から描く線は描ける・文字の上のカーソル・touchText を切ると描ける。文字の物: 押してそのまま移動、角で拡大すると文字の大きさが変わる、ダブルクリックと文字ツールで書き直し、空で消える、1 手ずつの undo / redo、消しゴムで薄くなって消える、囲むと線と一緒に動く、全消去と undo。選択: 囲むと中身に詰めた枠、動かさずに確定しても履歴が増えない、細い線の移動、移動の undo / redo が画素単位で一致、何もない所は選ばれない、クリックで最小の物、角の比を保った縮小、辺の片方向、矢印キー、Delete と undo、スクロール追従、ツール切り替えで確定。文字: 入力欄の位置とフォーカス、入力欄の見えない余白（少し外を押しても続く・枠の見た目はそのまま）、ショートカットにならない、ページへキーが漏れない、外のクリック・Esc・ツール切り替えで確定、空なら残らない、undo / redo、入力中の色の変更、スクロール追従。ツールバー: 1 段で 520px 以下、図形ボタンとパネル、色と太さのパネル（色を選んでも開いたまま、描き始めで閉じる、Esc はまずパネル）、その他のメニュー、右下の隅では内側（上）に開く。閉じる: 8 秒後に破棄、ボタン・Ctrl+Z・ブックマークレットで戻る（入力欄の Ctrl+Z は横取りしない）、戻すまでページをクリックできる、何も描いていなければすぐ閉じる。スクロール追従: 描いてからのスクロール、スクロール後の描画と undo / redo（目印の要素との位置）、スクロール後の塗りつぶし・消しゴム・PNG、端に描いてもスクロール範囲が広がらない、ページが縮むと面も縮む、html に余白があるページ、確定時のちらつきと半透明の opacity の事前設定、scroll / wheel リスナーがない、@2x、表示倍率の変更（CDP で dpr 1.5）。
+- `npm test` で見ていること: インストールページのボタンの中身がブックマークレットと一致する、最初の設定（インストールページの組み込みの既定が本体と一致・選ぶとボタンが変わる・このページで試す／別のサイトの javascript: URL の両方で効く・開き直しても残る・最初の状態に戻す）、サイトごとの記憶（変えなければ書かない・差分だけ書く・次回はその続き・背景は覚えない・DEF を変えると触っていない所に効く・localStorage が使えなくてもエラーにならない）、起動とトグル・破棄、ページ操作モードがツールの選択で解除される、速い線が途切れない、undo / redo が画素単位で一致、消しゴム（右クリック含む）、半透明の重なり、四角と塗りつぶし（隙間・漏れ）、筆圧、パームリジェクション、ページへのイベント漏れ、入力欄にフォーカスがあるときのショートカット、厳格な CSP と Trusted Types、リサイズ、図形と Shift、PNG 保存、塗りつぶしの壁と再着色、rawupdate と pointermove の重複処理。文字に触れる: ペンのまま文字を押して移動・もう一度押して書き直し・道具と色がそのまま・外から描く線は描ける・文字の上のカーソル・touchText を切ると描ける。文字の物: 押してそのまま移動、角で拡大すると文字の大きさが変わる、ダブルクリックと文字ツールで書き直し、空で消える、1 手ずつの undo / redo、消しゴムで薄くなって消える、囲むと線と一緒に動く、全消去と undo。選択: 囲むと中身に詰めた枠、動かさずに確定しても履歴が増えない、細い線の移動、移動の undo / redo が画素単位で一致、何もない所は選ばれない、クリックで最小の物、角の比を保った縮小、辺の片方向、矢印キー、Delete と undo、スクロール追従、ツール切り替えで確定。文字: 入力欄の位置とフォーカス、入力欄の見えない余白（少し外を押しても続く・枠の見た目はそのまま）、ショートカットにならない、ページへキーが漏れない、外のクリック・Esc・ツール切り替えで確定、空なら残らない、undo / redo、入力中の色の変更、スクロール追従。ツールバー: 1 段で 520px 以下、ボタンの上から引いても動く（ボタンは押されない）・4px 未満のぶれならボタンが効く・スライダーでは動かない、図形ボタンとパネル、色と太さのパネル（色を選んでも開いたまま、描き始めで閉じる、Esc はまずパネル）、その他のメニュー、右下の隅では内側（上）に開く。閉じる: 8 秒後に破棄、ボタン・Ctrl+Z・ブックマークレットで戻る（入力欄の Ctrl+Z は横取りしない）、戻すまでページをクリックできる、何も描いていなければすぐ閉じる。スクロール追従: 描いてからのスクロール、スクロール後の描画と undo / redo（目印の要素との位置）、スクロール後の塗りつぶし・消しゴム・PNG、端に描いてもスクロール範囲が広がらない、ページが縮むと面も縮む、html に余白があるページ、確定時のちらつきと半透明の opacity の事前設定、scroll / wheel リスナーがない、@2x、表示倍率の変更（CDP で dpr 1.5）。
 - 未確認: 実際の IME（headless では insertText で代用）、Firefox と Safari での動作、実際のペンタブレット、Windows の Ink Trail、実 GPU での desynchronized の効果、実機でのスクロールの滑らかさ（タイルが多いとき）、Gmail などの内側スクロールのサイトでの見え方。
 
 ## 外部の状態
@@ -118,6 +119,11 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - Artifact: https://claude.ai/artifact/Aj3XQxn6Q7EUaiHjYAFbve（インストールページ、非公開）。`docs/index.html` の本文だけの版
 
 ## 完了ログ（新しい順）
+
+### T-026 ツールバーのどこを押しても、引けば動かせるようにする — 2026-10-15
+- 変更: 移動つまみだけでなく、ツールバーのどこを押しても 4px 以上引けば動くようにした。ボタンの上から引いたときは、そのボタンは押されない。パネルの中は対象外。ユーザーの要望（ideas/hands-on-review-1）。版を 1.8.2 にした。
+- 確認: `npm test` 45 件が通過（1 件追加）。最初は引いた後のクリックを捨てる処理をタイマーで外していて、次のクリックが早いとそれも捨ててしまい、既存のテスト（右下へ動かしてからメニューを開く）が落ちた。印の方式に直した。
+- 残課題: なし。
 
 ### T-024 文字の入力欄の当たり判定を、見た目を変えずに広げる — 2026-10-15
 - 変更: 文字の入力欄に、見えない余白（10px）を付けた。位置を余白の分だけ外へずらすので、文字の位置と点線の枠は今までと同じ。文字の少し外を押しても確定せず、カーソルが動く。ユーザーの要望（チャット、ideas/hands-on-review-1 と同じ日）。版を 1.8.1 にした。
@@ -165,12 +171,8 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - 確認: `npm test` 31 件が通過（3 件追加）。上に開く処理を外すと端のテストが、描き始めで閉じる処理を外すとパネルのテスト 2 件が落ちることを確かめた。スクリーンショットで各パネルの見た目を確かめた。`npm run bench`: 入力 1 件 4.5〜6.7 µs で悪化なし。
 - 残課題: 色替えが 1 手増えた点は使用感待ち。スマートフォンで viewport の指定がないページでは、画面ごと縮小されてツールバーが小さく見える（T-011 に追記）。
 
-### T-006 閉じる（×）を押しても、しばらくは絵を元に戻せるようにする — 2026-10-14
-- 変更: × を押すと絵とツールバーが消え、画面の下に「絵を消して閉じました［元に戻す］」と残り時間のバーが 8 秒出る。その間はボタン・Ctrl/⌘+Z・ブックマークレットで絵も履歴も戻る。8 秒たつと今までどおりすべて解放する。何も描いていなければすぐ閉じる。API に `close()` を足し、`destroy()` はすぐ解放のまま。版を 1.2.0 にした。README とインストールページに書いた。
-- 確認: `npm test` 28 件が通過（2 件追加、1 件を 8 秒後の破棄に変更）。入力欄の判定を外すと、入力欄の Ctrl+Z を横取りしてテストが落ちることを確かめた。お知らせの見た目をスクリーンショットで確かめた。入力のホットパスは変えていないのでベンチは流していない。
-- 残課題: 8 秒が短すぎないか・長すぎないかは使用感待ち。隠す（Esc）の状態が分かりにくい件は T-008 のまま。
-
 ### それより前（1 行に畳んだもの）
+- T-006 閉じる（×）を 8 秒間は取り消せるようにした（お知らせのボタン・Ctrl+Z・ブックマークレット）— 2026-10-14
 - T-003 絵をページ座標のタイル（面）に貼り付け、スクロールに追従（scroll リスナーなし）— 2026-10-14
 - T-015 MIT ライセンス（LICENSE、package.json、README、先頭コメント、インストールページ）— 2026-10-14
 - T-002 インストールページを GitHub Pages で公開（R-001 でユーザーが Source を設定。run 38550725208）— 2026-10-14

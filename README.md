@@ -24,6 +24,7 @@
 - **色と太さ**の点は、今の色・太さ・濃さを表します。押すと、パレット・カスタム色・スポイト・太さ・濃さのパネルが開きます。
 - **その他**（⋯）には、全消去・背景・PNG 保存・クリップボードへのコピーがあります。
 - パネルは、描き始めるか、パネルの外を押すか、`Esc` を押すと閉じます。
+- ツールバーは、どこを押しても引けば動かせます（ボタンの上からでも、4px 以上引けば移動になり、そのボタンは押されません）。
 
 | キー | 動作 |
 | --- | --- |
@@ -153,7 +154,7 @@
 ```sh
 npm install
 npm run build   # src/paint.js → dist/paint.min.js, dist/bookmarklet.txt, docs/index.html
-npm test        # Playwright（Chromium）で 44 項目の動作テスト
+npm test        # Playwright（Chromium）で 45 項目の動作テスト
 npm run bench   # 性能計測
 ```
 

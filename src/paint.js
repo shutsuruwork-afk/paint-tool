@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.15.1';
+  const VERSION = '1.15.2';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -133,6 +133,9 @@ canvas{position:absolute;left:0;top:0;pointer-events:none}
 .row{display:flex;align-items:center;gap:2px}
 .b.mi{width:auto;display:flex;justify-content:flex-start;gap:10px;padding:0 10px 0 6px;white-space:nowrap}
 .mi kbd{margin-left:auto;padding-left:20px;color:#7d808a;font:inherit}
+.mi .sw{position:relative;flex:none;margin-left:auto;width:30px;height:18px;border-radius:9px;background:#ffffff38;transition:background .15s}
+.mi .sw::after{content:"";position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 2px #0006;transition:transform .15s}
+.mi[aria-checked=true] .sw{background:#3d7cff}.mi[aria-checked=true] .sw::after{transform:translateX(12px)}
 svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
 .grip{width:16px;cursor:grab;color:#7d808a}.grip:hover{background:none}.grip svg,[aria-label^="その他"] svg{stroke-width:3}
 .c{width:24px}
@@ -431,12 +434,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // その他: 名前とショートカット付きのメニュー。keep なら押しても閉じない（背景を続けて切り替えられる）
   const moreP = pnl();
   const moreB = btn('その他（全消去・背景・保存・コピー・電卓・画面に固定）', I.more, () => togglePanel(moreP, moreB));
-  const item = (title, label, key, d, fn, keep) => {
+  // sw なら入り・切りのスイッチ（role="switch"。状態は aria-checked で持ち、つまみは CSS で動かす）
+  const item = (title, label, key, d, fn, keep, sw) => {
     const b = btn(title, d, () => { if (!keep) closePanel(); fn(); }, 'mi');
     const s = el('span');
     s.textContent = label;
     b.append(s);
     if (key) { const k = el('kbd'); k.textContent = key; b.append(k); }
+    if (sw) { b.setAttribute('role', 'switch'); b.append(el('i', 'sw')); }
     moreP.append(b);
     return [b, s];
   };
@@ -444,14 +449,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const [bgB, bgL] = item('', '', 'B', I.bg, cycleBg, true);
   item('PNG で保存 (Ctrl/⌘+S)', 'PNG で保存', IS_MAC ? '⌘S' : 'Ctrl+S', I.save, save);
   if (HAS_CLIP) item('画像をクリップボードにコピー', 'クリップボードにコピー', '', I.copy, copyImg);
-  const [calcB, calcL] = item('電卓 — 文字に計算式を書くと答えが薄く出て、Tab で書き込める', '', '', I.calc, () => {
+  const [calcB] = item('電卓 — 文字に計算式を書くと答えが薄く出て、Tab で書き込める', '電卓', '', I.calc, () => {
     calc = !calc;
     syncCalc();
     updateGhost();
     remember();
     say(calc ? '電卓: 文字に計算式を書くと答えが出ます（Tab で書き込み）' : '電卓: 切');
-  }, true);
-  const [fixB, fixL] = item('画面に固定 — スクロールしても絵が画面の同じ所に留まる（動画や地図の上に描くとき）', '', '', I.pin, toggleFixed, true);
+  }, true, true);
+  const [fixB] = item('画面に固定 — スクロールしても絵が画面の同じ所に留まる（動画や地図の上に描くとき）', '画面に固定', '', I.pin, toggleFixed, true, true);
   bar.append(undoB, redoB, sep(), passB, moreB, sep(),
     btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hideHint), btn('閉じる（8 秒間は元に戻せます）', I.close, close),
     shapeP, penP, styleP, moreP);
@@ -641,12 +646,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     syncBg();
   }
   function syncFixed() {
-    fixL.textContent = fixed ? '画面に固定: 入' : '画面に固定: 切';
-    fixB.classList.toggle('on', fixed);
+    fixB.setAttribute('aria-checked', fixed);
   }
   function syncCalc() {
-    calcL.textContent = calc ? '電卓: 入' : '電卓: 切';
-    calcB.classList.toggle('on', calc);
+    calcB.setAttribute('aria-checked', calc);
   }
   function syncBg() {
     const t = `背景: ${BG_NAMES[bg]}`;

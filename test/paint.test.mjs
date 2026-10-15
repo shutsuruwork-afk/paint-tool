@@ -1009,7 +1009,7 @@ test('電卓: 入りにすると、文字の行が計算式なら答えが薄く
   // 入りにする（その他のメニュー）
   await mouseClick(page, '[aria-label^="その他"]');
   await mouseClick(page, '.pn.on [aria-label^="電卓"]');
-  assert.equal(await shadowEval(page, root => root.querySelector('[aria-label^="電卓"] span').textContent), '電卓: 入');
+  assert.equal(await shadowEval(page, root => root.querySelector('[aria-label^="電卓"]').getAttribute('aria-checked')), 'true');
   await page.keyboard.press('Escape');
   await page.mouse.click(200, 450);
   const cases = [['12*3', ' = 36'], ['2+3*4', ' = 14'], ['-2^2', ' = -4'], ['2^3^2', ' = 512'], ['50%*200', ' = 100'],

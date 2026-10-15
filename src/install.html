@@ -225,8 +225,13 @@ tbody th { font-weight: 700; min-width: 8em; }
 .choices { display: flex; flex-wrap: wrap; gap: 8px 18px; }
 .choices label, .check { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
 .choices input, .check input { accent-color: var(--red); width: 18px; height: 18px; margin: 0; flex: none; }
-.check { align-items: flex-start; }
-.check input { margin-top: 0.3em; }
+.check { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+/* 入り・切りはスイッチの形にする（チェックボックスのまま見た目だけ。ツールのメニューのスイッチと同じ形） */
+.check input[role=switch] { order: 2; appearance: none; -webkit-appearance: none; position: relative; width: 42px; height: 24px; margin: 0.15em 0 0; border-radius: 12px; background: var(--line); cursor: pointer; transition: background .15s; }
+.check input[role=switch]::before { content: ""; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px #0005; transition: transform .15s; }
+.check input[role=switch]:checked { background: var(--red); }
+.check input[role=switch]:checked::before { transform: translateX(18px); }
+.check input[role=switch]:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .prefs select { font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
 .prefs-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
 #p-state { color: var(--ink-soft); font-size: 0.88rem; }
@@ -235,7 +240,7 @@ tbody th { font-weight: 700; min-width: 8em; }
 
 <main class="page">
   <header>
-    <p class="eyebrow">Bookmarklet · v1.15.1 · %%SIZE%%（gzip %%GZIP%%）</p>
+    <p class="eyebrow">Bookmarklet · v1.15.2 · %%SIZE%%（gzip %%GZIP%%）</p>
     <h1>ペイント<br>ブックマークレット</h1>
     <p class="lead">開いているページの上に、<span class="mark">そのまま描ける<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d="M18 40C8 22 52 6 108 7s92 13 84 30-62 20-112 17S4 38 30 16" vector-effect="non-scaling-stroke"/></svg></span>ペイントツールです。ブックマークを押すだけで起動し、拡張機能もアカウントも要りません。入力から線が画面に出るまでの遅延を減らす仕組みを、ブラウザが対応している限りすべて使います。</p>
     <div class="actions">
@@ -289,9 +294,9 @@ tbody th { font-weight: 700; min-width: 8em; }
           <label><input type="radio" name="bar" value="bottom">下の中央</label>
         </div>
       </fieldset>
-      <label class="check"><input type="checkbox" id="p-once"><span>ペンと図形のボタンを 1 回押すと、種類（ペンの種類・4 つの図形）の選択肢も出す（切ると、選んでいるボタンをもう一度押したときに出ます）</span></label>
-      <label class="check"><input type="checkbox" id="p-calc"><span>電卓: 文字に計算式（12×3 など）を書くと、答えを薄く出して Tab で書き込める（ツールの「その他」でも切り替えられます）</span></label>
-      <label class="check"><input type="checkbox" id="p-touch"><span>ペンなどを選んでいても、文字を押すと選んで動かせ、もう一度押すと書き直せる（切ると、文字の上からでもペンで描けます）</span></label>
+      <label class="check"><input type="checkbox" role="switch" id="p-once"><span>ペンと図形のボタンを 1 回押すと、種類（ペンの種類・4 つの図形）の選択肢も出す（切ると、選んでいるボタンをもう一度押したときに出ます）</span></label>
+      <label class="check"><input type="checkbox" role="switch" id="p-calc"><span>電卓: 文字に計算式（12×3 など）を書くと、答えを薄く出して Tab で書き込める（ツールの「その他」でも切り替えられます）</span></label>
+      <label class="check"><input type="checkbox" role="switch" id="p-touch"><span>ペンなどを選んでいても、文字を押すと選んで動かせ、もう一度押すと書き直せる（切ると、文字の上からでもペンで描けます）</span></label>
       <div class="prefs-foot">
         <button type="button" id="p-reset" class="btn">最初の状態に戻す</button>
         <span id="p-state" role="status"></span>

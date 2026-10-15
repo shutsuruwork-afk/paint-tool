@@ -163,9 +163,9 @@ test('ツールバーは 1 段で幅 520px 以下。図形は最後に使った�
   const { page, errors } = await fresh();
   const bar = await rectOf(page, '.bar');
   assert.ok(bar.w <= 520 && bar.h <= 50, JSON.stringify(bar));
-  const shapeTitle = () => shadowEval(page, root => root.querySelector('.bar > .dd').title);
+  const shapeTitle = () => shadowEval(page, root => root.querySelector('.bar > .shp').title);
   // 図形ボタン: 押すと最後の図形（最初は直線）になり、パネルが開く
-  await mouseClick(page, '.bar > .dd');
+  await mouseClick(page, '.bar > .shp');
   assert.match(await toolOn(page), /^直線/);
   assert.equal(await openPanels(page), 1);
   assert.equal(await shadowEval(page, root => root.querySelectorAll('.pn.on .b').length), 4);
@@ -178,7 +178,7 @@ test('ツールバーは 1 段で幅 520px 以下。図形は最後に使った�
   await page.keyboard.press('p');
   assert.match(await toolOn(page), /^ペン/);
   // ペンに戻ってから押すと、最後の図形（楕円）になる。描き始めるとパネルは閉じる
-  await mouseClick(page, '.bar > .dd');
+  await mouseClick(page, '.bar > .shp');
   assert.match(await toolOn(page), /^楕円/);
   assert.equal(await openPanels(page), 1);
   await drag(page, [[300, 300], [500, 450]], 5);
@@ -280,7 +280,7 @@ test('その他のパネルに全消去・背景・保存が名前付きで並�
   await page.mouse.up();
   const bar = await rectOf(page, '.bar');
   assert.ok(bar.r <= 1000 && bar.b <= 700 && bar.b > 680, JSON.stringify(bar));
-  for (const sel of ['[aria-label^="その他"]', '[aria-label^="色・"]', '.bar > .dd']) {
+  for (const sel of ['[aria-label^="その他"]', '[aria-label^="色・"]', '.bar > .shp']) {
     await mouseClick(page, sel);
     const p = await rectOf(page, '.pn.on');
     assert.ok(p.x >= 0 && p.y >= 0 && p.r <= 1000 && p.b <= bar.y, `${sel}: ${JSON.stringify(p)}`);
@@ -831,6 +831,63 @@ test('サイトで変えた色・太さ・道具・ツールバーの位置を�
   await p3.evaluate(() => window.__paintBookmarklet.hide());
   assert.deepEqual(e3, []);
   await ctx.close();
+});
+
+// 間隔（ms）を空けて点を流すストローク（速さで太さが変わるペンを試す）
+const timedStroke = (page, pts, gap) => page.evaluate(async ([pts, gap]) => {
+  const pad = document.querySelector('paint-bookmarklet').shadowRoot.querySelector('.p');
+  const ev = (t, x, y) => pad.dispatchEvent(new PointerEvent(t, { bubbles: true, cancelable: true, composed: true, isPrimary: true,
+    pointerId: 1, pointerType: 'mouse', button: t === 'pointermove' ? -1 : 0, buttons: t === 'pointerup' ? 0 : 1, clientX: x, clientY: y }));
+  ev('pointerdown', pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) { await new Promise(r => setTimeout(r, gap)); ev('pointermove', pts[i][0], pts[i][1]); }
+  ev('pointerup', pts.at(-1)[0], pts.at(-1)[1]);
+}, [pts, gap]);
+const line = (x0, y0, x1, y1, n) => Array.from({ length: n + 1 }, (_, i) => [x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n]);
+
+test('ペンの種類: ペンでないときは押してもペンになるだけ、ペンのときにもう一度押すと種類のパネル。万年筆は向き・筆は速さで太さが変わり、鉛筆はかすれる', async () => {
+  const { page, errors } = await fresh();
+  await page.keyboard.press('h');
+  await mouseClick(page, '.bar > [aria-label^="ペン"]');
+  assert.match(await toolOn(page), /^ペン/);
+  assert.equal(await openPanels(page), 0);
+  await mouseClick(page, '.bar > [aria-label^="ペン"]');
+  assert.equal(await openPanels(page), 1);
+  assert.equal(await shadowEval(page, root => root.querySelectorAll('.pn.on .b').length), 4);
+  await mouseClick(page, '.pn.on [aria-label^="万年筆"]');
+  assert.equal(await openPanels(page), 0);
+  assert.match(await toolOn(page), /^万年筆/);
+  await setSlider(page, 0, 50); // 太さ 25
+  // 万年筆: 右下がりは太く、右上がりは細い
+  await timedStroke(page, line(100, 150, 300, 350, 20), 8);
+  await timedStroke(page, line(500, 350, 700, 150, 20), 8);
+  const down = (await alphaStats(page, 80, 130, 240, 240)).count, up = (await alphaStats(page, 480, 130, 240, 240)).count;
+  assert.ok(down > up * 2, `万年筆 ↘ ${down} ↗ ${up}`);
+  // 筆: ゆっくりだと太く、速いと細い
+  await mouseClick(page, '.bar > [aria-label^="万年筆"]');
+  await mouseClick(page, '.pn.on [aria-label^="筆"]');
+  await timedStroke(page, line(100, 450, 400, 450, 100), 16);
+  await timedStroke(page, line(100, 600, 400, 600, 10), 2);
+  const slow = (await alphaStats(page, 150, 420, 200, 60)).count, fast = (await alphaStats(page, 150, 570, 200, 60)).count;
+  assert.ok(slow > fast * 2, `筆 ゆっくり ${slow} 速い ${fast}`);
+  // 鉛筆: かすれる（線の中心でも、薄い画素が混じる）。元に戻すは画素単位
+  await mouseClick(page, '.bar > [aria-label^="筆"]');
+  await mouseClick(page, '.pn.on [aria-label^="鉛筆"]');
+  const s0 = await checksum(page);
+  await timedStroke(page, line(550, 500, 900, 500, 30), 8);
+  const core = await readMain(page, 600, 497, 250, 6);
+  let faint = 0, n = 0;
+  for (let i = 3; i < core.length; i += 4) { n++; if (core[i] < 200) faint++; }
+  assert.ok(faint / n > 0.08, `鉛筆のかすれ ${faint}/${n}`); // 普通のペンなら 0（つなぎ目は模様が重なって濃くなる）
+  const s1 = await checksum(page);
+  await page.keyboard.press('Control+z');
+  assert.equal(await checksum(page), s0);
+  await page.keyboard.press('Control+Shift+z');
+  assert.equal(await checksum(page), s1);
+  // 選んだ種類はサイトごとに覚える
+  await page.waitForTimeout(600);
+  assert.equal(JSON.parse(await lsGet(page)).pen, 'pencil');
+  assert.deepEqual(errors, []);
+  await page.close();
 });
 
 test('速いマウス移動でも線が途切れない（全中間点を取りこぼさない）', async () => {

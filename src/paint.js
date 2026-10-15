@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.8.4';
+  const VERSION = '1.9.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -56,6 +56,15 @@
   if (!DEF || typeof DEF !== 'object') DEF = {};
   // 文字に触れる: ペンなどを選んでいても、文字の上を押すと選んで動かし、もう一度押すと書き直せる
   const TOUCH = { pen: 1, marker: 1, line: 1, arrow: 1, rect: 1, ellipse: 1, fill: 1 };
+  // ペンの種類。ペンを選んだ状態でペンのボタンをもう一度押すと選べる（あまり使わないので、普段の操作は増やさない）
+  const PENS = ['pen', 'fountain', 'brush', 'pencil'];
+  const PEN_TITLES = {
+    pen: 'ペン (P)',
+    fountain: '万年筆 (P) — 線の向きで太さが変わる',
+    brush: '筆 (P) — ゆっくりだと太く、速いと細い',
+    pencil: '鉛筆 (P) — 少しかすれる',
+  };
+  const NIB_C = Math.SQRT1_2, NIB_S = -Math.SQRT1_2; // 万年筆のペン先の向き（−45°。右上がりが細く、右下がりが太い）
   const KEYMAP = { p: 'pen', h: 'marker', e: 'eraser', l: 'line', a: 'arrow', r: 'rect', o: 'ellipse', f: 'fill', t: 'text', s: 'select' };
   // 文字の書体。入力欄（CSS）と確定時の fillText で同じものを使う
   const FONT = 'system-ui,-apple-system,"Segoe UI","Hiragino Sans","Yu Gothic UI",sans-serif';
@@ -84,6 +93,9 @@
     copy: 'M9 9h11v11H9zM5 15H4V4h11v1',
     hide: 'M5 12h14',
     plus: 'M12 5v14M5 12h14',
+    fountain: 'M12 2.5l5.5 8L12 21.5l-5.5-11zM12 10.5v5M12 15.5a.6.6 0 1 0 0 .01',
+    brush: 'M19.5 3.5l1 1-8 9.5-2.5-2.5zM10 11.5c-2.6-.4-5 1.4-5 4.3 0 2-1 3.3-2.5 4.2 4.6.6 9.7-.9 9.9-5.6',
+    pencil: 'M4 20l1.3-4.6L15.5 5.2a2 2 0 0 1 2.8 0l.5.5a2 2 0 0 1 0 2.8L8.6 18.7zM13.5 7.2l3.3 3.3M5.3 15.4l3.3 3.3',
     eye: 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM4 4l16 16',
     more: 'M5 12h.01M12 12h.01M19 12h.01',
     close: 'M6 6l12 12M18 6L6 18',
@@ -232,7 +244,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   shadow.append(wrap);
 
   // ---------- 状態 ----------
-  let tool = 'pen', color = PALETTE[2], bg = 0, pass = false, visible = false, touchText = DEF.touchText !== false;
+  let tool = 'pen', color = PALETTE[2], bg = 0, pass = false, visible = false, touchText = DEF.touchText !== false, penType = 'pen';
   let dpr = win.devicePixelRatio || 1, W = 0, H = 0, grpA = 1, pendingFit = false, rz = 0;
   // 履歴タイル: ストロークが触れた T×T タイル（面の座標）だけを記録し、確定・undo・消しゴムの退避をその範囲に限定する。
   // 文書は大きいので、印は配列ではなく Set で持つ。番号は 行 × 65536 + 列
@@ -323,14 +335,23 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const pnl = () => el('div', 'pn');
   const row = (...a) => { const r = el('div', 'row'); r.append(...a); return r; };
   const toolBtns = {};
-  for (const t of ['select', 'pen', 'marker', 'eraser']) bar.append(toolBtns[t] = btn(TITLES[t], I[t], () => setTool(t)));
+  bar.append(toolBtns.select = btn(TITLES.select, I.select, () => setTool('select')));
+  // ペン: ペンでないときに押すとペンになる。ペンのときにもう一度押すと、種類のパネルが開く
+  const penP = pnl();
+  const penB = btn(TITLES.pen, I.pen, () => { if (tool === 'pen') togglePanel(penP, penB); else setTool('pen'); }, 'dd');
+  const penD = penB.querySelector('path');
+  toolBtns.pen = penB;
+  const penBtns = {};
+  penP.append(row(...PENS.map(k => penBtns[k] = btn(PEN_TITLES[k], I[k === 'pen' ? 'pen' : k], () => { setPen(k); closePanel(); }))));
+  bar.append(penB);
+  for (const t of ['marker', 'eraser']) bar.append(toolBtns[t] = btn(TITLES[t], I[t], () => setTool(t)));
   // 図形: 最後に使った図形を表示する。押すとその図形になり、4 つの図形のパネルが開く
   let lastShape = 'line';
   const shapeP = pnl();
   const shapeB = btn(TITLES.line, I.line, () => {
     if (SHAPES.includes(tool)) togglePanel(shapeP, shapeB);
     else { setTool(lastShape); openPanel(shapeP, shapeB); }
-  }, 'dd');
+  }, 'dd shp');
   const shapeD = shapeB.querySelector('path');
   shapeP.append(row(...SHAPES.map(t => toolBtns[t] = btn(TITLES[t], I[t], () => { setTool(t); closePanel(); }))));
   bar.append(shapeB, toolBtns.text = btn(TITLES.text, I.text, () => setTool('text')),
@@ -404,7 +425,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const miniB = btn('たたむ — ツールバーを ＋ のボタンだけにする（絵はそのまま）', I.hide, () => setMini(true));
   const plusB = btn('ツールバーを広げる', I.plus, () => setMini(false), 'plus');
   bar.append(undoB, redoB, sep(), passB, moreB, sep(), miniB, btn('閉じる（8 秒間は元に戻せます）', I.close, close),
-    plusB, shapeP, styleP, moreP);
+    plusB, shapeP, penP, styleP, moreP);
   let mini = false;
   function setMini(on) {
     if (mini === on) return;
@@ -544,6 +565,36 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function liveAlpha() {
     const a = tool === 'eraser' || tool === 'fill' || tool === 'select' ? 1 : CFG[tool].alpha;
     if (grpA !== a && !handoff) { grp.style.opacity = a; grpA = a; }
+  }
+  function setPen(k) {
+    penType = k;
+    setTool('pen');
+    syncPen();
+    remember();
+  }
+  function syncPen() {
+    penD.setAttribute('d', I[penType === 'pen' ? 'pen' : penType]);
+    penB.title = PEN_TITLES[penType];
+    penB.setAttribute('aria-label', PEN_TITLES[penType]);
+    for (const k of PENS) penBtns[k].classList.toggle('on', k === penType);
+  }
+  // 鉛筆のかすれ: 色ごとに 1 度だけ作る模様（入力のたびには作らない）
+  let grainC = '', grainP = null;
+  function grain() {
+    if (grainC === color && grainP) return grainP;
+    const n = 48, c = newCanvas(n, n), x = c.getContext('2d'), im = x.createImageData(n, n), d = im.data;
+    const r = parseInt(color.slice(1, 3), 16), g = parseInt(color.slice(3, 5), 16), b = parseInt(color.slice(5, 7), 16);
+    let seed = 12345;
+    for (let i = 0; i < d.length; i += 4) {
+      seed = (seed * 1103515245 + 12345) >>> 0;
+      const v = (seed >>> 16) / 65536; // 0〜1 の擬似乱数（毎回同じ模様にする）
+      d[i] = r; d[i + 1] = g; d[i + 2] = b;
+      d[i + 3] = v < 0.18 ? 40 : v < 0.45 ? 150 : 235;
+    }
+    x.putImageData(im, 0, 0);
+    grainC = color;
+    grainP = lctx.createPattern(c, 'repeat');
+    return grainP;
   }
   function setSize(s) {
     if (tool === 'fill') return;
@@ -764,6 +815,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // ---------- ストローク状態（ホットパスで割り当てを起こさないよう、すべてスカラーで保持） ----------
   let act = -1, aType = '', mode = 0; // mode: 1 インク / 2 消しゴム / 3 図形 / 4 選択（囲む・移動・拡大縮小）
   let sTool = 'pen', sW = 0, sA = 1, sP = false, sRaw = false, raf = 0;
+  let sPen = 0, pf = 1, sDist = 0; // ペンの種類（PENS の番号）と、万年筆・筆の太さの係数、書き始めからの距離
   let bx = 0, by = 0, bw = 0, mx = 0, my = 0, ps = 1, lt = 0, lastPen = -1e9;
   let x0 = 0, y0 = 0, x1 = 0, y1 = 0, mW = 0; // ストロークの外接矩形
   let tx0 = 0, ty0 = 0, tx1 = 0, ty1 = 0; // pred レイヤの汚れ矩形
@@ -854,7 +906,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         setInk(pctx);
         sP = pen && t === 'pen' && e.pressure > 0;
         ps = sP ? e.pressure : 1;
+        sPen = t === 'pen' ? PENS.indexOf(penType) : 0;
+        pf = sPen === 1 ? 0.6 : 1;
+        sDist = 0;
         bw = sP ? qw(sW * (0.2 + 0.8 * ps)) : sW;
+        if (sPen === 1) bw = qw(bw * (0.2 + 0.8 * pf));
+        else if (sPen === 2) bw = qw(bw * 0.35);
+        else if (sPen === 3) { const g = grain(); lctx.strokeStyle = lctx.fillStyle = pctx.strokeStyle = g; }
         // 押した瞬間に点を出す（タップでも点が残る）
         lctx.beginPath(); lctx.arc(x, y, bw / 2, 0, TAU); lctx.fill();
         const p = bw / 2 + 2;
@@ -922,8 +980,23 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       if (sP) {
         const pr = p.pressure;
         ps += ((pr > 0 ? pr : ps) - ps) * 0.5;
-        w = qw(sW * (0.2 + 0.8 * ps));
+        w = sW * (0.2 + 0.8 * ps);
       }
+      if (sPen === 1 || sPen === 2) {
+        const dx = x - bx, dy = y - by, d = hypot(dx, dy);
+        if (sPen === 1) {
+          // 万年筆: ペン先の向きに沿うほど細い
+          if (d > 0) pf += (abs(dy * NIB_C - dx * NIB_S) / d - pf) * 0.35;
+          w *= 0.2 + 0.8 * pf;
+        } else {
+          // 筆: 速いほど細い（CSS px/ms）。書き始めは細く入る
+          const v = dt > 0 ? d / dt / dpr : 0;
+          pf += (max(0.3, min(1.25, 1.3 - v * 0.45)) - pf) * 0.3;
+          sDist += d;
+          w *= pf * (0.35 + 0.65 * min(1, sDist / (sW * 3 + 1)));
+        }
+      }
+      if (sP || sPen) w = qw(w);
       const nx = (bx + x) * 0.5, ny = (by + y) * 0.5;
       if (bw !== cw) {
         if (open) c.stroke();
@@ -1127,7 +1200,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (m === 1) {
       // 最後の半区間（中点→最終点）を確定してから main へ合成
       if (mx !== bx || my !== by) {
-        lctx.lineWidth = bw;
+        lctx.lineWidth = sPen === 2 ? qw(bw * 0.6) : bw; // 筆は離し際を細く
         lctx.beginPath(); lctx.moveTo(mx, my); lctx.lineTo(bx, by); lctx.stroke();
         markSeg(mx, my, bx, by, bw / 2 + 2);
       }
@@ -2085,6 +2158,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (!p || typeof p !== 'object') return;
     if (typeof p.color === 'string' && /^#[0-9a-f]{6}$/i.test(p.color)) color = p.color.toLowerCase();
     if (typeof p.tool === 'string' && CFG[p.tool]) tool = p.tool;
+    if (PENS.includes(p.pen)) penType = p.pen;
     for (const k of PREF_T) {
       const sz = p.size && +p.size[k], al = p.alpha && +p.alpha[k];
       if (k !== 'fill' && sz >= 1 && sz <= 100) CFG[k].size = sz;
@@ -2096,7 +2170,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function snapPrefs() {
     const size = {}, alpha = {};
     for (const k of PREF_T) { size[k] = CFG[k].size; alpha[k] = CFG[k].alpha; }
-    return { color, tool, size, alpha };
+    return { color, tool, pen: penType, size, alpha };
   }
   function remember() {
     if (!ready) return;
@@ -2108,6 +2182,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const cur = snapPrefs(), d = {};
     if (cur.color !== base.color) d.color = cur.color;
     if (cur.tool !== base.tool) d.tool = cur.tool;
+    if (cur.pen !== base.pen) d.pen = cur.pen;
     for (const g of ['size', 'alpha']) {
       for (const k of PREF_T) if (cur[g][k] !== base[g][k]) (d[g] || (d[g] = {}))[k] = cur[g][k];
     }
@@ -2144,6 +2219,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   });
   win[NS] = { version: VERSION, toggle, show, hide, close, destroy, undo, redo, clear: clearAll, tool: setTool, color: setColor, stats, pixels };
   setColor(color);
+  syncPen();
   syncTool(false);
   syncHist();
   syncBg();

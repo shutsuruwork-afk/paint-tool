@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.10.1';
+  const VERSION = '1.11.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -92,12 +92,10 @@
     save: 'M12 4v11M7 10l5 5 5-5M5 20h14',
     copy: 'M9 9h11v11H9zM5 15H4V4h11v1',
     hide: 'M5 12h14',
-    plus: 'M12 5v14M5 12h14',
     calc: 'M6 3h12v18H6zM9 7h6M9 11.5h.01M12 11.5h.01M15 11.5h.01M9 15h.01M12 15h.01M15 15h.01M9 18.5h.01M12 18.5h.01M15 18.5h.01',
     fountain: 'M12 2.5l5.5 8L12 21.5l-5.5-11zM12 10.5v5M12 15.5a.6.6 0 1 0 0 .01',
     brush: 'M19.5 3.5l1 1-8 9.5-2.5-2.5zM10 11.5c-2.6-.4-5 1.4-5 4.3 0 2-1 3.3-2.5 4.2 4.6.6 9.7-.9 9.9-5.6',
     pencil: 'M4 20l1.3-4.6L15.5 5.2a2 2 0 0 1 2.8 0l.5.5a2 2 0 0 1 0 2.8L8.6 18.7zM13.5 7.2l3.3 3.3M5.3 15.4l3.3 3.3',
-    eye: 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM4 4l16 16',
     more: 'M5 12h.01M12 12h.01M19 12h.01',
     close: 'M6 6l12 12M18 6L6 18',
   };
@@ -120,7 +118,6 @@ canvas{position:absolute;left:0;top:0;pointer-events:none}
 .bar{position:absolute;left:0;top:0;cursor:grab;display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:4px;max-width:calc(100% - 16px);box-sizing:border-box;background:#202228;border:1px solid #ffffff1f;border-radius:12px;box-shadow:0 6px 24px #0007;pointer-events:auto;touch-action:none;will-change:transform}
 .b{all:unset;box-sizing:border-box;flex:none;width:30px;height:30px;display:grid;place-items:center;border-radius:8px;cursor:pointer;color:inherit}
 .bar.drag,.bar.drag *{cursor:grabbing}
-.bar .plus,.bar.mini>*{display:none}.bar.mini>.plus{display:grid}
 .b:hover{background:#ffffff1a}.b:active{background:#ffffff2e}
 .b.on{background:#3d7cff;color:#fff}
 .b:disabled{opacity:.3;cursor:default;background:none}
@@ -428,24 +425,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     remember();
     say(calc ? '電卓: 文字に計算式を書くと答えが出ます（Tab で書き込み）' : '電卓: 切');
   }, true);
-  item('隠す（絵も） — ブックマークレットを再度押すと再表示', '隠す（絵も）', 'Esc', I.eye, hide);
-  // たたむ（−）: ツールバーを ＋ のボタン 1 つにする。絵は見えたままで、描くこともできる。
-  // ＋ は − があった所に出し、戻すときも − が ＋ の所に来るようにする（続けて押せば行き来できる）
-  const miniB = btn('たたむ — ツールバーを ＋ のボタンだけにする（絵はそのまま）', I.hide, () => setMini(true));
-  const plusB = btn('ツールバーを広げる', I.plus, () => setMini(false), 'plus');
-  bar.append(undoB, redoB, sep(), passB, moreB, sep(), miniB, btn('閉じる（8 秒間は元に戻せます）', I.close, close),
-    plusB, shapeP, penP, styleP, moreP);
-  let mini = false;
-  function setMini(on) {
-    if (mini === on) return;
-    closePanel();
-    // 押したボタン（from）があった所に、切り替えた後のボタン（to）が来るようにバーをずらす
-    const from = on ? miniB : plusB, to = on ? plusB : miniB, fx = from.offsetLeft, fy = from.offsetTop;
-    mini = on;
-    bar.classList.toggle('mini', on);
-    measureBar();
-    moveBar(barX + fx - to.offsetLeft, barY + fy - to.offsetTop);
-  }
+  bar.append(undoB, redoB, sep(), passB, moreB, sep(),
+    btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hide), btn('閉じる（8 秒間は元に戻せます）', I.close, close),
+    shapeP, penP, styleP, moreP);
 
   // パネルは 1 つだけ開く。描き始め・パネルの外を押す・Esc で閉じる。
   // 開いていなければ pointerdown ごとの仕事は比較 1 回だけ（入力のホットパスには触れない）

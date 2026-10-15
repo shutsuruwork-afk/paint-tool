@@ -224,27 +224,16 @@ test('ツールバーはボタンの上からでも引けば動き（そのボ�
   await page.close();
 });
 
-test('「−」でツールバーを ＋ のボタンだけにたたみ（同じ所に出る）、絵は見えたままで描ける。＋ で元に戻る。隠すはメニューと Esc に残る', async () => {
+test('「−」は絵ごと隠し（ツールバーも絵も消える）、ブックマークレットをもう一度押すと絵も履歴もそのまま戻る', async () => {
   const { page, errors } = await fresh();
   await drag(page, [[100, 400], [400, 400]]);
-  const b0 = await rectOf(page, '.bar');
-  const m = await rectOf(page, '.bar > [aria-label^="たたむ"]');
-  await page.mouse.click(m.x + m.w / 2, m.y + m.h / 2);
-  const b1 = await rectOf(page, '.bar');
-  assert.ok(b1.w < 50 && b1.h < 50, JSON.stringify(b1));
-  const p = await rectOf(page, '.bar > .plus');
-  assert.ok(near(p.x, m.x, 1) && near(p.y, m.y, 1), `＋ は − の所: ${JSON.stringify(p)} ${JSON.stringify(m)}`);
-  // 絵は見えたまま、そのまま描ける
-  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('paint-bookmarklet-surface')).display), 'block');
-  await drag(page, [[100, 500], [400, 500]]);
-  assert.equal(await hist(page), 2);
-  // ＋ で元に戻る（− は ＋ の所に来るので、元の位置に戻る）
-  await page.mouse.click(p.x + p.w / 2, p.y + p.h / 2);
-  assert.deepEqual(await rectOf(page, '.bar'), b0);
-  // 絵ごと隠すのは、メニューと Esc
-  await mouseClick(page, '[aria-label^="その他"]');
-  await mouseClick(page, '.pn.on [aria-label^="隠す"]');
-  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('paint-bookmarklet')).display), 'none');
+  const shown = () => page.evaluate(() => ['paint-bookmarklet', 'paint-bookmarklet-surface']
+    .map(s => getComputedStyle(document.querySelector(s)).display));
+  await mouseClick(page, '.bar > [aria-label^="隠す"]');
+  assert.deepEqual(await shown(), ['none', 'none']);
+  await runBookmarklet(page);
+  assert.deepEqual(await shown(), ['block', 'block']);
+  assert.equal(await hist(page), 1);
   assert.deepEqual(errors, []);
   await page.close();
 });

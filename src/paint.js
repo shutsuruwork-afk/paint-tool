@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.10.0';
+  const VERSION = '1.10.1';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -247,7 +247,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 
   // ---------- 状態 ----------
   let tool = 'pen', color = PALETTE[2], bg = 0, pass = false, visible = false, touchText = DEF.touchText !== false, penType = 'pen', calc = false;
-  let dpr = win.devicePixelRatio || 1, W = 0, H = 0, grpA = 1, pendingFit = false, rz = 0;
+  let dpr = win.devicePixelRatio || 1, W = 0, H = 0, grpA = 1, pendingFit = false, rz = 0, warmT = 0;
   // 履歴タイル: ストロークが触れた T×T タイル（面の座標）だけを記録し、確定・undo・消しゴムの退避をその範囲に限定する。
   // 文書は大きいので、印は配列ではなく Set で持つ。番号は 行 × 65536 + 列
   const T = 128;
@@ -694,7 +694,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (w > W || h > H) {
       W = max(w, W); H = max(h, H);
       for (const c of [liveC, predC]) { c.width = W; c.height = H; }
-      setTimeout(warm, 0);
+      clearTimeout(warmT);
+      warmT = setTimeout(warm, 0);
     }
     const cw = W / dpr + 'px', ch = H / dpr + 'px';
     for (const c of [liveC, predC]) { c.style.width = cw; c.style.height = ch; }
@@ -704,6 +705,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 暖機: キャンバスの GPU バッキング確保や合成パスの初回コンパイルは初回描画時に数十 ms かかる。
   // 描き始めてから払うと最初の一筆が引っかかるので、起動直後の何もしていない時間に済ませておく。
   function warm() {
+    warmT = 0;
     if (act !== -1 || handoff) return;
     for (const c of [lctx, pctx]) { c.fillRect(0, 0, 1, 1); c.clearRect(0, 0, 1, 1); }
     // 確定（半透明の合成）・消しゴム・退避で使う処理を、画面に出ない小さなキャンバスで一度ずつ通しておく
@@ -2250,6 +2252,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     clearTimeout(toastT);
     toastFn = null;
     finishHandoff();
+    // 遅れて動く暖機・リサイズは、キャンバスを 0 にした後で描かないよう止める
+    clearTimeout(warmT);
+    cancelAnimationFrame(rz);
     while (hist.length) free(hist.pop());
     for (const c of [liveC, predC]) c.width = c.height = 0;
     for (const t of dtiles.values()) t.c.width = t.c.height = 0;

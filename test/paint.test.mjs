@@ -144,6 +144,10 @@ test('何も描いていなければ × ですぐに閉じる。API の destroy 
   await drag(page, [[100, 300], [400, 300]]);
   await page.evaluate(() => { const a = window.__paintBookmarklet; a.close(); a.destroy(); });
   assert.equal(await gone(), true);
+  // 起動した直後（暖機の前）に destroy しても、あとで暖機が動いてエラーにならない
+  await page.evaluate(c => { (0, eval)(c); window.__paintBookmarklet.destroy(); }, CODE);
+  await page.waitForTimeout(100);
+  assert.equal(await gone(), true);
   assert.deepEqual(errors, []);
   await page.close();
 });

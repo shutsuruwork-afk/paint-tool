@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.8.0';
+  const VERSION = '1.8.1';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -60,6 +60,7 @@
   // 文字の書体。入力欄（CSS）と確定時の fillText で同じものを使う
   const FONT = 'system-ui,-apple-system,"Segoe UI","Hiragino Sans","Yu Gothic UI",sans-serif';
   const LH = 1.25; // 文字の行の高さ（文字の大きさに対する比）
+  const TA_PAD = 10; // 文字の入力欄の周りの、見えない押せる余白（CSS px）。少し外れた所を押しても入力が続く
 
   const I = {
     grip: 'M9 6v.01M9 12v.01M9 18v.01M15 6v.01M15 12v.01M15 18v.01',
@@ -136,7 +137,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 .bye .t::after{content:"";position:absolute;left:10px;right:10px;bottom:3px;height:2px;border-radius:1px;background:#8fb3ff;transform-origin:left;animation:bye ${BYE_MS}ms linear forwards}
 @keyframes bye{to{transform:scaleX(0)}}
 .bye>:not(.t){display:none}
-.tx{all:unset;position:absolute;box-sizing:content-box;white-space:pre;overflow:hidden;resize:none;pointer-events:auto;cursor:text;color:var(--c);opacity:var(--a);caret-color:var(--c);font:600 var(--fs)/${LH} ${FONT};outline:1px dashed #3d7cffb0;outline-offset:5px;-webkit-user-select:text;user-select:text}
+.tx{all:unset;position:absolute;box-sizing:content-box;padding:${TA_PAD}px;white-space:pre;overflow:hidden;resize:none;pointer-events:auto;cursor:text;color:var(--c);opacity:var(--a);caret-color:var(--c);font:600 var(--fs)/${LH} ${FONT};outline:1px dashed #3d7cffb0;outline-offset:${5 - TA_PAD}px;-webkit-user-select:text;user-select:text}
 .hud{position:absolute;left:8px;bottom:8px;padding:6px 8px;border-radius:6px;background:#000c;color:#8f8;font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;white-space:pre;pointer-events:none}
 @media (pointer:coarse){.b{width:38px;height:38px}.c{width:30px}.r{height:38px}}
 `;
@@ -1766,16 +1767,21 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     s.setProperty('--c', taC);
     s.setProperty('--a', taA);
     s.setProperty('--fs', taFs + 'px');
-    s.left = taX + 'px';
-    s.top = taCY - taFs * LH / 2 + 'px';
+    // 余白の分だけ外へずらすので、文字の位置と点線の枠の見た目は変わらない
+    s.left = taX - TA_PAD + 'px';
+    s.top = taCY - taFs * LH / 2 - TA_PAD + 'px';
     fitTa();
   }
   // 中身に合わせて入力欄を広げる（折り返さない。改行でだけ行が増える）
+  // 余白が scrollWidth に入るかはブラウザで違う（Chrome は左だけ）ので、測る間だけ余白を外す
   function fitTa() {
     const s = ta.style;
+    s.padding = '0';
     s.width = s.height = '0';
-    s.width = ta.scrollWidth + 2 + 'px';
-    s.height = ta.scrollHeight + 'px';
+    const w = ta.scrollWidth + 2, h = ta.scrollHeight;
+    s.padding = '';
+    s.width = w + 'px';
+    s.height = h + 'px';
   }
   // 入力欄の中身を文字の物として面に置く（書き直しなら物を更新し、空なら消す）。1 手として履歴に積む
   function commitText() {

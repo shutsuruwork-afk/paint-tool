@@ -277,6 +277,34 @@ test('文字ツール: クリックした所に入力欄が出て日本語も打
   await page.close();
 });
 
+test('文字の入力中は、入力欄の少し外（見えない余白）を押しても確定せずにカーソルが動き、点線の枠の見た目は変わらない', async () => {
+  const { page, errors } = await fresh();
+  await page.keyboard.press('t');
+  await page.mouse.click(200, 300);
+  await page.keyboard.type('Hello');
+  // 入力欄の中身の箱（余白を除いた所）と、点線の枠の外側
+  const box = () => shadowEval(page, root => {
+    const t = root.querySelector('.tx'), b = t.getBoundingClientRect(), cs = getComputedStyle(t), p = parseFloat(cs.paddingLeft);
+    return { l: b.x + p, t: b.y + p, r: b.right - p, b: b.bottom - p, pad: p, ring: p + parseFloat(cs.outlineOffset) };
+  });
+  const r = await box();
+  assert.ok(r.pad >= 8, '押せる余白がある');
+  assert.equal(r.ring, 5, '点線の枠は文字から 5px 外のまま');
+  // 文字の右 6px を押すと末尾に、文字の上 6px の左端を押すと先頭にカーソルが動く
+  await page.mouse.click(r.r + 6, (r.t + r.b) / 2);
+  await page.keyboard.type('!');
+  await page.mouse.click(r.l + 1, r.t - 6);
+  await page.keyboard.type('>');
+  assert.equal((await textBox(page)).value, '>Hello!');
+  // 余白より外を押すと確定する
+  const r2 = await box();
+  await page.mouse.click(r2.r + r2.pad + 20, (r2.t + r2.b) / 2);
+  assert.equal(await textBox(page), null);
+  assert.equal((await textInfo(page))[0].s, '>Hello!');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('文字は Esc・ツールの切り替えでも確定し、入力中に変えた色で描かれる。スクロールにも付いていく', async () => {
   const { page } = await fresh('/long');
   await scrollTo(page, 400);

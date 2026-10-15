@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.8.2';
+  const VERSION = '1.8.3';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -83,6 +83,8 @@
     save: 'M12 4v11M7 10l5 5 5-5M5 20h14',
     copy: 'M9 9h11v11H9zM5 15H4V4h11v1',
     hide: 'M5 12h14',
+    plus: 'M12 5v14M5 12h14',
+    eye: 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM4 4l16 16',
     more: 'M5 12h.01M12 12h.01M19 12h.01',
     close: 'M6 6l12 12M18 6L6 18',
   };
@@ -104,6 +106,7 @@ canvas{position:absolute;left:0;top:0;pointer-events:none}
 .bar{position:absolute;left:0;top:0;cursor:grab;display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:4px;max-width:calc(100% - 16px);box-sizing:border-box;background:#202228;border:1px solid #ffffff1f;border-radius:12px;box-shadow:0 6px 24px #0007;pointer-events:auto;touch-action:none;will-change:transform}
 .b{all:unset;box-sizing:border-box;flex:none;width:30px;height:30px;display:grid;place-items:center;border-radius:8px;cursor:pointer;color:inherit}
 .bar.drag,.bar.drag *{cursor:grabbing}
+.bar .plus,.bar.mini>*{display:none}.bar.mini>.plus{display:grid}
 .b:hover{background:#ffffff1a}.b:active{background:#ffffff2e}
 .b.on{background:#3d7cff;color:#fff}
 .b:disabled{opacity:.3;cursor:default;background:none}
@@ -392,9 +395,24 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const [bgB, bgL] = item('', '', 'B', I.bg, cycleBg, true);
   item('PNG で保存 (Ctrl/⌘+S)', 'PNG で保存', IS_MAC ? '⌘S' : 'Ctrl+S', I.save, save);
   if (HAS_CLIP) item('画像をクリップボードにコピー', 'クリップボードにコピー', '', I.copy, copyImg);
-  bar.append(undoB, redoB, sep(), passB, moreB, sep(),
-    btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hide), btn('閉じる（8 秒間は元に戻せます）', I.close, close),
-    shapeP, styleP, moreP);
+  item('隠す（絵も） — ブックマークレットを再度押すと再表示', '隠す（絵も）', 'Esc', I.eye, hide);
+  // たたむ（−）: ツールバーを ＋ のボタン 1 つにする。絵は見えたままで、描くこともできる。
+  // ＋ は − があった所に出し、戻すときも − が ＋ の所に来るようにする（続けて押せば行き来できる）
+  const miniB = btn('たたむ — ツールバーを ＋ のボタンだけにする（絵はそのまま）', I.hide, () => setMini(true));
+  const plusB = btn('ツールバーを広げる', I.plus, () => setMini(false), 'plus');
+  bar.append(undoB, redoB, sep(), passB, moreB, sep(), miniB, btn('閉じる（8 秒間は元に戻せます）', I.close, close),
+    plusB, shapeP, styleP, moreP);
+  let mini = false;
+  function setMini(on) {
+    if (mini === on) return;
+    closePanel();
+    // 押したボタン（from）があった所に、切り替えた後のボタン（to）が来るようにバーをずらす
+    const from = on ? miniB : plusB, to = on ? plusB : miniB, fx = from.offsetLeft, fy = from.offsetTop;
+    mini = on;
+    bar.classList.toggle('mini', on);
+    measureBar();
+    moveBar(barX + fx - to.offsetLeft, barY + fy - to.offsetTop);
+  }
 
   // パネルは 1 つだけ開く。描き始め・パネルの外を押す・Esc で閉じる。
   // 開いていなければ pointerdown ごとの仕事は比較 1 回だけ（入力のホットパスには触れない）

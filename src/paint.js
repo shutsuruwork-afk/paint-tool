@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.12.1';
+  const VERSION = '1.13.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -34,6 +34,7 @@
   const PRED_TTL = 40;  // 入力が途絶えてから予測線を消すまでの時間 (ms)
   const FILL_TOL = 48;  // 塗りつぶしの色許容差 (0-255)
   const BYE_MS = 8000;  // 閉じる（×）を取り消せる時間 (ms)
+  const HINT_MS = 4000; // 隠したときに「ブックマークレットで再表示」を出す時間 (ms)
 
   const PALETTE = ['#111111', '#ffffff', '#e53935', '#fb8c00', '#fdd835', '#43a047', '#1e88e5', '#8e24aa'];
   const BGS = ['', '#ffffff', '#1d1f23'];
@@ -151,9 +152,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 .t.act{pointer-events:auto}.t.act button{display:inline-block}
 .t.act .tc{display:none;margin:-4px -10px -4px 2px;padding:4px 6px;color:#a9acb8;vertical-align:middle}.t.act.cx .tc{display:inline-grid;place-items:center}
 .t .tc svg{width:14px;height:14px}
+.t.in button{margin-left:-2px;padding-left:2px}
 .bye .t::after{content:"";position:absolute;left:10px;right:10px;bottom:3px;height:2px;border-radius:1px;background:#8fb3ff;transform-origin:left;animation:bye ${BYE_MS}ms linear forwards}
 @keyframes bye{to{transform:scaleX(0)}}
-.bye>:not(.t){display:none}
+.bye>:not(.t),.hint>:not(.t){display:none}
 .tx{all:unset;position:absolute;box-sizing:content-box;padding:${TA_PAD}px;white-space:pre;overflow:hidden;resize:none;pointer-events:auto;cursor:text;color:var(--c);opacity:var(--a);caret-color:var(--c);font:600 var(--fs)/${LH} ${FONT};outline:1px dashed #3d7cffb0;outline-offset:${5 - TA_PAD}px;-webkit-user-select:text;user-select:text}
 .hud{position:absolute;left:8px;bottom:8px;padding:6px 8px;border-radius:6px;background:#000c;color:#8f8;font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;white-space:pre;pointer-events:none}
 @media (pointer:coarse){.b{width:38px;height:38px}.c{width:30px}.r{height:38px}}
@@ -431,7 +433,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     say(calc ? '電卓: 文字に計算式を書くと答えが出ます（Tab で書き込み）' : '電卓: 切');
   }, true);
   bar.append(undoB, redoB, sep(), passB, moreB, sep(),
-    btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hide), btn('閉じる（8 秒間は元に戻せます）', I.close, close),
+    btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hideHint), btn('閉じる（8 秒間は元に戻せます）', I.close, close),
     shapeP, penP, styleP, moreP);
 
   // パネルは 1 つだけ開く。描き始め・パネルの外を押す・Esc で閉じる。
@@ -650,20 +652,22 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     pad.style.cursor = toolCur = hoverCur = cur;
   }
   let toastT = 0, toastFn = null, toastXFn = null;
-  // fn を渡すと、押せるボタン（act）付きで ms だけ出す（閉じるの取り消しに使う）。xfn を渡すと × のボタンも付く
-  function say(msg, ms = 1800, act, fn, xfn) {
+  // fn を渡すと、押せるボタン（act）付きで ms だけ出す（閉じるの取り消しに使う）。xfn を渡すと × のボタンも付く。
+  // inl ならボタンを文の続きとして間を空けずに置く（「ブックマークレットで再表示」の「再表示」）
+  function say(msg, ms = 1800, act, fn, xfn, inl) {
     toastM.textContent = msg;
     toastB.textContent = act || '';
     toastFn = fn || null;
     toastXFn = xfn || null;
     toast.classList.toggle('act', !!fn);
     toast.classList.toggle('cx', !!xfn);
+    toast.classList.toggle('in', !!inl);
     toast.classList.add('on');
     clearTimeout(toastT);
     toastT = setTimeout(unsay, ms);
   }
   function unsay() {
-    toast.classList.remove('on', 'act', 'cx');
+    toast.classList.remove('on', 'act', 'cx', 'in');
     toastFn = toastXFn = null;
   }
   toastB.addEventListener('click', () => { if (toastFn) toastFn(); });
@@ -2142,7 +2146,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     else if (k === 'd') toggleHud();
     else if (k === 'i' && HAS_ED) pickColor();
     else if (k === 'Delete') clearAll();
-    else if (k === 'Escape') openP ? closePanel() : hide();
+    else if (k === 'Escape') openP ? closePanel() : hideHint();
     else ok = false;
     if (ok) { e.preventDefault(); e.stopPropagation(); }
   }
@@ -2176,6 +2180,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   function show() {
     if (byeT) { reopen(); return; }
+    if (hintT) endHint();
     if (visible) return;
     visible = true;
     hs.setProperty('display', 'block', 'important');
@@ -2199,11 +2204,33 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (doc.activeElement === host) wrap.blur();
   }
   function toggle() { visible ? hide() : show(); }
+  // Esc と「−」で隠すときは、戻し方を HINT_MS だけ出す（「再表示」を押してもその場で戻る）。
+  // その間も close の取り消し待ちと同じく、お知らせ以外は消えて入力のリスナーも外れている
+  let hintT = 0;
+  function hideHint() {
+    if (!visible) return;
+    hide();
+    wrap.classList.add('hint');
+    hs.setProperty('display', 'block', 'important');
+    topLayer();
+    hintT = setTimeout(endHint, HINT_MS);
+    say('ブックマークレットで', HINT_MS, '再表示', show, null, true);
+  }
+  function endHint() {
+    clearTimeout(hintT);
+    hintT = 0;
+    wrap.classList.remove('hint');
+    unsay();
+    if (visible) return;
+    try { if (host.matches(':popover-open')) host.hidePopover(); } catch (_) { }
+    hs.setProperty('display', 'none', 'important');
+  }
   // 閉じる（×）: 描いた物があれば、BYE_MS の間はお知らせのボタン・Ctrl/⌘+Z・ブックマークレットで取り消せる。
   // その間は hide と同じく絵も入力のリスナーも外し、お知らせだけを残す（ページの操作を邪魔しない）
   let byeT = 0;
   function close() {
     if (byeT) return;
+    if (hintT) endHint();
     if (!hist.length) { destroy(); return; }
     hide();
     wrap.classList.add('bye');
@@ -2235,6 +2262,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   function destroy() {
     if (byeT) endBye();
+    if (hintT) endHint();
     hide();
     if (hud) toggleHud();
     clearTimeout(toastT);

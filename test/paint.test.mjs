@@ -252,16 +252,49 @@ test('ツールバーはボタンの上からでも引けば動き（そのボ�
   await page.close();
 });
 
-test('「−」は絵ごと隠し（ツールバーも絵も消える）、ブックマークレットをもう一度押すと絵も履歴もそのまま戻る', async () => {
+test('「−」と Esc で隠すと、絵もツールバーも消えて「ブックマークレットで再表示」が出る。再表示を押すと戻り、押さなければ数秒で消える。ブックマークレットで隠したときは出さない', async () => {
   const { page, errors } = await fresh();
   await drag(page, [[100, 400], [400, 400]]);
-  const shown = () => page.evaluate(() => ['paint-bookmarklet', 'paint-bookmarklet-surface']
-    .map(s => getComputedStyle(document.querySelector(s)).display));
+  const s = await checksum(page);
+  await page.evaluate(() => { window.__clicks = 0; document.addEventListener('click', () => window.__clicks++); });
+  const state = () => page.evaluate(() => {
+    const h = document.querySelector('paint-bookmarklet'), r = h.shadowRoot, t = r.querySelector('.t');
+    const host = getComputedStyle(h).display;
+    return {
+      host,
+      surf: getComputedStyle(document.querySelector('paint-bookmarklet-surface')).display,
+      bar: host === 'none' ? 'none' : getComputedStyle(r.querySelector('.bar')).display,
+      toast: t.classList.contains('on') && t.classList.contains('act') ? t.textContent : '',
+      cover: document.elementFromPoint(900, 200).nodeName === 'PAINT-BOOKMARKLET',
+    };
+  });
+  const hidden = { host: 'block', surf: 'none', bar: 'none', toast: 'ブックマークレットで再表示', cover: false };
+  const open = { host: 'block', surf: 'block', bar: 'flex', toast: '', cover: true };
+  const gone = { host: 'none', surf: 'none', bar: 'none', toast: '', cover: false };
+  // 1) − で隠す。お知らせの間もページは押せる。「再表示」を押すと絵も履歴もそのまま戻る
   await mouseClick(page, '.bar > [aria-label^="隠す"]');
-  assert.deepEqual(await shown(), ['none', 'none']);
-  await runBookmarklet(page);
-  assert.deepEqual(await shown(), ['block', 'block']);
+  assert.deepEqual(await state(), hidden);
+  await page.mouse.click(900, 200);
+  assert.equal(await page.evaluate(() => window.__clicks), 1);
+  await mouseClick(page, '.t button');
+  assert.deepEqual(await state(), open);
+  assert.equal(await checksum(page), s);
   assert.equal(await hist(page), 1);
+  // 2) Esc でも同じ。押さなければ数秒で消えて何も残らず、ブックマークレットで戻る
+  await page.keyboard.press('Escape');
+  assert.deepEqual(await state(), hidden);
+  await page.waitForTimeout(4300);
+  assert.deepEqual(await state(), gone);
+  await runBookmarklet(page);
+  assert.deepEqual(await state(), open);
+  // 3) ブックマークレットで隠したときは出さない。お知らせの間にブックマークレットを押しても戻る
+  await runBookmarklet(page);
+  assert.deepEqual(await state(), gone);
+  await runBookmarklet(page);
+  await page.keyboard.press('Escape');
+  await runBookmarklet(page);
+  assert.deepEqual(await state(), open);
+  assert.equal(await checksum(page), s);
   assert.deepEqual(errors, []);
   await page.close();
 });
@@ -285,8 +318,10 @@ test('色と太さのパネル: 色を選んでも開いたまま、描き始め
   await page.keyboard.press('Escape');
   assert.equal(await openPanels(page), 0);
   assert.equal(await display(), 'block');
+  // パネルがなければ Esc で隠す（絵は消え、戻し方のお知らせだけが残る）
   await page.keyboard.press('Escape');
-  assert.equal(await display(), 'none');
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('paint-bookmarklet-surface')).display), 'none');
+  assert.equal(await shadowEval(page, root => getComputedStyle(root.querySelector('.bar')).display), 'none');
   await page.close();
 });
 

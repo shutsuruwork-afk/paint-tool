@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.13.0';
+  const VERSION = '1.14.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -157,6 +157,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 @keyframes bye{to{transform:scaleX(0)}}
 .bye>:not(.t),.hint>:not(.t){display:none}
 .tx{all:unset;position:absolute;box-sizing:content-box;padding:${TA_PAD}px;white-space:pre;overflow:hidden;resize:none;pointer-events:auto;cursor:text;color:var(--c);opacity:var(--a);caret-color:var(--c);font:600 var(--fs)/${LH} ${FONT};outline:1px dashed #3d7cffb0;outline-offset:${5 - TA_PAD}px;-webkit-user-select:text;user-select:text}
+.hp{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);box-sizing:border-box;width:min(680px,calc(100% - 32px));max-height:calc(100% - 32px);overflow:auto;padding:12px 18px 6px;background:#202228;border:1px solid #ffffff1f;border-radius:12px;box-shadow:0 6px 24px #0007;pointer-events:auto;font-size:12.5px;line-height:1.5;-webkit-user-select:text;user-select:text}
+.hp .hh{margin-bottom:8px;color:#a9acb8}.hp .hc{columns:2 270px;column-gap:28px}
+.hp section{break-inside:avoid;padding-bottom:10px}
+.hp h3{all:unset;display:block;margin-bottom:3px;font-weight:600;color:#fff}
+.hp .hg{display:grid;grid-template-columns:max-content 1fr;gap:3px 12px}
+.hp .hg>:nth-child(odd){color:#c5c8d2;white-space:nowrap}
+.hp kbd{display:inline-block;box-sizing:border-box;min-width:1.6em;margin:0 1px;padding:0 4px;border:1px solid #ffffff38;border-bottom-width:2px;border-radius:4px;text-align:center;font:600 11px/1.45 ui-monospace,Menlo,Consolas,monospace;color:#e8e9ee}
 .hud{position:absolute;left:8px;bottom:8px;padding:6px 8px;border-radius:6px;background:#000c;color:#8f8;font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;white-space:pre;pointer-events:none}
 @media (pointer:coarse){.b{width:38px;height:38px}.c{width:30px}.r{height:38px}}
 `;
@@ -2111,6 +2118,86 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     stP0 = nPts;
   }
 
+  // ---------- 操作の一覧（? で出す） ----------
+  // {…} はキー。build.mjs がこの配列（目印の間は JSON）を読んで、インストールページにも同じ一覧を書き出す。
+  // 3 つ目が 'touch' の行は、文字に触れる（touchText）が入りのときだけツールの中に出す
+  const HELP = /*HELP*/[
+    ["道具", [
+      ["{S}", "選択。囲むか押して選び、引くと移動、角で拡大縮小、{Delete} で削除、矢印で 1px（{Shift} で 10px）"],
+      ["{P}", "ペン（筆圧対応）"],
+      ["{H}", "蛍光ペン"],
+      ["{E}", "消しゴム（右クリック・ペンの消しゴム側でも）"],
+      ["{L} {A} {R} {O}", "直線・矢印・四角形・楕円"],
+      ["{T}", "文字（日本語入力対応）"],
+      ["{F}", "塗りつぶし"],
+      ["{I}", "スポイト（対応するブラウザで）"]
+    ]],
+    ["色と太さ", [
+      ["{1}〜{8}", "色を選ぶ"],
+      ["{[} {]}", "太さ"],
+      ["{Shift}", "図形を 45° 刻み・正方形・正円に"],
+      ["{Alt}", "図形を中心から描く"]
+    ]],
+    ["編集", [
+      ["{Ctrl}+{Z}", "元に戻す"],
+      ["{Ctrl}+{Y}", "やり直す（{Ctrl}+{Shift}+{Z} でも）"],
+      ["{Delete}", "全消去（元に戻せる）"],
+      ["{Ctrl}+{S}", "PNG で保存"]
+    ]],
+    ["表示", [
+      ["{V}", "ページ操作モード（ツールを選ぶと描画に戻る）"],
+      ["{B}", "背景を透明・白・黒に"],
+      ["{D}", "計測表示"],
+      ["{?}", "この一覧"],
+      ["{Esc}", "隠す（ブックマークレットで再表示）"]
+    ]],
+    ["ボタンと文字", [
+      ["ペン・図形をもう一度", "ペンの種類（万年筆・筆・鉛筆）や図形を選ぶ"],
+      ["文字を押す", "ペンなどのままでも選んで動かせる。もう一度押すと書き直し", "touch"],
+      ["文字の入力中", "{Esc}・{Ctrl}+{Enter}・外を押すと確定"],
+      ["{Tab}", "電卓が入りのとき、薄く出た答えを書き込む"],
+      ["ツールバー", "どこを押しても、引けば動かせる"]
+    ]]
+  ]/*HELP*/;
+  // 一覧は初めて開いたときに作る。開いている間は、外を押すと閉じるだけ（線は描かない）
+  const helpEl = el('div', 'hp');
+  let helpOn = false;
+  const rich = (p, s) => s.split(/\{([^}]*)\}/).forEach((t, i) => {
+    if (!t) return;
+    if (i % 2) { const k = el('kbd'); k.textContent = IS_MAC && t === 'Ctrl' ? '⌘' : t; p.append(k); }
+    else p.append(t);
+  });
+  function openHelp() {
+    if (!helpEl.firstChild) {
+      const h = el('div', 'hh');
+      rich(h, '操作の一覧　{?} か {Esc} で閉じる');
+      const c = el('div', 'hc');
+      helpEl.append(h, c);
+      for (const [name, rows] of HELP) {
+        const sec = el('section'), t = el('h3'), g = el('div', 'hg');
+        t.textContent = name;
+        for (const [k, d, only] of rows) {
+          if (only === 'touch' && !touchText) continue;
+          const a = el('span'), b = el('span');
+          rich(a, k); rich(b, d);
+          g.append(a, b);
+        }
+        sec.append(t, g);
+        c.append(sec);
+      }
+    }
+    closePanel();
+    wrap.append(helpEl);
+    helpOn = true;
+  }
+  function closeHelp() {
+    helpEl.remove();
+    helpOn = false;
+  }
+  wrap.addEventListener('pointerdown', e => {
+    if (helpOn && !helpEl.contains(e.target)) { closeHelp(); e.stopPropagation(); e.preventDefault(); }
+  }, true);
+
   // ---------- キーボード ----------
   const NON_TEXT = /^(range|color|button|checkbox|radio|submit|reset|file|image)$/;
   function isEditable(e) {
@@ -2133,6 +2220,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       else if (k === 's') save();
       else ok = false;
     } else if (e.altKey) ok = false;
+    else if (helpOn && k === 'Escape') closeHelp();
+    else if (k === '?' || (e.code === 'Slash' && e.shiftKey)) helpOn ? closeHelp() : openHelp();
     else if (sel && act === -1 && (k === 'Delete' || k === 'Backspace')) dropSel(true);
     else if (sel && act === -1 && k.startsWith('Arrow')) nudgeSel(k, e.shiftKey ? 10 : 1);
     else if (sel && act === -1 && k === 'Enter') dropSel();
@@ -2196,6 +2285,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     settle();
     if (saveT) { clearTimeout(saveT); saveT = 0; savePrefs(); } // 隠す・閉じる前に、待たせている保存を済ませる
     closePanel();
+    if (helpOn) closeHelp();
     visible = false;
     listen(false);
     try { if (host.matches(':popover-open')) host.hidePopover(); } catch (_) { }
@@ -2365,5 +2455,5 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   show();
   placeBar();
   ready = true;
-  say('Esc で隠す ・ V でページ操作 ・ D で計測表示');
+  say('Esc で隠す ・ V でページ操作 ・ ? で操作の一覧');
 })();

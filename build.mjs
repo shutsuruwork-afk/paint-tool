@@ -26,6 +26,15 @@ if ((code.match(MARK) || []).length !== 1) throw new Error('defaults marker must
 const inline = code.replace(MARK, "(window.__paintBookmarkletDefaults||'')");
 
 const escAttr = s => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+const escHtml = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+// 操作の一覧: src/paint.js の HELP（/*HELP*/ の間は JSON）を、インストールページにも同じ内容で書き出す
+const hm = src.match(/\/\*HELP\*\/([\s\S]*?)\/\*HELP\*\//);
+if (!hm) throw new Error('HELP list not found in src/paint.js');
+const rich = t => t.split(/\{([^}]*)\}/).map((x, i) => (i % 2 ? `<kbd>${escHtml(x)}</kbd>` : escHtml(x))).join('');
+const helpHtml = JSON.parse(hm[1]).map(([name, rows]) =>
+  `<section class="help-g"><h3>${escHtml(name)}</h3><ul class="keys">` +
+  rows.map(([k, d]) => `<li${k.includes('{') ? '' : ' class="t"'}><span class="k">${rich(k)}</span><span>${rich(d)}</span></li>`).join('') +
+  '</ul></section>').join('\n');
 const kb = n => (n / 1024).toFixed(1) + ' KB';
 const gz = gzipSync(code).length;
 const tpl = await readFile('src/install.html', 'utf8');
@@ -35,6 +44,7 @@ const page = tpl
   .replaceAll('%%BOOKMARKLET_HREF%%', () => escAttr(bookmarklet))
   .replaceAll('%%SIZE%%', () => kb(bookmarklet.length))
   .replaceAll('%%GZIP%%', () => kb(gz))
+  .replace('%%HELP%%', () => helpHtml)
   .replace('%%INLINE_CODE%%', () => inline.replace(/<\/(script)/gi, '<\\/$1'));
 // ボタンの href が、そのままブックマークレットになっているかを確かめる
 const unesc = t => t.replace(/&lt;/g, '<').replace(/&quot;/g, '"').replace(/&amp;/g, '&');

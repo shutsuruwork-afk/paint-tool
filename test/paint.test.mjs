@@ -196,6 +196,42 @@ test('ツールバーは 1 段で幅 520px 以下。図形は最後に使った�
   await page.close();
 });
 
+test('? で操作の一覧が重なって出る（? ・Esc・外を押すと閉じ、外を押しても線は描かない）。ツールバーにボタンはなく、インストールページにも同じ一覧がある', async () => {
+  const { page, errors } = await fresh();
+  const nBtn = () => shadowEval(page, root => root.querySelectorAll('.bar > .b').length);
+  const n0 = await nBtn();
+  const help = () => shadowEval(page, root => {
+    const h = root.querySelector('.hp');
+    return h && h.isConnected ? [...h.querySelectorAll('.hg > span')].map(s => s.textContent) : null;
+  });
+  assert.equal(await help(), null);
+  await page.keyboard.press('Shift+Slash');
+  const rows = await help();
+  assert.ok(rows && rows.includes('この一覧') && rows.includes('文字を押す'), JSON.stringify(rows));
+  assert.equal(await nBtn(), n0);
+  await page.keyboard.press('Shift+Slash');
+  assert.equal(await help(), null);
+  // Esc はまず一覧を閉じる（隠さない）
+  await page.keyboard.press('Shift+Slash');
+  await page.keyboard.press('Escape');
+  assert.equal(await help(), null);
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('paint-bookmarklet-surface')).display), 'block');
+  // 外を押すと閉じるだけで、線は描かない
+  await page.keyboard.press('Shift+Slash');
+  await drag(page, [[100, 600], [300, 650]], 4);
+  assert.equal(await help(), null);
+  assert.equal(await hist(page), 0);
+  // インストールページの一覧と、ツールの中の一覧は同じ内容
+  const { page: ip, errors: ie } = await openPage(browser, server.base + '/install');
+  const inst = await ip.evaluate(() => [...document.querySelectorAll('.help li > span')].map(s => s.textContent));
+  assert.deepEqual(inst, rows);
+  assert.ok(await ip.evaluate(() => document.querySelector('#keys-h').parentElement.textContent.includes('を押すと、同じ一覧')));
+  assert.deepEqual(ie, []);
+  await ip.close();
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('ペンと図形の選択肢: 既定はどちらも、選んでいないときは押すとその道具になるだけで、もう一度押すと出る。インストールページで 1 回押しにできる', async () => {
   const { page, errors } = await fresh();
   const check = async (once) => {

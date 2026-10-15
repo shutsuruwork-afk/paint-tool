@@ -58,7 +58,7 @@ body {
 section, header { display: grid; gap: 16px; min-width: 0; }
 h1, h2, p, ol, ul, figure, blockquote { margin: 0; }
 h1 {
-  font: 600 clamp(2.5rem, 8vw, 3.75rem)/1.2 var(--font-hand);
+  font: 600 clamp(2rem, 8.5vw, 3.75rem)/1.2 var(--font-hand);
   letter-spacing: 0.02em;
   text-wrap: balance;
 }
@@ -189,6 +189,15 @@ tbody th { font-weight: 700; min-width: 8em; }
 .keys { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 24px; padding: 0; list-style: none; }
 .keys li { display: flex; gap: 10px; align-items: baseline; min-width: 0; }
 .keys .k { flex: none; min-width: 5.6em; }
+.toc { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 0.92rem; }
+.toc a { color: var(--ink-soft); text-decoration-color: var(--line); }
+.toc a:hover { color: var(--red-deep); }
+h3 { margin: 0; font-size: 1.1rem; line-height: 1.5; font-weight: 700; }
+.sub { display: grid; gap: 12px; min-width: 0; }
+section > .sub + .sub { margin-top: 20px; }
+.ct { display: grid; gap: 2px; }
+.ct small { color: var(--ink-soft); font-size: 0.88rem; line-height: 1.65; }
+.prefs .check + .check { padding-top: 10px; border-top: 1px solid var(--line); }
 .help { display: grid; gap: 18px; }
 .help section { gap: 0; }
 .help h3 { margin: 0 0 6px; font-size: 1rem; font-weight: 700; }
@@ -240,30 +249,43 @@ tbody th { font-weight: 700; min-width: 8em; }
 
 <main class="page">
   <header>
-    <p class="eyebrow">Bookmarklet · v1.16.0 · %%SIZE%%（gzip %%GZIP%%）</p>
+    <p class="eyebrow">Bookmarklet · v1.16.1 · %%SIZE%%（gzip %%GZIP%%）</p>
     <h1>ペイント<br>ブックマークレット</h1>
     <p class="lead">開いているページの上に、<span class="mark">そのまま描ける<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d="M18 40C8 22 52 6 108 7s92 13 84 30-62 20-112 17S4 38 30 16" vector-effect="non-scaling-stroke"/></svg></span>ペイントツールです。ブックマークを押すだけで起動し、拡張機能もアカウントも要りません。入力から線が画面に出るまでの遅延を減らす仕組みを、ブラウザが対応している限りすべて使います。</p>
     <div class="actions">
       <a id="bm" class="bm" href="%%BOOKMARKLET_HREF%%" title="ブックマークバーへドラッグ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1.2-4.4L16 4.8a2 2 0 0 1 2.9 0l.3.3a2 2 0 0 1 0 2.9L8.4 18.8zM14 7l3 3"/></svg>Paint</a>
-      <span class="hint">← このボタンをブックマークバーへドラッグ（最初の色や太さは、下の「最初の設定」で選べます）</span>
+      <span class="hint">← このボタンをブックマークバーへドラッグ（色や太さは下の「デフォルトの設定」で選べます）</span>
     </div>
     <div class="actions">
       <button id="try" class="btn primary" type="button">このページで試す</button>
       <button id="copy" class="btn" type="button">コードをコピー</button>
     </div>
     <textarea id="code" readonly hidden aria-label="ブックマークレットのコード"></textarea>
+    <nav class="toc" aria-label="このページの内容">
+      <a href="#install">入れ方</a><a href="#try-it">試し書き</a><a href="#defaults">デフォルトの設定</a><a href="#usage">使い方</a><a href="#limits">できないこと</a><a href="#tech">仕組みと計測</a>
+    </nav>
   </header>
 
-  <section aria-labelledby="try-h">
+  <section id="install" aria-labelledby="install-h">
+    <h2 id="install-h">入れ方</h2>
+    <ol class="steps">
+      <li>ブックマークバーを表示します。Chrome・Edge・Firefox では <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>、Mac では <kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> です。</li>
+      <li>赤い「Paint」ボタンを、ブックマークバーへドラッグします。</li>
+      <li>描きたいページで、追加したブックマークを押します。もう一度押すと、絵を残したまま隠れます。</li>
+    </ol>
+    <p class="aside">スマートフォンなどドラッグできない環境では、「コードをコピー」を押してから適当なページをブックマークし、そのブックマークの URL 欄をコピーした内容に書き換えて保存します。</p>
+  </section>
+
+  <section id="try-it" aria-labelledby="try-h">
     <h2 id="try-h">試し書き</h2>
     <p>「このページで試す」を押して、下の文の誤字を赤ペンで丸く囲んでみてください。</p>
     <blockquote class="proof">ブックマークレッドは、ブラウザのブックマークに保存して使う小さなプログラムです。</blockquote>
-    <p class="aside">色と太さは、ツールバーの点のボタンを押すと選べます。太さは <kbd>[</kbd> <kbd>]</kbd> でも変えられます。取り消しは <kbd>Ctrl</kbd>+<kbd>Z</kbd>、隠すときは <kbd>Esc</kbd>。<kbd>D</kbd> を押すと、入力 1 件の処理時間や使われている機能がその場で表示されます。</p>
+    <p class="aside">ツールの中で <kbd>?</kbd> を押すと、操作の一覧が出ます。隠すときは <kbd>Esc</kbd> です。</p>
   </section>
 
   <section id="defaults" aria-labelledby="pref-h">
-    <h2 id="pref-h">最初の設定</h2>
-    <p>起動したときの色・太さ・ツールバーの位置と、動きを選べます。選ぶと上の「Paint」ボタンの中身が変わるので、選び終えてからブックマークバーへドラッグしてください。すでに入れたブックマークは、前の設定のままです。</p>
+    <h2 id="pref-h">デフォルトの設定</h2>
+    <p>起動したときの色・太さ・ツールバーの位置と、動きを選べます。選ぶと上の「Paint」ボタンの中身が変わるので、選び終えてからブックマークバーへドラッグし直してください（前に入れたブックマークは前の設定のままです）。ツールの「その他 → デフォルトの変更」からも、ここを開けます。</p>
     <form id="prefs" class="prefs" onsubmit="return false">
       <fieldset>
         <legend>色</legend>
@@ -294,9 +316,12 @@ tbody th { font-weight: 700; min-width: 8em; }
           <label><input type="radio" name="bar" value="bottom">下の中央</label>
         </div>
       </fieldset>
-      <label class="check"><input type="checkbox" role="switch" id="p-once"><span>ペンと図形のボタンを 1 回押すと、種類（ペンの種類・4 つの図形）の選択肢も出す（切ると、選んでいるボタンをもう一度押したときに出ます）</span></label>
-      <label class="check"><input type="checkbox" role="switch" id="p-calc"><span>電卓: 文字に計算式（12×3 など）を書くと、答えを薄く出して Tab で書き込める（ツールの「その他」でも切り替えられます）</span></label>
-      <label class="check"><input type="checkbox" role="switch" id="p-touch"><span>ペンなどを選んでいても、文字を押すと選んで動かせ、もう一度押すと書き直せる（切ると、文字の上からでもペンで描けます）</span></label>
+      <fieldset>
+        <legend>動き</legend>
+        <label class="check"><span class="ct"><b>文字に触れる</b><small>ペンなどを選んでいても、文字を押すと選んで動かせ、もう一度押すと書き直せます。切ると、文字の上からでもペンで描けます。</small></span><input type="checkbox" role="switch" id="p-touch"></label>
+        <label class="check"><span class="ct"><b>ペンと図形の選択肢を 1 回で出す</b><small>入りにすると、ペンや図形のボタンを 1 回押すだけで種類（ペンの種類・4 つの図形）を選べます。切ると、選んでいるボタンをもう一度押したときに出ます。</small></span><input type="checkbox" role="switch" id="p-once"></label>
+        <label class="check"><span class="ct"><b>電卓</b><small>文字に計算式（12×3 など）を書くと、答えを薄く出して Tab で書き込めます。ツールの「その他」でも切り替えられます。</small></span><input type="checkbox" role="switch" id="p-calc"></label>
+      </fieldset>
       <div class="prefs-foot">
         <button type="button" id="p-reset" class="btn">最初の状態に戻す</button>
         <span id="p-state" role="status"></span>
@@ -305,58 +330,46 @@ tbody th { font-weight: 700; min-width: 8em; }
     <p class="aside">使ったサイトでは、そのサイトで変えた色・太さ・道具・ツールバーの位置を次回も使います（そのサイトの保存領域に、キーを 1 つだけ書きます）。ここで選んだ設定は、そのサイトで変えていない所に効きます。背景とページ操作モードは覚えません。</p>
   </section>
 
-  <section aria-labelledby="install-h">
-    <h2 id="install-h">入れ方</h2>
-    <ol class="steps">
-      <li>ブックマークバーを表示します。Chrome・Edge・Firefox では <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>、Mac では <kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> です。</li>
-      <li>赤い「Paint」ボタンを、ブックマークバーへドラッグします。</li>
-      <li>描きたいページで、追加したブックマークを押します。もう一度押すと、絵を残したまま隠れます。</li>
-    </ol>
-    <p class="aside">スマートフォンなどドラッグできない環境では、「コードをコピー」を押してから適当なページをブックマークし、そのブックマークの URL 欄をコピーした内容に書き換えて保存します。</p>
-  </section>
-
-  <section aria-labelledby="cap-h">
-    <h2 id="cap-h">このブラウザで使える低遅延機能</h2>
-    <p>いま開いているブラウザで判定した結果です。使えない機能は、自動的に代わりの方法へ切り替わります。</p>
-    <div class="table-wrap">
-      <table class="caps">
-        <thead><tr><th scope="col">機能</th><th scope="col">状態</th><th scope="col">役割</th></tr></thead>
-        <tbody id="caps"></tbody>
-      </table>
-    </div>
-  </section>
-
-  <section aria-labelledby="bench-h">
-    <h2 id="bench-h">計測</h2>
-    <p>3,000 点のペン入力（筆圧あり）を流し込み、メインスレッドが塞がる時間を測りました。この時間が短いほど、次の入力をすぐに受け取れます。</p>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th scope="col">項目</th><th scope="col">1920×1080 @1x</th><th scope="col">@2x（3840×2160）</th></tr></thead>
-        <tbody>
-          <tr><th scope="row">入力 1 件の処理</th><td class="num">5〜8 µs</td><td class="num">4〜14 µs</td></tr>
-          <tr><th scope="row">ストロークの確定</th><td class="num">4〜9 ms</td><td class="num">8〜22 ms</td></tr>
-          <tr><th scope="row">元に戻す</th><td class="num">2〜5 ms</td><td class="num">2〜18 ms</td></tr>
-          <tr><th scope="row">長い斜め線の履歴メモリ</th><td class="num">外接矩形の 24%</td><td class="num">外接矩形の 12%</td></tr>
-          <tr><th scope="row">背景の塗りつぶし</th><td class="num">50〜75 ms</td><td class="num">170〜180 ms</td></tr>
-          <tr><th scope="row">起動</th><td class="num">19〜33 ms</td><td class="num">15〜27 ms</td></tr>
-          <tr><th scope="row">スクロール中の処理</th><td class="num" colspan="2">なし（ブラウザが動かす）</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p class="aside">60 Hz の 1 フレームは約 16,700 µs です。毎回パス全体を描き直す素朴な実装は、同じ条件で 1 件あたり 64〜137 µs かかり、点が増えるほど遅くなります。本ツールの処理時間は点の数によらず一定です。計測はヘッドレス Chromium 141 とソフトウェア GPU（SwiftShader）で行いました。確定・元に戻す・塗りつぶしは GPU 処理の比重が大きいので、GPU のある実機ではこれより短くなる見込みです。確定の時間には、初めて描く場所のタイルを作る時間が含まれます。<code>npm run bench</code> で再計測できます。</p>
-  </section>
-
-  <section aria-labelledby="keys-h">
-    <h2 id="keys-h">ショートカット</h2>
-    <p>ツールの中で <kbd>?</kbd> を押すと、同じ一覧が画面に出ます（もう一度 <kbd>?</kbd> か <kbd>Esc</kbd> で閉じます）。</p>
-    <div class="help">
+  <section id="usage" aria-labelledby="usage-h">
+    <h2 id="usage-h">使い方</h2>
+    <p>ツールバーには、よく使う物だけを並べています。左から、移動つまみ・選択・ペン・蛍光ペン・消しゴム・図形・文字・塗りつぶし・色と太さ・元に戻す・やり直す・ページ操作・その他（⋯）・隠す（−）・閉じる（×）です。ツールバーは、どこを押しても引けば動かせます。</p>
+    <ul class="points">
+      <li><b>ペンと図形</b>: 選んでいるときにもう一度押すと、ペンの種類（ペン・万年筆・筆・鉛筆）や図形（直線・矢印・四角形・楕円）を選べます。万年筆は線の向きで、筆は速さで太さが変わり、鉛筆は少しかすれます。</li>
+      <li><b>色と太さ</b>: 点のボタンで、パレット・カスタム色・スポイト・太さ・濃さを選べます。点の色と大きさが、今の色と太さです。</li>
+      <li><b>文字</b>: 押した所に書けます。日本語の変換もそのまま使えます。書いた文字は線とは別の「物」なので、ペンを持ったままでも押せば動かせ、もう一度押せば書き直せ、拡大してもぼやけません。</li>
+      <li><b>選択</b>: 囲むか押して選び、引くと移動、角で拡大縮小、<kbd>Delete</kbd> で削除します。どれも元に戻せます。</li>
+      <li><b>電卓</b>（その他）: 入りにすると、文字に書いた計算式の答えが薄く出て、<kbd>Tab</kbd> で書き込めます。</li>
+      <li><b>画面に固定</b>（その他）: 入りにすると、絵はスクロールしても画面の同じ所に留まります（動画や地図の上に描くとき）。切ると、そのとき見えている位置のままページに付き直します。</li>
+      <li><b>ページ操作</b>（<kbd>V</kbd>）: 絵を残したまま、下のページをクリック・入力できます。ツールを選ぶと描画に戻ります。</li>
+      <li><b>隠す・閉じる</b>: <kbd>−</kbd> か <kbd>Esc</kbd> で絵ごと隠れ、ブックマークレットをもう一度押すと戻ります。<kbd>×</kbd> で閉じると絵も消えますが、8 秒の間は画面の下の「元に戻す」か <kbd>Ctrl</kbd>+<kbd>Z</kbd> で戻せます。</li>
+    </ul>
+    <div class="sub">
+      <h3 id="keys-h">操作の一覧</h3>
+      <p>ツールの中で <kbd>?</kbd> を押すと、同じ一覧が画面に出ます（もう一度 <kbd>?</kbd> か <kbd>Esc</kbd> で閉じます）。</p>
+      <div class="help">
 %%HELP%%
+      </div>
+      <p class="aside">Mac では <kbd>Ctrl</kbd> の代わりに <kbd>⌘</kbd> も使えます。ページの入力欄に文字を打っている間は、ショートカットは反応しません。</p>
     </div>
-    <p class="aside">Mac では <kbd>Ctrl</kbd> の代わりに <kbd>⌘</kbd> も使えます。ページの入力欄に文字を打っている間は、ショートカットは反応しません。ツールバーの × で閉じると絵も消えますが、8 秒の間は画面の下の「元に戻す」か <kbd>Ctrl</kbd>+<kbd>Z</kbd> で戻せます。</p>
   </section>
 
-  <section aria-labelledby="how-h">
-    <h2 id="how-h">遅延を減らす仕組み</h2>
+  <section id="limits" aria-labelledby="limits-h">
+    <h2 id="limits-h">できないこと</h2>
+    <ul class="points">
+      <li>スクリプトの実行を厳しく制限している（CSP）サイトでは、ブラウザによってはブックマークレットの実行自体が止められることがあります（Chrome の GitHub では動くことを確かめています）。</li>
+      <li>描いた絵はタブのメモリの中にだけあり、ディスクには保存しません。タブを閉じるかページを移ると消えるので、残したいときは PNG で保存してください。</li>
+      <li>ページの一部だけがスクロールするサイト（Gmail、Slack など）では、その部分のスクロールに絵が付いていきません。ページ全体のスクロールにだけ追従します。</li>
+      <li>描いている途中にスクロールすると、線は描き始めた時点の位置に確定します。描いた後で本文の位置が変わる（画像の読み込みで押し出されるなど）と、絵と本文がずれます。</li>
+      <li>線や図形の選択は画素の単位です。囲んだ範囲に重なっている別の線も一緒に動きます。拡大すると少しぼやけます（文字は物なのでぼやけません）。</li>
+      <li>保存される PNG は描いた絵だけです。下にあるページは写りません。</li>
+      <li>埋め込み表示（iframe）のページでは、PNG の保存やクリップボードへのコピーがブロックされることがあります。</li>
+    </ul>
+  </section>
+
+  <section id="tech" aria-labelledby="tech-h">
+    <h2 id="tech-h">仕組みと計測</h2>
+    <div class="sub">
+      <h3 id="how-h">遅延を減らす仕組み</h3>
     <figure class="stack" aria-label="レイヤの重なり（上が手前）">
       <div class="layer">ツールバー</div>
       <div class="layer">入力レイヤ<small>ページ側のリスナーへは入力を渡さない</small></div>
@@ -373,30 +386,46 @@ tbody th { font-weight: 700; min-width: 8em; }
       <li>描いている途中の線は、新しい点の分だけを追記します。毎回パス全体を描き直さないので、線が長くなっても重くなりません。</li>
       <li>半透明の線は不透明で描き、レイヤごと不透明度をかけます。線が自分と重なっても濃くなりません。</li>
       <li>確定した絵は、ページの座標に置いたタイルに描きます。スクロールはブラウザが合成だけで動かすので、スクロール中に JavaScript は動きません。タイルは描いた所にだけ作ります。</li>
-      <li>その他のメニューの「画面に固定」を入れると、絵はスクロールしても画面の同じ所に留まります（動画や地図の上に描くとき）。切ると、そのとき見えている位置のままページに付き直します。</li>
+      <li>画面に固定は、面を <code>position: fixed</code> にするだけです。スクロール中に JavaScript が動かないのは同じです。切るときだけ、描いた量に比例した時間で絵をページの位置に付け直します。</li>
       <li>確定と元に戻すは、線が通った 128px 四方のタイルだけを GPU 上でコピーします。全画面の <code>getImageData</code> は使いません。</li>
       <li>消しゴムは、削る直前のタイルだけを退避します。消し始めに画面全体をコピーする待ち時間がありません。</li>
       <li>キャンバスの確保や合成処理の初回コストは、起動直後のまだ描いていない時間に済ませます。</li>
       <li>塗りつぶしは描いた範囲と画面が重なる部分だけを読み戻し、塗る範囲を矩形パスにまとめて GPU に 1 回で塗らせます。</li>
       <li>選択した物は 1 枚のキャンバスに浮かせ、動かしている間は枠の位置と大きさを変えるだけです。描き直さないので、大きな範囲でも軽く動きます。</li>
-      <li>電卓を入りにすると、文字に書いた計算式（12×3 など）の答えが薄く出て、Tab で書き込めます。計算は自前で行い、eval は使いません。</li>
-      <li>文字は入力中だけ本物の入力欄を重ねるので、日本語の変換がそのまま使えます。確定した文字は線とは別の「物」なので、ペンを持ったままでも押して動かせ、拡大してもぼやけず、もう一度押せば書き直せます。</li>
+      <li>文字は入力中だけ本物の入力欄を重ねるので、日本語の変換がそのまま使えます。確定した文字は面の中の要素として置くので、拡大縮小は文字の大きさを変えて描き直します。</li>
       <li>筆の大きさを示すカーソルは CSS カーソル画像なので、OS が遅れなく描きます。</li>
       <li>UI は Shadow DOM と CSSOM だけで組むので、ページの CSS、CSP の style-src、Trusted Types の影響を受けません。</li>
     </ul>
-  </section>
-
-  <section aria-labelledby="limits-h">
-    <h2 id="limits-h">できないこと</h2>
-    <ul class="points">
-      <li>スクリプトの実行を厳しく制限している（CSP）サイトでは、ブラウザによってはブックマークレットの実行自体が止められることがあります（Chrome の GitHub では動くことを確かめています）。</li>
-      <li>描いた絵はタブのメモリの中にだけあり、ディスクには保存しません。タブを閉じるかページを移ると消えるので、残したいときは PNG で保存してください。</li>
-      <li>ページの一部だけがスクロールするサイト（Gmail、Slack など）では、その部分のスクロールに絵が付いていきません。ページ全体のスクロールにだけ追従します。</li>
-      <li>描いている途中にスクロールすると、線は描き始めた時点の位置に確定します。描いた後で本文の位置が変わる（画像の読み込みで押し出されるなど）と、絵と本文がずれます。</li>
-      <li>線や図形の選択は画素の単位です。囲んだ範囲に重なっている別の線も一緒に動きます。拡大すると少しぼやけます（文字は物なのでぼやけません）。</li>
-      <li>保存される PNG は描いた絵だけです。下にあるページは写りません。</li>
-      <li>埋め込み表示（iframe）のページでは、PNG の保存やクリップボードへのコピーがブロックされることがあります。</li>
-    </ul>
+    </div>
+    <div class="sub">
+      <h3 id="cap-h">このブラウザで使える低遅延機能</h3>
+    <p>いま開いているブラウザで判定した結果です。使えない機能は、自動的に代わりの方法へ切り替わります。</p>
+    <div class="table-wrap">
+      <table class="caps">
+        <thead><tr><th scope="col">機能</th><th scope="col">状態</th><th scope="col">役割</th></tr></thead>
+        <tbody id="caps"></tbody>
+      </table>
+    </div>
+    </div>
+    <div class="sub">
+      <h3 id="bench-h">計測</h3>
+    <p>3,000 点のペン入力（筆圧あり）を流し込み、メインスレッドが塞がる時間を測りました。この時間が短いほど、次の入力をすぐに受け取れます。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">項目</th><th scope="col">1920×1080 @1x</th><th scope="col">@2x（3840×2160）</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">入力 1 件の処理</th><td class="num">5〜8 µs</td><td class="num">4〜14 µs</td></tr>
+          <tr><th scope="row">ストロークの確定</th><td class="num">4〜9 ms</td><td class="num">8〜22 ms</td></tr>
+          <tr><th scope="row">元に戻す</th><td class="num">2〜5 ms</td><td class="num">2〜18 ms</td></tr>
+          <tr><th scope="row">長い斜め線の履歴メモリ</th><td class="num">外接矩形の 24%</td><td class="num">外接矩形の 12%</td></tr>
+          <tr><th scope="row">背景の塗りつぶし</th><td class="num">50〜75 ms</td><td class="num">170〜180 ms</td></tr>
+          <tr><th scope="row">起動</th><td class="num">19〜33 ms</td><td class="num">15〜27 ms</td></tr>
+          <tr><th scope="row">スクロール中の処理</th><td class="num" colspan="2">なし（ブラウザが動かす）</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="aside">60 Hz の 1 フレームは約 16,700 µs です。毎回パス全体を描き直す素朴な実装は、同じ条件で 1 件あたり 64〜137 µs かかり、点が増えるほど遅くなります。本ツールの処理時間は点の数によらず一定です。計測はヘッドレス Chromium 141 とソフトウェア GPU（SwiftShader）で行いました。確定・元に戻す・塗りつぶしは GPU 処理の比重が大きいので、GPU のある実機ではこれより短くなる見込みです。確定の時間には、初めて描く場所のタイルを作る時間が含まれます。<code>npm run bench</code> で再計測できます。</p>
+    </div>
   </section>
 
   <footer class="foot">
@@ -408,7 +437,7 @@ tbody th { font-weight: 700; min-width: 8em; }
 function runPaint() {%%INLINE_CODE%%}
 (() => {
   const bm = document.getElementById('bm');
-  // ---- 最初の設定: 選んだ既定をブックマークレットのコードに埋め込む ----
+  // ---- デフォルトの設定: 選んだ既定をブックマークレットのコードに埋め込む ----
   // 組み込みの既定（src/paint.js の PALETTE と CFG に合わせる。テストで一致を確かめている）
   const PALETTE = ['#111111', '#ffffff', '#e53935', '#fb8c00', '#fdd835', '#43a047', '#1e88e5', '#8e24aa'];
   const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 4, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: false, pickOnce: false };

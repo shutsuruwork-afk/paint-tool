@@ -1326,6 +1326,58 @@ test('スクロールした位置で描いた線が本文の正しい位置に�
   await page.close();
 });
 
+test('画面に固定: その他のメニューで入れると、スクロールしても絵と文字が画面の同じ所に留まり、そのまま描ける。切ると見えている位置のままページに付き直し、元に戻す・やり直すも合う', async () => {
+  const { page, errors } = await fresh('/long');
+  await drag(page, [[120, 200], [380, 200]], 10); // A: 文書の y=200
+  await page.keyboard.press('t');
+  await page.mouse.click(500, 400);
+  await page.keyboard.type('Hi');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('p');
+  const t0 = await textRect(page);
+  const fixedNow = () => page.evaluate(() => window.__paintBookmarklet.stats().fixed);
+  const toggleFixed = async () => {
+    await mouseClick(page, '[aria-label^="その他"]');
+    await mouseClick(page, '.pn.on [aria-label^="画面に固定"]');
+    await page.keyboard.press('Escape'); // メニューを閉じる
+  };
+  const ink = (x, y) => screenPixel(page, x, y).then(p => p[3] > 200);
+  // 入れてスクロールしても、絵と文字は画面の同じ所にある
+  await toggleFixed();
+  assert.equal(await fixedNow(), true);
+  await scrollTo(page, 500);
+  assert.equal(await ink(250, 200), true, 'A は画面に留まる');
+  assert.deepEqual(await textRect(page), t0);
+  // 固定のまま描け、元に戻す・やり直すも画素単位で合う
+  await drag(page, [[120, 300], [380, 300]], 10); // B: 画面の y=300
+  assert.equal(await ink(250, 300), true);
+  const s1 = await checksum(page);
+  await page.keyboard.press('Control+z');
+  assert.equal(await ink(250, 300), false);
+  await page.keyboard.press('Control+Shift+z');
+  assert.equal(await checksum(page), s1);
+  // 切っても（スクロールは 500 のまま）見えている位置は変わらない
+  await toggleFixed();
+  assert.equal(await fixedNow(), false);
+  assert.equal(await ink(250, 200), true);
+  assert.equal(await ink(250, 300), true);
+  assert.deepEqual(await textRect(page), t0);
+  assert.equal(await checksum(page), s1);
+  // その後はページに付く（文書の y=700・800 に付き直した）
+  await scrollTo(page, 300);
+  assert.equal(await ink(250, 400), true, 'A はページと一緒に動く');
+  assert.equal(await ink(250, 500), true, 'B はページと一緒に動く');
+  assert.equal(await ink(250, 200), false);
+  assert.ok(near((await textRect(page)).y, t0.y + 200, 1));
+  const s2 = await checksum(page);
+  await page.keyboard.press('Control+z');
+  assert.equal(await ink(250, 500), false, 'B の取り消し');
+  await page.keyboard.press('Control+Shift+z');
+  assert.equal(await checksum(page), s2);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('スクロールした位置でも、塗りつぶし・消しゴム・PNG 保存の範囲が正しい', async () => {
   const { page } = await fresh('/long');
   await scrollTo(page, 1200);

@@ -235,7 +235,7 @@ tbody th { font-weight: 700; min-width: 8em; }
 
 <main class="page">
   <header>
-    <p class="eyebrow">Bookmarklet · v1.14.0 · %%SIZE%%（gzip %%GZIP%%）</p>
+    <p class="eyebrow">Bookmarklet · v1.15.0 · %%SIZE%%（gzip %%GZIP%%）</p>
     <h1>ペイント<br>ブックマークレット</h1>
     <p class="lead">開いているページの上に、<span class="mark">そのまま描ける<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d="M18 40C8 22 52 6 108 7s92 13 84 30-62 20-112 17S4 38 30 16" vector-effect="non-scaling-stroke"/></svg></span>ペイントツールです。ブックマークを押すだけで起動し、拡張機能もアカウントも要りません。入力から線が画面に出るまでの遅延を減らす仕組みを、ブラウザが対応している限りすべて使います。</p>
     <div class="actions">
@@ -368,6 +368,7 @@ tbody th { font-weight: 700; min-width: 8em; }
       <li>描いている途中の線は、新しい点の分だけを追記します。毎回パス全体を描き直さないので、線が長くなっても重くなりません。</li>
       <li>半透明の線は不透明で描き、レイヤごと不透明度をかけます。線が自分と重なっても濃くなりません。</li>
       <li>確定した絵は、ページの座標に置いたタイルに描きます。スクロールはブラウザが合成だけで動かすので、スクロール中に JavaScript は動きません。タイルは描いた所にだけ作ります。</li>
+      <li>その他のメニューの「画面に固定」を入れると、絵はスクロールしても画面の同じ所に留まります（動画や地図の上に描くとき）。切ると、そのとき見えている位置のままページに付き直します。</li>
       <li>確定と元に戻すは、線が通った 128px 四方のタイルだけを GPU 上でコピーします。全画面の <code>getImageData</code> は使いません。</li>
       <li>消しゴムは、削る直前のタイルだけを退避します。消し始めに画面全体をコピーする待ち時間がありません。</li>
       <li>キャンバスの確保や合成処理の初回コストは、起動直後のまだ描いていない時間に済ませます。</li>

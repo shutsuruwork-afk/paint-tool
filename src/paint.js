@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.14.0';
+  const VERSION = '1.15.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -93,6 +93,7 @@
     save: 'M12 4v11M7 10l5 5 5-5M5 20h14',
     copy: 'M9 9h11v11H9zM5 15H4V4h11v1',
     hide: 'M5 12h14',
+    pin: 'M9 4h6M10 4v6l-3 4h10l-3-4V4M12 14v6',
     calc: 'M6 3h12v18H6zM9 7h6M9 11.5h.01M12 11.5h.01M15 11.5h.01M9 15h.01M12 15h.01M15 15h.01M9 18.5h.01M12 18.5h.01M15 18.5h.01',
     fountain: 'M12 2.5l5.5 8L12 21.5l-5.5-11zM12 10.5v5M12 15.5a.6.6 0 1 0 0 .01',
     brush: 'M19.5 3.5l1 1-8 9.5-2.5-2.5zM10 11.5c-2.6-.4-5 1.4-5 4.3 0 2-1 3.3-2.5 4.2 4.6.6 9.7-.9 9.9-5.6',
@@ -273,8 +274,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 小さいほど初めて描く場所での確保が軽く、大きいほど層の数が減って合成とスクロールが軽い。
   // 履歴タイル T の倍数にしておくと、履歴タイルが表示タイルをまたがない
   const DT = T * max(2, round(sdpr * 2));
+  // 画面に固定（fixed）の間は、面を入れたときのスクロール位置（fx, fy）で止めて position: fixed にする
+  let fixed = false, fx = 0, fy = 0;
   // 画面の左上が S のどこに当たるか
-  const origin = () => [round((win.scrollX - hdx) * sdpr), round((win.scrollY - hdy) * sdpr)];
+  const origin = () => {
+    const x = fixed ? fx : win.scrollX, y = fixed ? fy : win.scrollY;
+    return [round((x - hdx) * sdpr), round((y - hdy) * sdpr)];
+  };
   function mapNow() {
     sk = sdpr / dpr;
     [sox, soy] = origin();
@@ -316,9 +322,15 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     pin(surf, [['width', '0'], ['height', '0']]);
     surfW = max(de.scrollWidth, de.clientWidth, b ? b.scrollWidth : 0);
     surfH = max(de.scrollHeight, de.clientHeight, b ? b.scrollHeight : 0);
-    const r = surf.getBoundingClientRect();
-    hdx = r.left + win.scrollX;
-    hdy = r.top + win.scrollY;
+    if (fixed) {
+      // 固定の間は文書の原点からのずれを測れない（測らなくても変わらない）。見えている範囲が面からはみ出さないようにだけする
+      surfW = max(surfW, ceil(fx - hdx + win.innerWidth));
+      surfH = max(surfH, ceil(fy - hdy + win.innerHeight));
+    } else {
+      const r = surf.getBoundingClientRect();
+      hdx = r.left + win.scrollX;
+      hdy = r.top + win.scrollY;
+    }
     pin(surf, [['width', surfW + 'px'], ['height', surfH + 'px']]);
   }
 
@@ -418,7 +430,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const passB = btn('ページ操作モード (V) — 絵を残したままページを操作', I.pass, togglePass);
   // その他: 名前とショートカット付きのメニュー。keep なら押しても閉じない（背景を続けて切り替えられる）
   const moreP = pnl();
-  const moreB = btn('その他（全消去・背景・保存・コピー）', I.more, () => togglePanel(moreP, moreB));
+  const moreB = btn('その他（全消去・背景・保存・コピー・電卓・画面に固定）', I.more, () => togglePanel(moreP, moreB));
   const item = (title, label, key, d, fn, keep) => {
     const b = btn(title, d, () => { if (!keep) closePanel(); fn(); }, 'mi');
     const s = el('span');
@@ -439,6 +451,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     remember();
     say(calc ? '電卓: 文字に計算式を書くと答えが出ます（Tab で書き込み）' : '電卓: 切');
   }, true);
+  const [fixB, fixL] = item('画面に固定 — スクロールしても絵が画面の同じ所に留まる（動画や地図の上に描くとき）', '', '', I.pin, toggleFixed, true);
   bar.append(undoB, redoB, sep(), passB, moreB, sep(),
     btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hideHint), btn('閉じる（8 秒間は元に戻せます）', I.close, close),
     shapeP, penP, styleP, moreP);
@@ -626,6 +639,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     sbox.classList.toggle('bg1', bg === 1);
     sbox.classList.toggle('bg2', bg === 2);
     syncBg();
+  }
+  function syncFixed() {
+    fixL.textContent = fixed ? '画面に固定: 入' : '画面に固定: 切';
+    fixB.classList.toggle('on', fixed);
   }
   function syncCalc() {
     calcL.textContent = calc ? '電卓: 入' : '電卓: 切';
@@ -823,6 +840,47 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     for (const t of dtiles.values()) t.x.clearRect(0, 0, DT, DT);
     for (const p of P) tApply(p[0], null);
     cbx0 = cby0 = cbx1 = cby1 = 0;
+  }
+
+  // ---------- 画面に固定（動画や地図の上に描く用。その他のメニューで切り替える） ----------
+  // 入れると、面をその時のスクロール位置のまま position: fixed にして、スクロールしても画面の同じ所に留める。
+  // 切るときは、今見えている位置のままページに付け直す（スクロールした分だけ、面の画素・履歴・文字をまとめてずらす）
+  function toggleFixed() {
+    if (act !== -1) return;
+    settle();
+    finishHandoff();
+    if (!fixed) {
+      fixed = true;
+      fx = win.scrollX; fy = win.scrollY;
+      pin(surf, [['position', 'fixed'], ['left', hdx - fx + 'px'], ['top', hdy - fy + 'px']]);
+    } else {
+      const dx = win.scrollX - fx, dy = win.scrollY - fy;
+      fixed = false;
+      pin(surf, [['position', 'absolute'], ['left', '0'], ['top', '0']]);
+      if (dx || dy) shiftAll(round(dx * sdpr), round(dy * sdpr), round(dx) * sdpr, round(dy) * sdpr);
+    }
+    sizeSurface();
+    syncFixed();
+    say(fixed ? '画面に固定: スクロールしても絵は動きません' : '画面に固定: 切（絵はページに付きます）');
+  }
+  // 面の中身を S の (dx, dy) だけずらす（文字は CSS px の整数のまま (tx, ty) だけ）。文書の上や左にはみ出した所は消える
+  function shiftAll(dx, dy, tx, ty) {
+    const old = [...dtiles.entries()];
+    dtiles.clear();
+    for (const [k, t] of old) {
+      const x = (k % 65536) * DT + dx, y = ((k / 65536) | 0) * DT + dy;
+      forTiles(x, y, DT, DT, true, (n, ox, oy, ix, iy, iw, ih) => n.x.drawImage(t.c, ix - x, iy - y, iw, ih, ix - ox, iy - oy, iw, ih));
+      t.c.remove();
+      t.c.width = t.c.height = 0;
+    }
+    const st = q => { q[1] += tx; q[2] += ty; };
+    for (const h of hist) {
+      for (let i = 0; i < h.R.length; i += 6) { h.R[i] += dx; h.R[i + 1] += dy; }
+      if (h.b) { h.b[0] += dx; h.b[1] += dy; h.b[2] += dx; h.b[3] += dy; }
+      if (h.t) for (const p of h.t) if (p[1]) st(p[1]);
+    }
+    for (const o of tlist.slice()) { const q = tSnap(o); st(q); tApply(o, q); }
+    if (cbx1 > cbx0) { cbx0 = max(0, cbx0 + dx); cby0 = max(0, cby0 + dy); cbx1 += dx; cby1 += dy; }
   }
 
   // ---------- ストローク状態（ホットパスで割り当てを起こさないよう、すべてスカラーで保持） ----------
@@ -2156,7 +2214,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       ["文字を押す", "ペンなどのままでも選んで動かせる。もう一度押すと書き直し", "touch"],
       ["文字の入力中", "{Esc}・{Ctrl}+{Enter}・外を押すと確定"],
       ["{Tab}", "電卓が入りのとき、薄く出た答えを書き込む"],
-      ["ツールバー", "どこを押しても、引けば動かせる"]
+      ["ツールバー", "どこを押しても、引けば動かせる"],
+      ["その他（⋯）", "全消去・背景・保存・コピー・電卓・画面に固定（スクロールしても絵が画面に留まる）"]
     ]]
   ]/*HELP*/;
   // 一覧は初めて開いたときに作る。開いている間は、外を押すと閉じるだけ（線は描かない）
@@ -2440,13 +2499,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 
   // ---------- 起動 ----------
   const stats = () => ({
-    width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, selection: sel ? [selX, selY, selW, selH] : null, texts: tlist.length, history: hist.length, historyPixels: hpix, events: nEv, points: nPts,
+    width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, selection: sel ? [selX, selY, selW, selH] : null, texts: tlist.length, fixed, history: hist.length, historyPixels: hpix, events: nEv, points: nPts,
     desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, nativePrediction: nativePred, inkTrail: !!inkP,
     prefs: { ...snapPrefs(), bar: [barX, barY], touchText, pickOnce },
   });
   win[NS] = { version: VERSION, toggle, show, hide, close, destroy, undo, redo, clear: clearAll, tool: setTool, color: setColor, stats, pixels };
   setColor(color);
   syncPen();
+  syncFixed();
   syncCalc();
   syncTool(false);
   syncHist();

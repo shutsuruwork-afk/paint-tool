@@ -163,14 +163,16 @@ const mouseClick = async (page, sel) => {
   await page.mouse.click(r.x + r.w / 2, r.y + r.h / 2);
 };
 
-test('ツールバーは 1 段で幅 520px 以下。図形は最後に使った物を出し、押すとパネルが開く', async () => {
+test('ツールバーは 1 段で幅 520px 以下。図形は最後に使った物を出し、押すとその図形に、もう一度押すとパネルが開く', async () => {
   const { page, errors } = await fresh();
   const bar = await rectOf(page, '.bar');
   assert.ok(bar.w <= 520 && bar.h <= 50, JSON.stringify(bar));
   const shapeTitle = () => shadowEval(page, root => root.querySelector('.bar > .shp').title);
-  // 図形ボタン: 押すと最後の図形（最初は直線）になり、パネルが開く
+  // 図形ボタン: 押すと最後の図形（最初は直線）になるだけ。図形のときにもう一度押すとパネルが開く（ペンと同じ）
   await mouseClick(page, '.bar > .shp');
   assert.match(await toolOn(page), /^直線/);
+  assert.equal(await openPanels(page), 0);
+  await mouseClick(page, '.bar > .shp');
   assert.equal(await openPanels(page), 1);
   assert.equal(await shadowEval(page, root => root.querySelectorAll('.pn.on .b').length), 4);
   await mouseClick(page, '.pn.on [aria-label^="四角形"]');
@@ -184,10 +186,36 @@ test('ツールバーは 1 段で幅 520px 以下。図形は最後に使った�
   // ペンに戻ってから押すと、最後の図形（楕円）になる。描き始めるとパネルは閉じる
   await mouseClick(page, '.bar > .shp');
   assert.match(await toolOn(page), /^楕円/);
+  assert.equal(await openPanels(page), 0);
+  await mouseClick(page, '.bar > .shp');
   assert.equal(await openPanels(page), 1);
   await drag(page, [[300, 300], [500, 450]], 5);
   assert.equal(await openPanels(page), 0);
   assert.ok((await alphaStats(page, 290, 290, 220, 170)).count > 100);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('ペンと図形の選択肢: 既定はどちらも、選んでいないときは押すとその道具になるだけで、もう一度押すと出る。インストールページで 1 回押しにできる', async () => {
+  const { page, errors } = await fresh();
+  const check = async (once) => {
+    for (const [sel, name] of [['.bar > [aria-label^="ペン"]', /^ペン/], ['.bar > .shp', /^直線/]]) {
+      await page.keyboard.press('h');
+      await mouseClick(page, sel);
+      assert.match(await toolOn(page), name);
+      assert.equal(await openPanels(page), once ? 1 : 0, `${sel} 1 回目`);
+      if (!once) { await mouseClick(page, sel); assert.equal(await openPanels(page), 1, `${sel} 2 回目`); }
+      // 開いているときにもう一度押すと閉じる
+      await mouseClick(page, sel);
+      assert.equal(await openPanels(page), 0, `${sel} 閉じる`);
+    }
+  };
+  await check(false);
+  assert.equal((await prefs(page)).pickOnce, false);
+  await page.evaluate(() => window.__paintBookmarklet.destroy());
+  await runCode(page, withDefaults(CODE, { pickOnce: true }));
+  assert.equal((await prefs(page)).pickOnce, true);
+  await check(true);
   assert.deepEqual(errors, []);
   await page.close();
 });
@@ -274,6 +302,7 @@ test('その他のパネルに全消去・背景・保存が名前付きで並�
   const bar = await rectOf(page, '.bar');
   assert.ok(bar.r <= 1000 && bar.b <= 700 && bar.b > 680, JSON.stringify(bar));
   for (const sel of ['[aria-label^="その他"]', '[aria-label^="色・"]', '.bar > .shp']) {
+    if (sel.includes('shp')) await mouseClick(page, sel); // 図形は 1 回目で図形になり、2 回目でパネル
     await mouseClick(page, sel);
     const p = await rectOf(page, '.pn.on');
     assert.ok(p.x >= 0 && p.y >= 0 && p.r <= 1000 && p.b <= bar.y, `${sel}: ${JSON.stringify(p)}`);
@@ -735,6 +764,7 @@ test('インストールページで選んだ設定入りのブックマーク�
   assert.equal(p0.tool, await page.inputValue('#p-tool'));
   assert.equal(p0.touchText, await page.isChecked('#p-touch'));
   assert.equal(p0.calc, await page.isChecked('#p-calc'));
+  assert.equal(p0.pickOnce, await page.isChecked('#p-once'));
   await page.evaluate(() => window.__paintBookmarklet.destroy());
   // 選ぶと、ボタンの中身が変わる
   await page.click('[aria-label="色 7"]');

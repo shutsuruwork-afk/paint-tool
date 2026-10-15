@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.11.0';
+  const VERSION = '1.12.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -244,6 +244,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 
   // ---------- 状態 ----------
   let tool = 'pen', color = PALETTE[2], bg = 0, pass = false, visible = false, touchText = DEF.touchText !== false, penType = 'pen', calc = false;
+  // 種類のあるボタン（ペン・図形）: 既定は「選んでいないときに押すとその道具、もう一度押すと選択肢」。pickOnce なら 1 回で選択肢も出す
+  const pickOnce = DEF.pickOnce === true;
   let dpr = win.devicePixelRatio || 1, W = 0, H = 0, grpA = 1, pendingFit = false, rz = 0, warmT = 0;
   // 履歴タイル: ストロークが触れた T×T タイル（面の座標）だけを記録し、確定・undo・消しゴムの退避をその範囲に限定する。
   // 文書は大きいので、印は配列ではなく Set で持つ。番号は 行 × 65536 + 列
@@ -335,21 +337,24 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const row = (...a) => { const r = el('div', 'row'); r.append(...a); return r; };
   const toolBtns = {};
   bar.append(toolBtns.select = btn(TITLES.select, I.select, () => setTool('select')));
-  // ペン: ペンでないときに押すとペンになる。ペンのときにもう一度押すと、種類のパネルが開く
+  // ペン: ペンでないときに押すとペンになる。ペンのときにもう一度押すと、種類のパネルが開く（pickOnce なら 1 回目から開く）
   const penP = pnl();
-  const penB = btn(TITLES.pen, I.pen, () => { if (tool === 'pen') togglePanel(penP, penB); else setTool('pen'); }, 'dd');
+  const penB = btn(TITLES.pen, I.pen, () => {
+    if (tool === 'pen') togglePanel(penP, penB);
+    else { setTool('pen'); if (pickOnce) openPanel(penP, penB); }
+  }, 'dd');
   const penD = penB.querySelector('path');
   toolBtns.pen = penB;
   const penBtns = {};
   penP.append(row(...PENS.map(k => penBtns[k] = btn(PEN_TITLES[k], I[k === 'pen' ? 'pen' : k], () => { setPen(k); closePanel(); }))));
   bar.append(penB);
   for (const t of ['marker', 'eraser']) bar.append(toolBtns[t] = btn(TITLES[t], I[t], () => setTool(t)));
-  // 図形: 最後に使った図形を表示する。押すとその図形になり、4 つの図形のパネルが開く
+  // 図形: 最後に使った図形を表示する。押すとその図形になり、図形のときにもう一度押すと 4 つの図形のパネルが開く（ペンと同じ）
   let lastShape = 'line';
   const shapeP = pnl();
   const shapeB = btn(TITLES.line, I.line, () => {
     if (SHAPES.includes(tool)) togglePanel(shapeP, shapeB);
-    else { setTool(lastShape); openPanel(shapeP, shapeB); }
+    else { setTool(lastShape); if (pickOnce) openPanel(shapeP, shapeB); }
   }, 'dd shp');
   const shapeD = shapeB.querySelector('path');
   shapeP.append(row(...SHAPES.map(t => toolBtns[t] = btn(TITLES[t], I[t], () => { setTool(t); closePanel(); }))));
@@ -2318,7 +2323,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const stats = () => ({
     width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, selection: sel ? [selX, selY, selW, selH] : null, texts: tlist.length, history: hist.length, historyPixels: hpix, events: nEv, points: nPts,
     desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, nativePrediction: nativePred, inkTrail: !!inkP,
-    prefs: { ...snapPrefs(), bar: [barX, barY], touchText },
+    prefs: { ...snapPrefs(), bar: [barX, barY], touchText, pickOnce },
   });
   win[NS] = { version: VERSION, toggle, show, hide, close, destroy, undo, redo, clear: clearAll, tool: setTool, color: setColor, stats, pixels };
   setColor(color);

@@ -229,7 +229,7 @@ tbody th { font-weight: 700; min-width: 8em; }
 
 <main class="page">
   <header>
-    <p class="eyebrow">Bookmarklet · v1.11.0 · %%SIZE%%（gzip %%GZIP%%）</p>
+    <p class="eyebrow">Bookmarklet · v1.12.0 · %%SIZE%%（gzip %%GZIP%%）</p>
     <h1>ペイント<br>ブックマークレット</h1>
     <p class="lead">開いているページの上に、<span class="mark">そのまま描ける<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d="M18 40C8 22 52 6 108 7s92 13 84 30-62 20-112 17S4 38 30 16" vector-effect="non-scaling-stroke"/></svg></span>ペイントツールです。ブックマークを押すだけで起動し、拡張機能もアカウントも要りません。入力から線が画面に出るまでの遅延を減らす仕組みを、ブラウザが対応している限りすべて使います。</p>
     <div class="actions">
@@ -283,6 +283,7 @@ tbody th { font-weight: 700; min-width: 8em; }
           <label><input type="radio" name="bar" value="bottom">下の中央</label>
         </div>
       </fieldset>
+      <label class="check"><input type="checkbox" id="p-once"><span>ペンと図形のボタンを 1 回押すと、種類（ペンの種類・4 つの図形）の選択肢も出す（切ると、選んでいるボタンをもう一度押したときに出ます）</span></label>
       <label class="check"><input type="checkbox" id="p-calc"><span>電卓: 文字に計算式（12×3 など）を書くと、答えを薄く出して Tab で書き込める（ツールの「その他」でも切り替えられます）</span></label>
       <label class="check"><input type="checkbox" id="p-touch"><span>ペンなどを選んでいても、文字を押すと選んで動かせ、もう一度押すと書き直せる（切ると、文字の上からでもペンで描けます）</span></label>
       <div class="prefs-foot">
@@ -338,7 +339,7 @@ tbody th { font-weight: 700; min-width: 8em; }
     <h2 id="keys-h">ショートカット</h2>
     <ul class="keys">
       <li><span class="k"><kbd>S</kbd></span>選択（移動・拡大縮小・<kbd>Delete</kbd> で削除）</li>
-      <li><span class="k"><kbd>P</kbd></span>ペン（筆圧対応。ペンのボタンをもう一度押すと万年筆・筆・鉛筆）</li>
+      <li><span class="k"><kbd>P</kbd></span>ペン（筆圧対応。ペンを選んでいるときにペンのボタンをもう一度押すと万年筆・筆・鉛筆）</li>
       <li><span class="k"><kbd>H</kbd></span>蛍光ペン</li>
       <li><span class="k"><kbd>E</kbd></span>消しゴム（右クリックでも）</li>
       <li><span class="k"><kbd>L</kbd></span>直線</li>
@@ -419,7 +420,7 @@ function runPaint() {%%INLINE_CODE%%}
   // ---- 最初の設定: 選んだ既定をブックマークレットのコードに埋め込む ----
   // 組み込みの既定（src/paint.js の PALETTE と CFG に合わせる。テストで一致を確かめている）
   const PALETTE = ['#111111', '#ffffff', '#e53935', '#fb8c00', '#fdd835', '#43a047', '#1e88e5', '#8e24aa'];
-  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 4, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: false };
+  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 4, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: false, pickOnce: false };
   const BASE = bm.getAttribute('href'); // 既定の入っていないブックマークレット
   const KEY = 'paint-defaults';
   const $ = id => document.getElementById(id);
@@ -444,6 +445,7 @@ function runPaint() {%%INLINE_CODE%%}
       if (typeof v.bar === 'string') d.bar = v.bar;
       if (typeof v.touchText === 'boolean') d.touchText = v.touchText;
       if (typeof v.calc === 'boolean') d.calc = v.calc;
+      if (typeof v.pickOnce === 'boolean') d.pickOnce = v.pickOnce;
     }
     return d;
   }
@@ -456,6 +458,7 @@ function runPaint() {%%INLINE_CODE%%}
     if (c.bar !== BUILTIN.bar) o.bar = c.bar;
     if (c.touchText !== BUILTIN.touchText) o.touchText = c.touchText;
     if (c.calc !== BUILTIN.calc) o.calc = c.calc;
+    if (c.pickOnce !== BUILTIN.pickOnce) o.pickOnce = c.pickOnce;
     return o;
   }
   const enc = s => s.replace(/[%#\s"]/g, ch => encodeURIComponent(ch));
@@ -471,6 +474,7 @@ function runPaint() {%%INLINE_CODE%%}
     for (const r of document.querySelectorAll('#p-bar input')) r.checked = r.value === cur.bar;
     $('p-touch').checked = cur.touchText;
     $('p-calc').checked = cur.calc;
+    $('p-once').checked = cur.pickOnce;
     const o = diff(cur);
     bm.setAttribute('href', hrefFor(o));
     state.textContent = Object.keys(o).length ? '設定入りのボタンになりました。ドラッグし直すと反映されます。' : '最初の状態です。';
@@ -486,6 +490,7 @@ function runPaint() {%%INLINE_CODE%%}
   $('p-bar').addEventListener('change', e => { cur.bar = e.target.value; update(); });
   $('p-touch').addEventListener('change', e => { cur.touchText = e.target.checked; update(); });
   $('p-calc').addEventListener('change', e => { cur.calc = e.target.checked; update(); });
+  $('p-once').addEventListener('change', e => { cur.pickOnce = e.target.checked; update(); });
   $('p-reset').addEventListener('click', () => { cur = JSON.parse(JSON.stringify(BUILTIN)); update(); });
   show();
   // このページで試すときは eval を使わず、埋め込み版が読む変数で既定を渡す

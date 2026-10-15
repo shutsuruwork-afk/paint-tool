@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.8.3';
+  const VERSION = '1.8.4';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -138,6 +138,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 .t button{all:unset;display:none;margin:-4px -8px -4px 10px;padding:4px 8px;border-radius:6px;color:#8fb3ff;font-weight:600;cursor:pointer}
 .t button:hover{background:#ffffff1a}.t button:focus-visible{outline:2px solid #3d7cff}
 .t.act{pointer-events:auto}.t.act button{display:inline-block}
+.t.act .tc{display:none;margin:-4px -10px -4px 2px;padding:4px 6px;color:#a9acb8;vertical-align:middle}.t.act.cx .tc{display:inline-grid;place-items:center}
+.t .tc svg{width:14px;height:14px}
 .bye .t::after{content:"";position:absolute;left:10px;right:10px;bottom:3px;height:2px;border-radius:1px;background:#8fb3ff;transform-origin:left;animation:bye ${BYE_MS}ms linear forwards}
 @keyframes bye{to{transform:scaleX(0)}}
 .bye>:not(.t){display:none}
@@ -224,7 +226,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const bar = el('div', 'bar', { role: 'toolbar', 'aria-label': 'Paint' });
   const toast = el('div', 't', { role: 'status' });
   const toastM = el('span'), toastB = el('button', '', { type: 'button' });
-  toast.append(toastM, toastB);
+  const toastX = el('button', 'tc', { type: 'button', title: '今すぐ閉じる', 'aria-label': '今すぐ閉じる' });
+  toast.append(toastM, toastB, toastX);
   wrap.append(grp, pad, bar, toast);
   shadow.append(wrap);
 
@@ -595,22 +598,26 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     }
     pad.style.cursor = toolCur = hoverCur = cur;
   }
-  let toastT = 0, toastFn = null;
-  // fn を渡すと、押せるボタン（act）付きで ms だけ出す（閉じるの取り消しに使う）
-  function say(msg, ms = 1800, act, fn) {
+  let toastT = 0, toastFn = null, toastXFn = null;
+  // fn を渡すと、押せるボタン（act）付きで ms だけ出す（閉じるの取り消しに使う）。xfn を渡すと × のボタンも付く
+  function say(msg, ms = 1800, act, fn, xfn) {
     toastM.textContent = msg;
     toastB.textContent = act || '';
     toastFn = fn || null;
+    toastXFn = xfn || null;
     toast.classList.toggle('act', !!fn);
+    toast.classList.toggle('cx', !!xfn);
     toast.classList.add('on');
     clearTimeout(toastT);
     toastT = setTimeout(unsay, ms);
   }
   function unsay() {
-    toast.classList.remove('on', 'act');
-    toastFn = null;
+    toast.classList.remove('on', 'act', 'cx');
+    toastFn = toastXFn = null;
   }
   toastB.addEventListener('click', () => { if (toastFn) toastFn(); });
+  toastX.append(icon(I.close));
+  toastX.addEventListener('click', () => { if (toastXFn) toastXFn(); });
 
   // ---------- キャンバスのサイズ管理 ----------
   // live / pred は画面の大きさ。拡大時だけ作り直す（中身は描いている途中の線だけなので引き継がない）
@@ -2027,7 +2034,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     topLayer();
     win.addEventListener('keydown', onByeKey, true);
     byeT = setTimeout(destroy, BYE_MS);
-    say('絵を消して閉じました', BYE_MS, '元に戻す', reopen);
+    say('絵を消して閉じました', BYE_MS, '元に戻す', reopen, destroy);
   }
   function endBye() {
     clearTimeout(byeT);

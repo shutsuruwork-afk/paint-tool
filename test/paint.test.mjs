@@ -113,6 +113,22 @@ test('× で閉じても、元に戻す・Ctrl+Z・ブックマークレット�
   await page.close();
 });
 
+test('閉じた後のお知らせの × を押すと、8 秒待たずにすぐ閉じる', async () => {
+  const { page, errors } = await fresh();
+  await drag(page, [[100, 300], [400, 300]]);
+  await click(page, '[title^="閉じる"]');
+  const x = await shadowEval(page, root => {
+    const r = root.querySelector('.t .tc').getBoundingClientRect();
+    return [r.x + r.width / 2, r.y + r.height / 2, r.width];
+  });
+  assert.ok(x[2] > 0, '× が見えている');
+  await page.mouse.click(x[0], x[1]);
+  assert.equal(await page.evaluate(() =>
+    !window.__paintBookmarklet && !document.querySelector('paint-bookmarklet') && !document.querySelector('paint-bookmarklet-surface')), true);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('何も描いていなければ × ですぐに閉じる。API の destroy は描いた後でもすぐに破棄する', async () => {
   const { page, errors } = await fresh();
   const gone = () => page.evaluate(() =>

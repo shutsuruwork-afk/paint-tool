@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.12.0';
+  const VERSION = '1.12.1';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -1902,12 +1902,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     updateGhost();
   }
   // 中身に合わせて入力欄を広げる（折り返さない。改行でだけ行が増える）
-  // 余白が scrollWidth に入るかはブラウザで違う（Chrome は左だけ）ので、測る間だけ余白を外す
+  // 余白が scrollWidth に入るかはブラウザで違う（Chrome は左だけ）ので、測る間だけ余白を外す。
+  // 空のときは中身の大きさが 0 になるので、少なくとも 1 行・全角 1 文字分の大きさにする（1 文字目で枠が跳ねない）
   function fitTa() {
     const s = ta.style;
     s.padding = '0';
     s.width = s.height = '0';
-    const w = ta.scrollWidth + 2, h = ta.scrollHeight;
+    const w = max(ta.scrollWidth, ceil(taFs)) + 2, h = max(ta.scrollHeight, round(taFs * LH));
     s.padding = '';
     s.width = w + 'px';
     s.height = h + 'px';

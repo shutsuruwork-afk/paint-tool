@@ -372,16 +372,23 @@ test('文字ツール: クリックした所に入力欄が出て日本語も打
   await page.close();
 });
 
-test('文字の入力中は、入力欄の少し外（見えない余白）を押しても確定せずにカーソルが動き、点線の枠の見た目は変わらない', async () => {
+test('文字の入力中は、入力欄の少し外（見えない余白）を押しても確定せずにカーソルが動き、点線の枠の見た目は変わらない。空でも 1 文字分の大きさ', async () => {
   const { page, errors } = await fresh();
   await page.keyboard.press('t');
   await page.mouse.click(200, 300);
-  await page.keyboard.type('Hello');
   // 入力欄の中身の箱（余白を除いた所）と、点線の枠の外側
   const box = () => shadowEval(page, root => {
     const t = root.querySelector('.tx'), b = t.getBoundingClientRect(), cs = getComputedStyle(t), p = parseFloat(cs.paddingLeft);
     return { l: b.x + p, t: b.y + p, r: b.right - p, b: b.bottom - p, pad: p, ring: p + parseFloat(cs.outlineOffset) };
   });
+  // 空のときも、1 行・全角 1 文字分の大きさ（1 文字目を打っても枠がほとんど変わらない）
+  const e = await box();
+  await page.keyboard.insertText('あ');
+  const one = await box();
+  assert.ok(e.r - e.l >= 24 && e.b - e.t >= 29, `空の入力欄: ${JSON.stringify(e)}`);
+  assert.ok(near(e.l, one.l, 0.5) && near(e.t, one.t, 0.5) && near(e.b, one.b, 0.5) && near(e.r, one.r, 2), `${JSON.stringify(e)} ${JSON.stringify(one)}`);
+  await page.keyboard.press('Backspace');
+  await page.keyboard.type('Hello');
   const r = await box();
   assert.ok(r.pad >= 8, '押せる余白がある');
   assert.equal(r.ring, 5, '点線の枠は文字から 5px 外のまま');

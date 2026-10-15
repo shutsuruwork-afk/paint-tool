@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.9.0';
+  const VERSION = '1.10.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -93,6 +93,7 @@
     copy: 'M9 9h11v11H9zM5 15H4V4h11v1',
     hide: 'M5 12h14',
     plus: 'M12 5v14M5 12h14',
+    calc: 'M6 3h12v18H6zM9 7h6M9 11.5h.01M12 11.5h.01M15 11.5h.01M9 15h.01M12 15h.01M15 15h.01M9 18.5h.01M12 18.5h.01M15 18.5h.01',
     fountain: 'M12 2.5l5.5 8L12 21.5l-5.5-11zM12 10.5v5M12 15.5a.6.6 0 1 0 0 .01',
     brush: 'M19.5 3.5l1 1-8 9.5-2.5-2.5zM10 11.5c-2.6-.4-5 1.4-5 4.3 0 2-1 3.3-2.5 4.2 4.6.6 9.7-.9 9.9-5.6',
     pencil: 'M4 20l1.3-4.6L15.5 5.2a2 2 0 0 1 2.8 0l.5.5a2 2 0 0 1 0 2.8L8.6 18.7zM13.5 7.2l3.3 3.3M5.3 15.4l3.3 3.3',
@@ -108,6 +109,7 @@
 .sel b{position:absolute;outline:1px solid #3d7cff}
 .sel.mq b{outline-style:dashed;background:#3d7cff14}.sel.mq .si,.sel.mq i,.sel.only i:nth-of-type(2n){display:none}
 .si{position:absolute;left:0;top:0;transform-origin:0 0}
+.gh{position:absolute;white-space:pre;pointer-events:none;color:var(--c);opacity:calc(var(--a) * .45);font:600 var(--fs)/${LH} ${FONT}}
 .to{position:absolute;z-index:1;white-space:pre;pointer-events:none;color:var(--c);opacity:var(--a);font:600 var(--fs)/${LH} ${FONT}}
 .to.gone{opacity:calc(var(--a) * .25)}.to.ed{visibility:hidden}
 .sel i{position:absolute;width:9px;height:9px;margin:-5px 0 0 -5px;box-sizing:border-box;background:#fff;border:1.5px solid #3d7cff;border-radius:2px}
@@ -244,7 +246,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   shadow.append(wrap);
 
   // ---------- 状態 ----------
-  let tool = 'pen', color = PALETTE[2], bg = 0, pass = false, visible = false, touchText = DEF.touchText !== false, penType = 'pen';
+  let tool = 'pen', color = PALETTE[2], bg = 0, pass = false, visible = false, touchText = DEF.touchText !== false, penType = 'pen', calc = false;
   let dpr = win.devicePixelRatio || 1, W = 0, H = 0, grpA = 1, pendingFit = false, rz = 0;
   // 履歴タイル: ストロークが触れた T×T タイル（面の座標）だけを記録し、確定・undo・消しゴムの退避をその範囲に限定する。
   // 文書は大きいので、印は配列ではなく Set で持つ。番号は 行 × 65536 + 列
@@ -419,6 +421,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const [bgB, bgL] = item('', '', 'B', I.bg, cycleBg, true);
   item('PNG で保存 (Ctrl/⌘+S)', 'PNG で保存', IS_MAC ? '⌘S' : 'Ctrl+S', I.save, save);
   if (HAS_CLIP) item('画像をクリップボードにコピー', 'クリップボードにコピー', '', I.copy, copyImg);
+  const [calcB, calcL] = item('電卓 — 文字に計算式を書くと答えが薄く出て、Tab で書き込める', '', '', I.calc, () => {
+    calc = !calc;
+    syncCalc();
+    updateGhost();
+    remember();
+    say(calc ? '電卓: 文字に計算式を書くと答えが出ます（Tab で書き込み）' : '電卓: 切');
+  }, true);
   item('隠す（絵も） — ブックマークレットを再度押すと再表示', '隠す（絵も）', 'Esc', I.eye, hide);
   // たたむ（−）: ツールバーを ＋ のボタン 1 つにする。絵は見えたままで、描くこともできる。
   // ＋ は − があった所に出し、戻すときも − が ＋ の所に来るようにする（続けて押せば行き来できる）
@@ -621,6 +630,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     sbox.classList.toggle('bg1', bg === 1);
     sbox.classList.toggle('bg2', bg === 2);
     syncBg();
+  }
+  function syncCalc() {
+    calcL.textContent = calc ? '電卓: 入' : '電卓: 切';
+    calcB.classList.toggle('on', calc);
   }
   function syncBg() {
     const t = `背景: ${BG_NAMES[bg]}`;
@@ -1856,9 +1869,17 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     ta = el('textarea', 'tx', { spellcheck: 'false', wrap: 'off', rows: '1', 'aria-label': '文字' });
     taX = cx; taCY = cy; // クリックした点が 1 行目の高さの中央になるように置く
     for (const t of TA_STOP) ta.addEventListener(t, stop);
-    ta.addEventListener('input', fitTa);
+    ta.addEventListener('input', () => { fitTa(); updateGhost(); });
+    ta.addEventListener('keyup', updateGhost);
+    ta.addEventListener('pointerup', updateGhost);
     ta.addEventListener('keydown', e => {
       if (e.isComposing || e.keyCode === 229) return;
+      // Tab: 電卓の答えを書き込む。答えがなくても、入力欄からフォーカスは外さない
+      if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        e.preventDefault();
+        acceptGhost();
+        return;
+      }
       if (e.key === 'Escape' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
         e.preventDefault();
         commitText();
@@ -1889,6 +1910,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     s.left = taX - TA_PAD + 'px';
     s.top = taCY - taFs * LH / 2 - TA_PAD + 'px';
     fitTa();
+    updateGhost();
   }
   // 中身に合わせて入力欄を広げる（折り返さない。改行でだけ行が増える）
   // 余白が scrollWidth に入るかはブラウザで違う（Chrome は左だけ）ので、測る間だけ余白を外す
@@ -1901,12 +1923,104 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     s.width = w + 'px';
     s.height = h + 'px';
   }
+  // ---- 電卓: カーソルのある行が計算式なら、行の後ろに答えを薄く出す。Tab で書き込む ----
+  const ghostEl = el('div', 'gh');
+  let ghostTxt = '', ghostEnd = 0;
+  function updateGhost() {
+    ghostTxt = '';
+    if (ta && calc) {
+      const v = ta.value, p = ta.selectionEnd, a = v.lastIndexOf('\n', p - 1) + 1, b = v.indexOf('\n', p), end = b < 0 ? v.length : b;
+      const line = v.slice(a, end), r = calcLine(line);
+      if (r) {
+        ghostTxt = r;
+        ghostEnd = end;
+        if (!mctx) mctx = newCanvas(1, 1).getContext('2d');
+        mctx.font = `600 ${taFs}px ${FONT}`;
+        const s = ghostEl.style, row = v.slice(0, a).split('\n').length - 1;
+        ghostEl.textContent = r;
+        s.setProperty('--c', taC);
+        s.setProperty('--a', taA);
+        s.setProperty('--fs', taFs + 'px');
+        s.left = taX + mctx.measureText(line).width + 'px';
+        s.top = taCY - taFs * LH / 2 + row * taFs * LH + 'px';
+        if (!ghostEl.parentNode) wrap.append(ghostEl);
+      }
+    }
+    if (!ghostTxt) ghostEl.remove();
+  }
+  function acceptGhost() {
+    if (!ghostTxt) return;
+    const t = ghostTxt;
+    ta.setSelectionRange(ghostEnd, ghostEnd);
+    // execCommand なら入力欄の元に戻す（Ctrl+Z）で書き込みを取り消せる。使えないブラウザでは setRangeText
+    let ok = false;
+    try { ok = doc.execCommand('insertText', false, t); } catch (_) { }
+    if (!ok) { ta.setRangeText(t, ghostEnd, ghostEnd, 'end'); fitTa(); updateGhost(); }
+  }
+  // 1 行の計算式を計算して、薄く出す文字（「 = 36」、行が = で終わっていれば「36」）を返す。式でなければ ''。
+  // eval は使わない（CSP で止まるページがあり、安全のためにも）。かけ算・わり算が先、^ は右から、% は百分率
+  function calcLine(src) {
+    let s = src.normalize('NFKC').replace(/[×✕]/g, '*').replace(/÷/g, '/').replace(/[−–]/g, '-').replace(/(\d),(?=\d{3}(?!\d))/g, '$1');
+    const eq = /=\s*$/.test(s);
+    if (eq) s = s.replace(/=\s*$/, '');
+    // 数字の後ろに演算子が 1 つ以上ある行だけを式とみなす（「12」や「-5」だけでは出さない）
+    if (!/^[\d\s+\-*/^%().]+$/.test(s) || !/\d\s*[%)]*\s*[+\-*/^%]/.test(s)) return '';
+    let i = 0;
+    const peek = () => { while (s[i] === ' ') i++; return s[i]; };
+    const expr = () => {
+      let v = term();
+      for (;;) {
+        const c = peek();
+        if (c === '+') { i++; v += term(); } else if (c === '-') { i++; v -= term(); } else return v;
+      }
+    };
+    const term = () => {
+      let v = unary();
+      for (;;) {
+        const c = peek();
+        if (c === '*') { i++; v *= unary(); } else if (c === '/') { i++; v /= unary(); } else return v;
+      }
+    };
+    const unary = () => {
+      const c = peek();
+      if (c === '-') { i++; return -unary(); }
+      if (c === '+') { i++; return unary(); }
+      const b = post();
+      if (peek() === '^') { i++; return b ** unary(); }
+      return b;
+    };
+    const post = () => {
+      let v = atom();
+      while (peek() === '%') { i++; v /= 100; }
+      return v;
+    };
+    const atom = () => {
+      if (peek() === '(') {
+        i++;
+        const v = expr();
+        if (peek() !== ')') throw 0;
+        i++;
+        return v;
+      }
+      const m = /^(\d+(\.\d*)?|\.\d+)/.exec(s.slice(i));
+      if (!m) throw 0;
+      i += m[0].length;
+      return +m[0];
+    };
+    let v;
+    try { v = expr(); } catch (_) { return ''; }
+    if (peek() !== undefined || !isFinite(v)) return '';
+    const r = String(+v.toPrecision(12) || 0);
+    return eq ? (/\s$/.test(src) || /[=＝]$/.test(src) ? r : ' ' + r) : ' = ' + r;
+  }
+
   // 入力欄の中身を文字の物として面に置く（書き直しなら物を更新し、空なら消す）。1 手として履歴に積む
   function commitText() {
     if (!ta) return;
     const e = ta, v = e.value.replace(/\s+$/, ''), o = taObj;
     ta = taObj = null;
     e.remove();
+    ghostEl.remove();
     if (o) o.el.classList.remove('ed');
     mapNow();
     sizeSurface();
@@ -2159,6 +2273,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (typeof p.color === 'string' && /^#[0-9a-f]{6}$/i.test(p.color)) color = p.color.toLowerCase();
     if (typeof p.tool === 'string' && CFG[p.tool]) tool = p.tool;
     if (PENS.includes(p.pen)) penType = p.pen;
+    if (typeof p.calc === 'boolean') calc = p.calc;
     for (const k of PREF_T) {
       const sz = p.size && +p.size[k], al = p.alpha && +p.alpha[k];
       if (k !== 'fill' && sz >= 1 && sz <= 100) CFG[k].size = sz;
@@ -2170,7 +2285,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function snapPrefs() {
     const size = {}, alpha = {};
     for (const k of PREF_T) { size[k] = CFG[k].size; alpha[k] = CFG[k].alpha; }
-    return { color, tool, pen: penType, size, alpha };
+    return { color, tool, pen: penType, calc, size, alpha };
   }
   function remember() {
     if (!ready) return;
@@ -2183,6 +2298,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (cur.color !== base.color) d.color = cur.color;
     if (cur.tool !== base.tool) d.tool = cur.tool;
     if (cur.pen !== base.pen) d.pen = cur.pen;
+    if (cur.calc !== base.calc) d.calc = cur.calc;
     for (const g of ['size', 'alpha']) {
       for (const k of PREF_T) if (cur[g][k] !== base[g][k]) (d[g] || (d[g] = {}))[k] = cur[g][k];
     }
@@ -2220,6 +2336,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   win[NS] = { version: VERSION, toggle, show, hide, close, destroy, undo, redo, clear: clearAll, tool: setTool, color: setColor, stats, pixels };
   setColor(color);
   syncPen();
+  syncCalc();
   syncTool(false);
   syncHist();
   syncBg();

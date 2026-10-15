@@ -741,6 +741,7 @@ test('インストールページで選んだ設定入りのブックマーク�
   for (const k of ['pen', 'marker', 'eraser', 'text']) assert.equal(String(p0.size[k]), await page.inputValue('#p-' + k), k);
   assert.equal(p0.tool, await page.inputValue('#p-tool'));
   assert.equal(p0.touchText, await page.isChecked('#p-touch'));
+  assert.equal(p0.calc, await page.isChecked('#p-calc'));
   await page.evaluate(() => window.__paintBookmarklet.destroy());
   // 選ぶと、ボタンの中身が変わる
   await page.click('[aria-label="色 7"]');
@@ -886,6 +887,60 @@ test('ペンの種類: ペンでないときは押してもペンになるだけ
   // 選んだ種類はサイトごとに覚える
   await page.waitForTimeout(600);
   assert.equal(JSON.parse(await lsGet(page)).pen, 'pencil');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('電卓: 入りにすると、文字の行が計算式なら答えが薄く出て Tab で書き込める。式でなければ出ない。切りなら今までどおり', async () => {
+  const { page, errors } = await fresh();
+  const ghost = () => shadowEval(page, root => { const g = root.querySelector('.gh'); return g ? g.textContent : null; });
+  const value = async () => (await textBox(page)).value;
+  // 切り（既定）: 答えは出ず、Tab でも何も書かれず、入力欄にいたまま
+  await page.keyboard.press('t');
+  await page.mouse.click(200, 300);
+  await page.keyboard.type('12*3');
+  assert.equal(await ghost(), null);
+  await page.keyboard.press('Tab');
+  assert.deepEqual(await textBox(page), { value: '12*3', focused: true, color: '#e53935' });
+  await page.keyboard.press('Escape');
+  // 入りにする（その他のメニュー）
+  await mouseClick(page, '[aria-label^="その他"]');
+  await mouseClick(page, '.pn.on [aria-label^="電卓"]');
+  assert.equal(await shadowEval(page, root => root.querySelector('[aria-label^="電卓"] span').textContent), '電卓: 入');
+  await page.keyboard.press('Escape');
+  await page.mouse.click(200, 450);
+  const cases = [['12*3', ' = 36'], ['2+3*4', ' = 14'], ['-2^2', ' = -4'], ['2^3^2', ' = 512'], ['50%*200', ' = 100'],
+    ['0.1+0.2', ' = 0.3'], ['1,000+1', ' = 1001'], ['(2+3)^2/5', ' = 5'], ['１２０×１．５＝', '180'], ['10÷4=', '2.5'],
+    ['hello', null], ['12', null], ['-5', null], ['1/0', null], ['3+', null], ['2(3)', null]];
+  for (const [ex, want] of cases) {
+    await page.keyboard.press('Control+a');
+    await page.keyboard.press('Backspace');
+    await page.keyboard.insertText(ex);
+    assert.equal(await ghost(), want, ex);
+  }
+  // Tab で書き込む。答えは行の後ろに並び、書き込むと消える
+  await page.keyboard.press('Control+a');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.type('12*3');
+  const g = await shadowEval(page, root => {
+    const a = root.querySelector('.gh').getBoundingClientRect(), t = root.querySelector('.tx'), c = getComputedStyle(t);
+    return { gx: a.x, tx: t.getBoundingClientRect().x + parseFloat(c.paddingLeft) };
+  });
+  assert.ok(g.gx > g.tx + 20, JSON.stringify(g));
+  await page.keyboard.press('Tab');
+  assert.equal(await value(), '12*3 = 36');
+  assert.equal(await ghost(), null);
+  // 2 行目でも、カーソルのある行の答えが出る
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('7*6=');
+  assert.equal(await ghost(), '42');
+  await page.keyboard.press('Tab');
+  assert.equal(await value(), '12*3 = 36\n7*6=42');
+  await page.keyboard.press('Escape');
+  assert.equal((await textInfo(page)).at(-1).s, '12*3 = 36\n7*6=42');
+  // サイトごとに覚える
+  await page.waitForTimeout(600);
+  assert.equal(JSON.parse(await lsGet(page)).calc, true);
   assert.deepEqual(errors, []);
   await page.close();
 });

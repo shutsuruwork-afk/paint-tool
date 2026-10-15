@@ -234,30 +234,38 @@ test('? で操作の一覧が重なって出る（? ・Esc・外を押すと閉�
   await page.close();
 });
 
-test('ガラス風のツールバー: インストールページで入れると、ツールバーとパネルが半透明になり下をぼかす。既定は今までどおり', async () => {
+test('見た目: 明るい（白に黒）とガラス風（既定はガウス）、ガラスの調整（ぼかし方・強さ・地の濃さ）をインストールページで選べる。既定は今までどおり', async () => {
   const look = page => shadowEval(page, root => {
-    const bar = root.querySelector('.bar'), pn = root.querySelector('.pn');
+    const w = root.querySelector('.w'), bar = root.querySelector('.bar'), pn = root.querySelector('.pn'), g = getComputedStyle(bar, '::before');
     return {
-      glass: root.querySelector('.w').classList.contains('glass'),
+      cls: ['light', 'glass', 'gauss'].filter(c => w.classList.contains(c)).join(' '),
+      color: getComputedStyle(w).color,
       bar: getComputedStyle(bar).backgroundColor,
-      blur: getComputedStyle(bar, '::before').backdropFilter,
+      blur: g.backdropFilter,
+      tint: g.backgroundColor,
+      mask: (g.maskImage || g.webkitMaskImage || '').includes('radial-gradient'),
       panel: getComputedStyle(pn, '::before').backdropFilter,
     };
   });
   const { page, errors } = await fresh();
-  assert.deepEqual(await look(page), { glass: false, bar: 'rgb(32, 34, 40)', blur: 'none', panel: 'none' });
+  assert.deepEqual(await look(page), { cls: '', color: 'rgb(232, 233, 238)', bar: 'rgb(32, 34, 40)', blur: 'none', tint: 'rgba(0, 0, 0, 0)', mask: false, panel: 'none' });
   assert.equal((await prefs(page)).glass, false);
+  // 明るい・ガラス・ふつうのぼかし・強さ 8・濃さ 50%
+  await page.evaluate(() => window.__paintBookmarklet.destroy());
+  await runCode(page, withDefaults(CODE, { theme: 'light', glass: true, blurMode: 'plain', blur: 8, tint: 50 }));
+  assert.deepEqual(await look(page), { cls: 'light glass', color: 'rgb(29, 32, 38)', bar: 'rgba(0, 0, 0, 0)', blur: 'blur(8px) saturate(1.8)', tint: 'rgba(250, 250, 252, 0.5)', mask: false, panel: 'blur(8px) saturate(1.8)' });
+  const p1 = await prefs(page);
+  assert.deepEqual([p1.theme, p1.glass, p1.blurMode, p1.blur, p1.tint], ['light', true, 'plain', 8, 50]);
   await page.close();
-  // インストールページのスイッチを入れて試すと、その見た目で始まる
+  // インストールページでガラスを入れて試すと、ガウス（周りも拾い、mask で角丸に切る）で始まる
   const { page: ip, errors: ie } = await openPage(browser, server.base + '/install');
   await ip.check('#p-glass');
   await ip.click('#try');
   const g = await look(ip);
-  assert.equal(g.glass, true);
-  assert.equal(g.bar, 'rgba(0, 0, 0, 0)');
-  assert.match(g.blur, /blur\(20px\)/);
-  assert.match(g.panel, /blur\(20px\)/);
-  assert.equal((await prefs(ip)).glass, true);
+  assert.equal(g.cls, 'glass gauss');
+  assert.equal(g.blur, 'blur(20px) saturate(1.8)');
+  assert.equal(g.mask, true);
+  assert.equal(g.panel, 'blur(20px) saturate(1.8)');
   assert.deepEqual(ie, []);
   assert.deepEqual(errors, []);
   await ip.close();
@@ -875,6 +883,10 @@ test('インストールページで選んだ設定入りのブックマーク�
   assert.equal(p0.calc, await page.isChecked('#p-calc'));
   assert.equal(p0.pickOnce, await page.isChecked('#p-once'));
   assert.equal(p0.glass, await page.isChecked('#p-glass'));
+  assert.equal(p0.theme, await page.evaluate(() => document.querySelector('#p-theme input:checked').value));
+  assert.equal(p0.blurMode, await page.evaluate(() => document.querySelector('#p-mode input:checked').value));
+  assert.equal(String(p0.blur), await page.inputValue('#p-blur'));
+  assert.equal(String(p0.tint), await page.inputValue('#p-tint'));
   await page.evaluate(() => window.__paintBookmarklet.destroy());
   // 選ぶと、ボタンの中身が変わる
   await page.click('[aria-label="色 7"]');

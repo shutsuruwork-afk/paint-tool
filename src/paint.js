@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.17.0';
+  const VERSION = '1.18.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -104,8 +104,14 @@
     close: 'M6 6l12 12M18 6L6 18',
   };
 
+  // ガラスのガウス方式: ぼかしの元を周りへ --gm だけ広げて拾い、見せるのはバーの角丸の形だけ（mask で切る）。
+  // 外側の要素で切り抜く（overflow・clip-path）と元の範囲が狭まってぼけが弱くなるので、角丸も mask の中で作る
+  const GQ = (at, pos) => `radial-gradient(circle at ${at},#000 calc(var(--gr) - .5px),#0000 var(--gr)) ${pos}/var(--gr) var(--gr) no-repeat content-box`;
+  const GMASK = [GQ('100% 100%', '0 0'), GQ('0 100%', '100% 0'), GQ('100% 0', '0 100%'), GQ('0 0', '100% 100%'),
+    'linear-gradient(#000 0 0) 50% 50%/calc(100% - 2 * var(--gr)) 100% no-repeat content-box',
+    'linear-gradient(#000 0 0) 50% 50%/100% calc(100% - 2 * var(--gr)) no-repeat content-box'].join(',');
   const CSS = `
-.w{all:initial;position:absolute;inset:0;overflow:hidden;contain:strict;pointer-events:none;outline:none;font:12px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e8e9ee;color-scheme:dark;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+.w{--gc:28 30 36;--gt:.72;--gb:20px;--gm:40px;all:initial;position:absolute;inset:0;overflow:hidden;contain:strict;pointer-events:none;outline:none;font:12px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e8e9ee;color-scheme:dark;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
 .s{position:absolute;inset:0}.s.bg1{background:#fff}.s.bg2{background:#1d1f23}
 .sel{position:absolute;z-index:2;pointer-events:none}
 .sel b{position:absolute;outline:1px solid #3d7cff}
@@ -130,8 +136,20 @@ canvas{position:absolute;left:0;top:0;pointer-events:none}
 .dd{position:relative}.dd::after{content:"";position:absolute;right:3px;bottom:3px;border:2.5px solid transparent;border-right-color:currentColor;border-bottom-color:currentColor;opacity:.55}
 .dot{width:var(--d);height:var(--d);border-radius:50%;background:var(--c);opacity:var(--a);box-shadow:0 0 0 1px #ffffff59}
 .dot.er{background:none;opacity:1;box-shadow:inset 0 0 0 1.5px #e8e9ee}
-.glass .bar,.glass .pn{background:none;border-color:#ffffff30}.glass .pn{isolation:isolate}
-.glass .bar::before,.glass .pn::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;background:#1c1e24b8;box-shadow:inset 0 1px 0 #ffffff1c;-webkit-backdrop-filter:blur(20px) saturate(1.8);backdrop-filter:blur(20px) saturate(1.8);pointer-events:none}
+.glass .bar,.glass .pn{background:none;border-color:#ffffff30;box-shadow:0 6px 24px #0007,inset 0 1px 0 #ffffff1c}.glass .pn{isolation:isolate}
+.glass .bar::before,.glass .pn::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;background:rgb(var(--gc) / var(--gt));-webkit-backdrop-filter:blur(var(--gb)) saturate(1.8);backdrop-filter:blur(var(--gb)) saturate(1.8);pointer-events:none}
+.gauss .bar::before{--gr:11px}.gauss .pn::before{--gr:9px}
+.gauss .bar::before,.gauss .pn::before{inset:calc(var(--gm) * -1);padding:var(--gm);border-radius:0;-webkit-mask:${GMASK};mask:${GMASK}}
+.light{color:#1d2026;color-scheme:light;--gc:250 250 252}
+.light .bar,.light .pn,.light .t,.light .hp{background:#fbfbfc;border-color:#0000001a;box-shadow:0 6px 24px #0003}
+.light.glass .bar,.light.glass .pn{background:none;border-color:#0000001f;box-shadow:0 6px 24px #0003,inset 0 1px 0 #ffffff99}
+.light .b:hover,.light .t button:hover{background:#0000000f}.light .b:active,.light .b.open:not(.on){background:#0000001c}
+.light .dot{box-shadow:0 0 0 1px #0000003a}.light .dot.er{box-shadow:inset 0 0 0 1.5px #1d2026}
+.light .mi kbd,.light .grip{color:#7b7f89}.light .mi .sw{background:#00000024}
+.light .c::before{box-shadow:inset 0 0 0 1px #00000026}.light .c.on::before{box-shadow:0 0 0 2px #fbfbfc,0 0 0 4px #1d2026}
+.light .sep{background:#0000001f}.light .r{color:#5c606b}.light .r output{color:#1d2026}
+.light .t button{color:#2f6bff}.light .t.act .tc{color:#5c606b}.light.bye .t::after{background:#2f6bff}
+.light .hp .hh{color:#5c606b}.light .hp h3{color:#000}.light .hp .hg>:nth-child(odd){color:#3a3e47}.light .hp kbd{border-color:#00000033;color:#1d2026}
 .pn{position:absolute;left:0;top:calc(100% + 6px);display:none;flex-direction:column;gap:2px;padding:4px;background:#202228;border:1px solid #ffffff1f;border-radius:10px;box-shadow:0 6px 24px #0007;pointer-events:auto}
 .pn.on{display:flex}.up .pn{top:auto;bottom:calc(100% + 6px)}
 .row{display:flex;align-items:center;gap:2px}
@@ -263,9 +281,20 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   let tool = 'pen', color = PALETTE[2], bg = 0, pass = false, visible = false, touchText = DEF.touchText !== false, penType = 'pen', calc = false;
   // 種類のあるボタン（ペン・図形）: 既定は「選んでいないときに押すとその道具、もう一度押すと選択肢」。pickOnce なら 1 回で選択肢も出す
   const pickOnce = DEF.pickOnce === true;
-  // ガラス風のツールバー（インストールページの設定）: バーとパネルを半透明にし、下をぼかして見せる
-  const glass = DEF.glass === true;
-  if (glass) wrap.classList.add('glass');
+  // 見た目（インストールページの設定）: 明るい（白に黒）と、ガラス風（半透明にして下をぼかす）。
+  // ガラスの調整は開発用: ぼかし方（gauss は周りも拾う本物のガウス、plain は backdrop-filter そのまま）・強さ・地の濃さ
+  const light = DEF.theme === 'light', glass = DEF.glass === true;
+  const blurMode = DEF.blurMode === 'plain' ? 'plain' : 'gauss';
+  const blurPx = +DEF.blur >= 0 && +DEF.blur <= 40 ? +DEF.blur : 20, tint = +DEF.tint >= 30 && +DEF.tint <= 95 ? +DEF.tint : 72;
+  if (light) wrap.classList.add('light');
+  if (glass) {
+    wrap.classList.add('glass');
+    if (blurMode === 'gauss') wrap.classList.add('gauss');
+    const ws = wrap.style;
+    ws.setProperty('--gb', blurPx + 'px');
+    ws.setProperty('--gm', blurPx * 2 + 'px');
+    ws.setProperty('--gt', tint / 100);
+  }
   let dpr = win.devicePixelRatio || 1, W = 0, H = 0, grpA = 1, pendingFit = false, rz = 0, warmT = 0;
   // 履歴タイル: ストロークが触れた T×T タイル（面の座標）だけを記録し、確定・undo・消しゴムの退避をその範囲に限定する。
   // 文書は大きいので、印は配列ではなく Set で持つ。番号は 行 × 65536 + 列
@@ -2515,7 +2544,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const stats = () => ({
     width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, selection: sel ? [selX, selY, selW, selH] : null, texts: tlist.length, fixed, history: hist.length, historyPixels: hpix, events: nEv, points: nPts,
     desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, nativePrediction: nativePred, inkTrail: !!inkP,
-    prefs: { ...snapPrefs(), bar: [barX, barY], touchText, pickOnce, glass },
+    prefs: { ...snapPrefs(), bar: [barX, barY], touchText, pickOnce, glass, theme: light ? 'light' : 'dark', blurMode, blur: blurPx, tint },
   });
   win[NS] = { version: VERSION, toggle, show, hide, close, destroy, undo, redo, clear: clearAll, tool: setTool, color: setColor, stats, pixels };
   setColor(color);

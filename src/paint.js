@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.23.0';
+  const VERSION = '1.24.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -293,10 +293,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     tint: +DEF.tint >= 30 && +DEF.tint <= 95 ? +DEF.tint : 70,
   };
   const dev = DEF.dev === true;
-  // 蛍光ペンの予測（T-055）: 'need' は丸い先端で届かない分だけ（1 フレーム後のペン先まで）、曲がりに沿って予測する。
-  // 'off' は描かない、'full' はペンと同じ。蛍光ペンは太いので、そのまま描くと外れた予測（ぴょこぴょこ）が目立った。開発用のパネルでも切り替えられる
+  // 蛍光ペンの予測: 'full'（既定）はペンと同じ。'need' は丸い先端で届かない分だけ（1 フレーム後のペン先まで）、曲がりに沿って予測し、
+  // 点と点を直線でつなぐ（T-055）。'off' は描かない。ぴょこぴょこの主な原因は半透明の描き方だったので（T-056）、既定はペンと同じに戻した（T-059）。開発用のパネルでも切り替えられる
   const MPREDS = ['need', 'off', 'full'];
-  let mpred = MPREDS.includes(DEF.mpred) ? DEF.mpred : 'need';
+  let mpred = MPREDS.includes(DEF.mpred) ? DEF.mpred : 'full';
   // 半透明の線の描き方（T-056）: 'canvas' は線の濃さを live の canvas の中で付ける（まとめた要素の opacity は 1 のまま。不透明の線と同じ経路）。
   // 'group' は前の方式（不透明に描き、live と pred をまとめた要素に CSS の opacity）。半透明のときだけ先端がぴょこぴょこ見えていた（ユーザーが実機で確かめた）
   const BLENDS = ['canvas', 'group'];
@@ -420,10 +420,11 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const row = (...a) => { const r = el('div', 'row'); r.append(...a); return r; };
   const toolBtns = {};
   bar.append(toolBtns.select = btn(TITLES.select, I.select, () => setTool('select')));
-  // ペン: ペンでないときに押すとペンになる。ペンのときにもう一度押すと、種類のパネルが開く（pickOnce なら 1 回目から開く）
+  // ペン: ペンでないときに押すとペンになる。ペンのときにもう一度押すと、種類のパネルが開く（pickOnce なら 1 回目から開く）。
+  // ページ操作モードのときは、ペンのままでも押せば描画に戻る（パネルは開かない。T-057）
   const penP = pnl();
   const penB = btn(TITLES.pen, I.pen, () => {
-    if (tool === 'pen') togglePanel(penP, penB);
+    if (tool === 'pen' && !pass) togglePanel(penP, penB);
     else { setTool('pen'); if (pickOnce) openPanel(penP, penB); }
   }, 'dd');
   const penD = penB.querySelector('path');
@@ -436,7 +437,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   let lastShape = 'line';
   const shapeP = pnl();
   const shapeB = btn(TITLES.line, I.line, () => {
-    if (SHAPES.includes(tool)) togglePanel(shapeP, shapeB);
+    if (SHAPES.includes(tool) && !pass) togglePanel(shapeP, shapeB);
     else { setTool(lastShape); if (pickOnce) openPanel(shapeP, shapeB); }
   }, 'dd shp');
   const shapeD = shapeB.querySelector('path');
@@ -974,11 +975,18 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (act !== -1) return;
     settle();
     finishHandoff();
+    // 消す物がなければ何もしない（履歴を増やさない。T-058）: 直前の手が全消去なら面も文字も空。
+    // 画素は描いた範囲（cb*）の中にしかないので、範囲が空で文字もなければ空。積むのも範囲に掛かるタイルだけ
+    if ((hpos && hist[hpos - 1].clr) || (cbx1 <= cbx0 && !tlist.length)) return;
     const R = [], P = tlist.map(o => [o, tSnap(o)]);
-    for (const k of dtiles.keys()) R.push((k % 65536) * DT, ((k / 65536) | 0) * DT, DT, DT, 0, 0);
+    for (const k of dtiles.keys()) {
+      const x = (k % 65536) * DT, y = ((k / 65536) | 0) * DT;
+      if (x < cbx1 && x + DT > cbx0 && y < cby1 && y + DT > cby0) R.push(x, y, DT, DT, 0, 0);
+    }
     if (!R.length && !P.length) return;
     push(R, R.length ? gather(R, pack(R)) : null, null, P.length ? P : null);
-    for (const t of dtiles.values()) t.x.clearRect(0, 0, DT, DT);
+    hist[hpos - 1].clr = true;
+    for (let i = 0; i < R.length; i += 6) dtiles.get((R[i + 1] / DT) * 65536 + R[i] / DT).x.clearRect(0, 0, DT, DT);
     for (const p of P) tApply(p[0], null);
     cbx0 = cby0 = cbx1 = cby1 = 0;
   }
@@ -1132,8 +1140,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         pf = sPen === 1 ? 0.6 : 1;
         sDist = 0;
         sPd = t === 'pen' || mpred !== 'off';
-        sPoly = t === 'marker';
-        sNeed = sPoly && mpred === 'need';
+        sNeed = sPoly = t === 'marker' && mpred === 'need';
         pvx = pvy = om = 0;
         bw = sP ? qw(sW * (0.2 + 0.8 * ps)) : sW;
         if (sPen === 1) bw = qw(bw * (0.2 + 0.8 * pf));
@@ -1298,7 +1305,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // pred の矩形 [x0, x1] × [y0, y1] に掛かる、描いた部分の形を不透明で抜く。pred と live を重ねても線の濃さを超えない
   function cutPred(c, x0, y0, x1, y1) {
     const n = min(rn, RN);
-    let cw = -1, open = false;
+    let cw = -1, open = false, lx = NaN, ly = NaN; // lx, ly: 前の区間の終わり（続いていれば 1 本の線にする。区切ると端ごとに丸い先端を描いて重い）
     c.globalAlpha = 1;
     c.globalCompositeOperation = 'destination-out';
     c.strokeStyle = c.fillStyle = '#000';
@@ -1310,11 +1317,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         if (rg[o] === 2) {
           if (open) { c.stroke(); open = false; cw = -1; }
           c.beginPath(); c.arc(ax, ay, w / 2, 0, TAU); c.fill();
+          lx = NaN;
           continue;
         }
-        if (w !== cw) { if (open) c.stroke(); c.lineWidth = cw = w; c.beginPath(); open = true; }
-        c.moveTo(ax, ay);
+        if (w !== cw) { if (open) c.stroke(); c.lineWidth = cw = w; c.beginPath(); open = true; lx = NaN; }
+        if (ax !== lx || ay !== ly) c.moveTo(ax, ay);
         if (rg[o] === 1) c.quadraticCurveTo(cx, cy, ex, ey); else c.lineTo(ex, ey);
+        lx = ex; ly = ey;
       }
     }
     if (open) c.stroke();

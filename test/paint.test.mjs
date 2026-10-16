@@ -308,9 +308,9 @@ test('見た目（開発用）: インストールページの開発用を入れ
   await pick('#ffd54f');
   assert.deepEqual(await st(page), { cls: 'light', bar: 'rgb(255, 213, 79)', gb: '8px', color: 'rgb(29, 32, 38)' });
   assert.equal((await prefs(page)).theme, '#ffd54f');
-  // 蛍光ペンの予測を切り替える（既定は必要な分だけ）
+  // 蛍光ペンの予測を切り替える（既定はそのまま）
   const mpOn = () => shadowEval(page, root => [...root.querySelectorAll('.pn.on .sg')].filter(b => b.classList.contains('on')).map(b => b.textContent));
-  assert.deepEqual(await mpOn(), ['必要な分だけ', 'キャンバスの中で']);
+  assert.deepEqual(await mpOn(), ['そのまま', 'キャンバスの中で']);
   await mouseClick(page, '.pn.on [aria-label="蛍光ペンの予測: なし"]');
   assert.deepEqual(await mpOn(), ['なし', 'キャンバスの中で']);
   assert.equal((await prefs(page)).mpred, 'off');
@@ -853,6 +853,39 @@ test('文字の物: 押してそのまま動かせ、角で拡大すると文字
   await page.close();
 });
 
+test('全消去は、消す物がないときは何もしない（履歴が増えない）。積むのは描いた範囲に掛かるタイルだけ', async () => {
+  const { page, errors } = await fresh();
+  const st = () => page.evaluate(() => { const s = window.__paintBookmarklet.stats(); return [s.history, s.historyPixels]; });
+  // 何も描いていなければ増えない
+  await page.keyboard.press('Delete');
+  assert.deepEqual(await st(), [0, 0]);
+  // 描いてから全消去は 1 手。続けて押しても増えない
+  await drag(page, [[100, 300], [200, 300]], 5);
+  await page.keyboard.press('Delete');
+  assert.equal((await st())[0], 2);
+  await page.keyboard.press('Delete');
+  assert.equal((await st())[0], 2, 'second clear does nothing');
+  // 元に戻すと絵が戻り、もう一度全消去できる。やり直した直後（直前の手が全消去）は増えない
+  await page.keyboard.press('Control+z');
+  assert.ok((await alphaStats(page, 90, 290, 120, 20)).count > 100);
+  await page.keyboard.press('Control+Shift+z');
+  assert.equal((await alphaStats(page, 90, 290, 120, 20)).count, 0);
+  await page.keyboard.press('Delete');
+  assert.equal((await st())[0], 2, 'clear right after redoing a clear does nothing');
+  // 別の所に小さく描いて全消去すると、前に描いて空になったタイルは積まない（1x の表示タイルは 256px 四方）
+  await drag(page, [[700, 600], [720, 600]], 5);
+  const [n0, p0] = await st();
+  await page.keyboard.press('Delete');
+  const [n1, p1] = await st();
+  assert.equal(n1, n0 + 1);
+  assert.ok(p1 - p0 <= 2 * 256 * 256, 'only tiles in the drawn range: ' + (p1 - p0));
+  await page.keyboard.press('Control+z');
+  assert.ok((await alphaStats(page, 690, 590, 40, 20)).count > 20);
+  assert.equal((await alphaStats(page, 90, 290, 120, 20)).count, 0);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('文字の物: 消しゴムでなぞると消え（なぞっている間は薄い）、囲むと線と一緒に動き、全消去でも消えて元に戻せる', async () => {
   const { page, errors } = await fresh();
   await page.keyboard.press('t');
@@ -937,6 +970,19 @@ test('ページ操作モードでツールを選ぶ（ボタンでもキーで�
   await page.keyboard.press('p');
   assert.equal(await passOn(), false);
   assert.match(await toolOn(page), /^ペン/);
+  // ペン・図形を選んだまま、そのボタンを押しても戻る（2 回目のパネルは開かない）。描画モードでもう一度押すとパネル
+  const panels = () => shadowEval(page, root => root.querySelectorAll('.pn.on').length);
+  for (const [key, sel] of [['p', '.bar [aria-label^="ペン"]'], ['l', '.bar .shp']]) {
+    await page.keyboard.press(key);
+    await page.keyboard.press('v');
+    assert.equal(await passOn(), true, key);
+    await mouseClick(page, sel);
+    assert.equal(await passOn(), false, key + ': back to drawing');
+    assert.equal(await panels(), 0, key + ': no panel');
+    await mouseClick(page, sel);
+    assert.equal(await panels(), 1, key + ': panel on the next press');
+    await page.keyboard.press('Escape');
+  }
   await page.close();
 });
 
@@ -1288,7 +1334,7 @@ test('電卓: 入りにすると、文字の行が計算式なら答えが薄く
   await page.close();
 });
 
-test('予測線: ペンは最後の点より先まで伸ばす。蛍光ペンは既定では丸い先端で届かない分だけ（ゆっくりなら予測しない）。設定で「なし」「そのまま」にもできる', async () => {
+test('予測線: ペンも蛍光ペンも最後の点より先まで伸ばす。蛍光ペンは設定で「必要な分だけ」（丸い先端で届かない分だけ。ゆっくりなら予測しない）「なし」にもできる', async () => {
   // 合成のイベントに timeStamp を与えて速さを決め（step px を 2 ms ごと）、途中の pred を読む。
   // 最後の点は x = 400。reach は線の先の x
   const measure = (page, step) => page.evaluate(step => {
@@ -1310,15 +1356,13 @@ test('予測線: ペンは最後の点より先まで伸ばす。蛍光ペンは
     return out;
   }, step);
   const { page, errors } = await fresh();
-  // 速い（5 px/ms）: ペンも蛍光ペンも先まで伸ばす
-  const fast = await measure(page, 10);
-  assert.equal((await prefs(page)).mpred, 'need');
+  // 既定（そのまま）: 速くても（5 px/ms）ゆっくりでも（0.5 px/ms）、ペンも蛍光ペンも先まで伸ばす（蛍光ペンは太さの半分 12px より先）
+  const fast = await measure(page, 10), slow = await measure(page, 1);
+  assert.equal((await prefs(page)).mpred, 'full');
   assert.ok(fast.pen > 415 && fast.marker > 425, JSON.stringify(fast));
-  // ゆっくり（0.5 px/ms）: 蛍光ペンは丸い先端で 1 フレーム後のペン先まで届くので予測しない（太さの半分 12px まで）
-  const slow = await measure(page, 1);
-  assert.ok(slow.marker <= 413 && slow.pen > 402, JSON.stringify(slow));
-  // なし: 速くても太さの半分まで。そのまま: ゆっくりでもペンと同じく伸ばす
-  for (const [mpred, ok] of [['off', r => r.f <= 413], ['full', r => r.s > 414 && r.f > 425]]) {
+  assert.ok(slow.pen > 402 && slow.marker > 414, JSON.stringify(slow));
+  // 必要な分だけ: 速いと伸ばし、ゆっくりなら丸い先端で 1 フレーム後のペン先まで届くので予測しない。なし: 速くても太さの半分まで
+  for (const [mpred, ok] of [['need', r => r.f > 425 && r.s <= 413], ['off', r => r.f <= 413]]) {
     await page.evaluate(() => window.__paintBookmarklet.destroy());
     await runCode(page, withDefaults(CODE, { mpred }));
     const r = { f: (await measure(page, 10)).marker, s: (await measure(page, 1)).marker };
@@ -1328,8 +1372,9 @@ test('予測線: ペンは最後の点より先まで伸ばす。蛍光ペンは
   await page.close();
 });
 
-test('蛍光ペン: ゆっくり〜ふつうの速さで曲線を描いても、描いている途中に一度見えた所が次の入力で消えない（先端がぴょこぴょこしない）', async () => {
-  const { page, errors } = await fresh();
+test('蛍光ペン（予測が必要な分だけ）: ゆっくり〜ふつうの速さで曲線を描いても、描いている途中に一度見えた所が次の入力で消えない（先端がぴょこぴょこしない）', async () => {
+  const { page, errors } = await openPage(browser, server.base + '/');
+  await runCode(page, withDefaults(CODE, { mpred: 'need' }));
   const lost = await page.evaluate(() => {
     const api = window.__paintBookmarklet, root = document.querySelector('paint-bookmarklet').shadowRoot;
     const pad = root.querySelector('.p'), lv = root.querySelector('canvas.l'), pr = root.querySelector('canvas.q'), grp = root.querySelector('.g');

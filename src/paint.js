@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.25.0';
+  const VERSION = '1.26.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -110,7 +110,7 @@
     'linear-gradient(#000 0 0) 50% 50%/calc(100% - 2 * var(--gr)) 100% no-repeat content-box',
     'linear-gradient(#000 0 0) 50% 50%/100% calc(100% - 2 * var(--gr)) no-repeat content-box'].join(',');
   const CSS = `
-.w{--gc:28 30 36;--gt:.7;--gb:18px;--gm:36px;--gs:1.8;all:initial;position:absolute;inset:0;overflow:hidden;contain:strict;pointer-events:none;outline:none;font:12px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e8e9ee;color-scheme:dark;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+.w{--gc:28 30 36;--gt:.8;--gb:18px;--gm:36px;--gs:2;all:initial;position:absolute;inset:0;overflow:hidden;contain:strict;pointer-events:none;outline:none;font:12px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e8e9ee;color-scheme:dark;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
 .s{position:absolute;inset:0}.s.bg1{background:#fff}.s.bg2{background:#1d1f23}
 .sel{position:absolute;z-index:2;pointer-events:none}
 .sel b{position:absolute;outline:1px solid #3d7cff}
@@ -283,6 +283,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   let tool = 'pen', color = PALETTE[2], bg = 0, pass = false, visible = false, touchText = DEF.touchText !== false, penType = 'pen', calc = false;
   // 種類のあるボタン（ペン・図形）: 既定は「選んでいないときに押すとその道具、もう一度押すと選択肢」。pickOnce なら 1 回で選択肢も出す
   const pickOnce = DEF.pickOnce === true;
+  // ツールバーを引いて動かしても閉じないパネル: 色と太さ・見た目（開発用）はいつも。keepPanels（インストールページ）ならすべて（T-066・T-068）
+  const keepPanels = DEF.keepPanels === true;
   // 見た目（インストールページの設定）: 明るい（白に黒）と、ガラス風（半透明にして下をぼかす）。既定は白いガラス（T-050、ユーザーが決めた）。
   // ガラスの調整は開発用: ぼかし方（gauss は周りも拾う本物のガウス、plain は backdrop-filter そのまま）・強さ・地の濃さ
   // theme は 'dark'・'light'・'#rrggbb'（好きな色。明るさで文字を黒か白にする）。開発用の見た目のパネル（dev）からも変えられる
@@ -291,8 +293,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     glass: DEF.glass !== false,
     blurMode: DEF.blurMode === 'plain' ? 'plain' : 'gauss',
     blur: +DEF.blur >= 0 && +DEF.blur <= 40 ? +DEF.blur : 18,
-    tint: +DEF.tint >= 30 && +DEF.tint <= 95 ? +DEF.tint : 70,
-    sat: +DEF.sat >= 100 && +DEF.sat <= 300 ? +DEF.sat : 180, // ガラスの彩度（%。T-065）
+    tint: +DEF.tint >= 30 && +DEF.tint <= 95 ? +DEF.tint : 80,
+    sat: +DEF.sat >= 100 && +DEF.sat <= 300 ? +DEF.sat : 200, // ガラスの彩度（%。T-065）
   };
   const dev = DEF.dev === true;
   // 蛍光ペンの予測: 'full'（既定）はペンと同じ。'need' は丸い先端で届かない分だけ（1 フレーム後のペン先まで）、曲がりに沿って予測し、
@@ -446,15 +448,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const shapeD = shapeB.querySelector('path');
   shapeP.append(row(...SHAPES.map(t => toolBtns[t] = btn(TITLES[t], I[t], () => { setTool(t); closePanel(); }))));
   bar.append(shapeB, toolBtns.text = btn(TITLES.text, I.text, () => setTool('text')),
-    toolBtns.fill = btn(TITLES.fill, I.fill, () => setTool('fill')), sep());
+    toolBtns.fill = btn(TITLES.fill, I.fill, () => setTool('fill')), el('div', 'sep brk')); // 1 段に収まらないときは、ここで段を分ける（.two .brk。T-064・T-067）
 
   // 色と太さ: 今の色・太さ・濃さを点で見せる。パネルにパレット・カスタム色・スポイト・太さ・濃さ
   const styleP = pnl();
   const styleB = btn('色・太さ・濃さ', null, () => togglePanel(styleP, styleB), 'dd');
   const dot = el('span', 'dot');
   styleB.append(dot);
-  // 色の後ろの区切りは、1 段に収まらないときに段を分ける所（.two .brk。T-064）
-  bar.append(styleB, el('div', 'sep brk'));
+  bar.append(styleB, sep());
   const swBtns = PALETTE.map((c, i) => {
     const b = btn(`色 ${i + 1}`, null, () => setColor(c), 'c');
     b.style.setProperty('--c', c);
@@ -629,9 +630,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     openP = openB = null;
   }
   function togglePanel(p, b) { openP === p ? closePanel() : openPanel(p, b); }
-  // 開発用の見た目のパネルは、ツールバーを押しただけでは閉じない（引いて動かす間は開いたまま、引かずに離したら閉じる。T-066）
+  // 色と太さ・開発用の見た目のパネル（keepPanels ならすべて）は、ツールバーを押しただけでは閉じない（引いて動かす間は開いたまま、引かずに離したら閉じる。T-066・T-068）
+  const keepP = p => p === styleP || p === lookP || keepPanels;
   wrap.addEventListener('pointerdown', e => {
-    if (openP && !openP.contains(e.target) && !openB.contains(e.target) && !(openP === lookP && bar.contains(e.target))) closePanel();
+    if (openP && !openP.contains(e.target) && !openB.contains(e.target) && !(keepP(openP) && bar.contains(e.target))) closePanel();
   }, true);
 
   // ボタンがフォーカスを奪うと Space/Enter で誤作動するため、クリックでのフォーカス移動を抑止
@@ -658,8 +660,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (e.button !== 0 || e.target.closest('.pn')) return;
     measureBar();
     const sx = e.clientX, sy = e.clientY, ox = sx - barX, oy = sy - barY, id = e.pointerId;
-    // 開発用の見た目のパネルは、動かす間も開いたまま（下の色を変えてガラスを見比べるため。T-066）。ほかのパネルは引き始めで閉じる
-    const look = openP === lookP, onB = look && openB.contains(e.target);
+    // 色と太さ・開発用の見た目のパネルは、動かす間も開いたまま（T-066・T-068）。ほかのパネルは引き始めで閉じる（keepPanels なら閉じない）
+    const kp = openP, look = !!kp && keepP(kp), onB = look && openB.contains(e.target);
     let moving = false;
     const mv = ev => {
       if (ev.pointerId !== id) return;
@@ -671,7 +673,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         try { bar.setPointerCapture(id); } catch (_) { }
       }
       moveBar(ev.clientX - ox, ev.clientY - oy);
-      if (look && openP === lookP) placePanel();
+      if (look && openP === kp) placePanel();
     };
     const up = ev => {
       if (ev.pointerId !== id) return;
@@ -679,7 +681,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       win.removeEventListener('pointerup', up, true);
       win.removeEventListener('pointercancel', up, true);
       // 引かずに離したら、ほかのパネルと同じに閉じる（開いたボタンの上なら、そのボタンが開け閉めする）
-      if (!moving) { if (look && !onB && openP === lookP) closePanel(); return; }
+      if (!moving) { if (look && !onB && openP === kp) closePanel(); return; }
       bar.classList.remove('drag');
       barMoved = true;
       remember();
@@ -874,15 +876,17 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     tx0 = ty0 = tx1 = ty1 = 0;
     if (visible) { sizeSurface(); layBar(); measureBar(); moveBar(barX, barY); }
   }
-  // 1 段に収まらない幅（スマホなど）では、上の段に道具と色、下の段に元に戻す・その他などの 2 段に整える（T-064）。
-  // 幅は決め打ちせず、折り返すかを測る（タッチの端末はボタンが大きい）。ツールバーの幅は上の段に合わせる
+  // 1 段に収まらない幅（スマホなど）では、上の段に道具、下の段に色と太さ・元に戻す・その他などの 2 段に整える（T-064・T-067）。
+  // 幅は決め打ちせず、折り返すかを測る（タッチの端末はボタンが大きい）。ツールバーの幅は長い方の段に合わせる
   function layBar() {
     const cl = bar.classList;
     cl.remove('two');
     bar.style.removeProperty('width');
     if (closeB.offsetTop === toolBtns.select.offsetTop) return;
     cl.add('two');
-    bar.style.width = ceil(styleB.getBoundingClientRect().right - bar.getBoundingClientRect().left) + 5 + 'px';
+    let right = 0;
+    for (const b of bar.children) if (b.classList.contains('b')) right = max(right, b.getBoundingClientRect().right);
+    bar.style.width = ceil(right - bar.getBoundingClientRect().left) + 5 + 'px';
   }
   // 暖機: キャンバスの GPU バッキング確保や合成パスの初回コンパイルは初回描画時に数十 ms かかる。
   // 描き始めてから払うと最初の一筆が引っかかるので、起動直後の何もしていない時間に済ませておく。
@@ -2884,7 +2888,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const stats = () => ({
     width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, selection: sel ? [selX, selY, selW, selH] : null, texts: tlist.length, fixed, history: hist.length, historyPixels: hpix, events: nEv, points: nPts,
     desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, nativePrediction: nativePred, inkTrail: !!inkP,
-    prefs: { ...snapPrefs(), bar: [barX, barY], touchText, pickOnce, dev, ...look, mpred, blend },
+    prefs: { ...snapPrefs(), bar: [barX, barY], touchText, pickOnce, keepPanels, dev, ...look, mpred, blend },
   });
   win[NS] = { version: VERSION, toggle, show, hide, close, destroy, undo, redo, clear: clearAll, tool: setTool, color: setColor, stats, pixels };
   setColor(color);

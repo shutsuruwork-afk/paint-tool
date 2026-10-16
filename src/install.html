@@ -253,7 +253,7 @@ section > .sub + .sub { margin-top: 20px; }
 
 <main class="page">
   <header>
-    <p class="eyebrow">Bookmarklet · v1.25.0 · %%SIZE%%（gzip %%GZIP%%）</p>
+    <p class="eyebrow">Bookmarklet · v1.26.0 · %%SIZE%%（gzip %%GZIP%%）</p>
     <h1>ペイント<br>ブックマークレット</h1>
     <p class="lead">開いているページの上に、<span class="mark">そのまま描ける<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d="M18 40C8 22 52 6 108 7s92 13 84 30-62 20-112 17S4 38 30 16" vector-effect="non-scaling-stroke"/></svg></span>ペイントツールです。ブックマークを押すだけで起動し、拡張機能もアカウントも要りません。入力から線が画面に出るまでの遅延を減らす仕組みを、ブラウザが対応している限りすべて使います。</p>
     <div class="actions">
@@ -345,6 +345,7 @@ section > .sub + .sub { margin-top: 20px; }
         <legend>動き</legend>
         <label class="check"><span class="ct"><b>文字に触れる</b><small>ペンなどを選んでいても、文字を押すと選んで動かせ、もう一度押すと書き直せます。切ると、文字の上からでもペンで描けます。</small></span><input type="checkbox" role="switch" id="p-touch"></label>
         <label class="check"><span class="ct"><b>ペンと図形の選択肢を 1 回で出す</b><small>入りにすると、ペンや図形のボタンを 1 回押すだけで種類（ペンの種類・4 つの図形）を選べます。切ると、選んでいるボタンをもう一度押したときに出ます。</small></span><input type="checkbox" role="switch" id="p-once"></label>
+        <label class="check"><span class="ct"><b>ツールバーを動かしても、ほかのパネルも開いたまま</b><small>色と太さのパネルは、ツールバーを引いて動かしても閉じません。入りにすると、ペンの種類・図形・その他のパネルも閉じなくなります。引かずにツールバーを押したときは閉じます。</small></span><input type="checkbox" role="switch" id="p-keep"></label>
         <label class="check"><span class="ct"><b>電卓</b><small>文字に計算式（12×3 など）を書くと、答えを薄く出して Tab で書き込めます。ツールの「その他」でも切り替えられます。</small></span><input type="checkbox" role="switch" id="p-calc"></label>
       </fieldset>
       <fieldset>
@@ -480,7 +481,7 @@ function runPaint() {%%INLINE_CODE%%}
   // ---- デフォルトの設定: 選んだ既定をブックマークレットのコードに埋め込む ----
   // 組み込みの既定（src/paint.js の PALETTE と CFG に合わせる。テストで一致を確かめている）
   const PALETTE = ['#111111', '#ffffff', '#e53935', '#fb8c00', '#fdd835', '#43a047', '#1e88e5', '#8e24aa'];
-  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 4, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: false, pickOnce: false, glass: true, theme: 'light', blurMode: 'gauss', blur: 18, tint: 70, sat: 180, dev: false, mpred: 'full', blend: 'canvas' };
+  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 4, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: false, pickOnce: false, keepPanels: false, glass: true, theme: 'light', blurMode: 'gauss', blur: 18, tint: 80, sat: 200, dev: false, mpred: 'full', blend: 'canvas' };
   const BASE = bm.getAttribute('href'); // 既定の入っていないブックマークレット
   const KEY = 'paint-defaults';
   const $ = id => document.getElementById(id);
@@ -521,6 +522,7 @@ function runPaint() {%%INLINE_CODE%%}
       if (typeof v.touchText === 'boolean') d.touchText = v.touchText;
       if (typeof v.calc === 'boolean') d.calc = v.calc;
       if (typeof v.pickOnce === 'boolean') d.pickOnce = v.pickOnce;
+      if (typeof v.keepPanels === 'boolean') d.keepPanels = v.keepPanels;
       if (typeof v.glass === 'boolean') d.glass = v.glass;
       if (v.theme === 'light' || v.theme === 'dark' || /^#[0-9a-f]{6}$/i.test(v.theme)) d.theme = v.theme.toLowerCase();
       if (typeof v.dev === 'boolean') d.dev = v.dev;
@@ -543,6 +545,7 @@ function runPaint() {%%INLINE_CODE%%}
     if (c.touchText !== BUILTIN.touchText) o.touchText = c.touchText;
     if (c.calc !== BUILTIN.calc) o.calc = c.calc;
     if (c.pickOnce !== BUILTIN.pickOnce) o.pickOnce = c.pickOnce;
+    if (c.keepPanels !== BUILTIN.keepPanels) o.keepPanels = c.keepPanels;
     for (const k of ['glass', 'theme', 'blurMode', 'blur', 'tint', 'sat', 'dev', 'mpred', 'blend']) if (c[k] !== BUILTIN[k]) o[k] = c[k];
     return o;
   }
@@ -560,6 +563,7 @@ function runPaint() {%%INLINE_CODE%%}
     $('p-touch').checked = cur.touchText;
     $('p-calc').checked = cur.calc;
     $('p-once').checked = cur.pickOnce;
+    $('p-keep').checked = cur.keepPanels;
     $('p-glass').checked = cur.glass;
     for (const r of document.querySelectorAll('#p-theme input[type=radio]')) r.checked = r.value === (cur.theme[0] === '#' ? 'custom' : cur.theme);
     if (cur.theme[0] === '#') $('p-tcolor').value = cur.theme;
@@ -586,6 +590,7 @@ function runPaint() {%%INLINE_CODE%%}
   $('p-touch').addEventListener('change', e => { cur.touchText = e.target.checked; update(); });
   $('p-calc').addEventListener('change', e => { cur.calc = e.target.checked; update(); });
   $('p-once').addEventListener('change', e => { cur.pickOnce = e.target.checked; update(); });
+  $('p-keep').addEventListener('change', e => { cur.keepPanels = e.target.checked; update(); });
   $('p-glass').addEventListener('change', e => { cur.glass = e.target.checked; update(); });
   $('p-theme').addEventListener('change', e => { if (e.target.name === 'theme') { cur.theme = e.target.value === 'custom' ? $('p-tcolor').value : e.target.value; update(); } });
   $('p-tcolor').addEventListener('input', e => { cur.theme = e.target.value.toLowerCase(); update(); });

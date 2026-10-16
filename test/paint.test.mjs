@@ -163,14 +163,14 @@ const mouseClick = async (page, sel) => {
   await page.mouse.click(r.x + r.w / 2, r.y + r.h / 2);
 };
 
-test('スマホ（1 段に収まらない幅）では、ツールバーを道具と色の段・元に戻す以降の段の 2 段に整える。広げると 1 段に戻る', async () => {
+test('スマホ（1 段に収まらない幅）では、ツールバーを道具の段・色と元に戻す以降の段の 2 段に整える。広げると 1 段に戻る', async () => {
   const rows = page => shadowEval(page, root => {
     const bar = root.querySelector('.bar'), b = bar.getBoundingClientRect();
     const tops = [...bar.children].filter(e => e.classList.contains('b')).map(e => Math.round(e.getBoundingClientRect().top));
     const right = Math.max(...[...bar.children].filter(e => e.classList.contains('b')).map(e => e.getBoundingClientRect().right));
     return { two: bar.classList.contains('two'), tops, w: Math.round(b.width), over: Math.round(right - b.right), toast: root.querySelector('.t').textContent };
   });
-  // タッチのスマホ（390px・360px）: 上の段に 8 個（選択〜塗りつぶし・色と太さ）、下の段に 6 個（元に戻す・やり直す・ページ操作・その他・隠す・閉じる）
+  // タッチのスマホ（390px・360px）: 上の段に 7 個（選択〜塗りつぶし）、下の段に 7 個（色と太さ・元に戻す・やり直す・ページ操作・その他・隠す・閉じる）
   for (const width of [390, 360]) {
     const page = await browser.newPage({ viewport: { width, height: 800 }, isMobile: true, hasTouch: true });
     const errors = [];
@@ -181,11 +181,11 @@ test('スマホ（1 段に収まらない幅）では、ツールバーを道具
     await runCode(page, CODE);
     const r = await rows(page);
     assert.equal(r.two, true, width + ': two rows');
-    assert.equal(new Set(r.tops.slice(0, 8)).size, 1, width + ': first row ' + r.tops);
-    assert.equal(new Set(r.tops.slice(8)).size, 1, width + ': second row ' + r.tops);
+    assert.equal(new Set(r.tops.slice(0, 7)).size, 1, width + ': first row ' + r.tops);
+    assert.equal(new Set(r.tops.slice(7)).size, 1, width + ': second row ' + r.tops);
     assert.equal(r.tops.length, 14);
-    assert.ok(r.tops[8] > r.tops[0], width + ': second row below');
-    assert.ok(r.w <= 345 && r.over <= 0, width + ': fits the first row ' + JSON.stringify(r));
+    assert.ok(r.tops[7] > r.tops[0], width + ': second row below');
+    assert.ok(r.w <= 345 && r.over <= 0 && r.over >= -12, width + ': as wide as the longer row ' + JSON.stringify(r));
     // キーのない端末では、隠すボタンで案内する
     assert.equal(r.toast, '− で隠す');
     assert.deepEqual(errors, []);
@@ -198,8 +198,8 @@ test('スマホ（1 段に収まらない幅）では、ツールバーを道具
   await page.setViewportSize({ width: 440, height: 700 });
   await page.waitForFunction(() => document.querySelector('paint-bookmarklet').shadowRoot.querySelector('.bar.two'));
   const n = await rows(page);
-  assert.equal(new Set(n.tops.slice(0, 8)).size, 1, String(n.tops));
-  assert.ok(n.tops[8] > n.tops[0]);
+  assert.equal(new Set(n.tops.slice(0, 7)).size, 1, String(n.tops));
+  assert.ok(n.tops[7] > n.tops[0]);
   await page.setViewportSize({ width: 1000, height: 700 });
   await page.waitForFunction(() => !document.querySelector('paint-bookmarklet').shadowRoot.querySelector('.bar.two'));
   assert.equal(new Set((await rows(page)).tops).size, 1, 'one row again');
@@ -278,7 +278,7 @@ test('? で操作の一覧が重なって出る（? ・Esc・外を押すと閉�
   await page.close();
 });
 
-test('見た目: 既定は白いガラス（ガウス・ぼかし 18px・地 70%）。暗い（黒に白）・ガラスなし・ガラスの調整（ぼかし方・強さ・地の濃さ）をインストールページで選べる', async () => {
+test('見た目: 既定は白いガラス（ガウス・ぼかし 18px・地 80%・彩度 200%）。暗い（黒に白）・ガラスなし・ガラスの調整（ぼかし方・強さ・地の濃さ）をインストールページで選べる', async () => {
   const look = page => shadowEval(page, root => {
     const w = root.querySelector('.w'), bar = root.querySelector('.bar'), pn = root.querySelector('.pn'), g = getComputedStyle(bar, '::before');
     return {
@@ -292,9 +292,9 @@ test('見た目: 既定は白いガラス（ガウス・ぼかし 18px・地 70%
     };
   });
   const { page, errors } = await fresh();
-  assert.deepEqual(await look(page), { cls: 'light glass gauss', color: 'rgb(29, 32, 38)', bar: 'rgba(0, 0, 0, 0)', blur: 'blur(18px) saturate(1.8)', tint: 'rgba(250, 250, 252, 0.7)', mask: true, panel: 'blur(18px) saturate(1.8)' });
+  assert.deepEqual(await look(page), { cls: 'light glass gauss', color: 'rgb(29, 32, 38)', bar: 'rgba(0, 0, 0, 0)', blur: 'blur(18px) saturate(2)', tint: 'rgba(250, 250, 252, 0.8)', mask: true, panel: 'blur(18px) saturate(2)' });
   const p0 = await prefs(page);
-  assert.deepEqual([p0.theme, p0.glass, p0.blurMode, p0.blur, p0.tint], ['light', true, 'gauss', 18, 70]);
+  assert.deepEqual([p0.theme, p0.glass, p0.blurMode, p0.blur, p0.tint, p0.sat], ['light', true, 'gauss', 18, 80, 200]);
   // 暗い・ガラスなし（T-050 より前の既定）
   await page.evaluate(() => window.__paintBookmarklet.destroy());
   await runCode(page, withDefaults(CODE, { theme: 'dark', glass: false }));
@@ -302,7 +302,7 @@ test('見た目: 既定は白いガラス（ガウス・ぼかし 18px・地 70%
   // 明るい・ガラス・ふつうのぼかし・強さ 8・濃さ 50%
   await page.evaluate(() => window.__paintBookmarklet.destroy());
   await runCode(page, withDefaults(CODE, { theme: 'light', glass: true, blurMode: 'plain', blur: 8, tint: 50 }));
-  assert.deepEqual(await look(page), { cls: 'light glass', color: 'rgb(29, 32, 38)', bar: 'rgba(0, 0, 0, 0)', blur: 'blur(8px) saturate(1.8)', tint: 'rgba(250, 250, 252, 0.5)', mask: false, panel: 'blur(8px) saturate(1.8)' });
+  assert.deepEqual(await look(page), { cls: 'light glass', color: 'rgb(29, 32, 38)', bar: 'rgba(0, 0, 0, 0)', blur: 'blur(8px) saturate(2)', tint: 'rgba(250, 250, 252, 0.5)', mask: false, panel: 'blur(8px) saturate(2)' });
   const p1 = await prefs(page);
   assert.deepEqual([p1.theme, p1.glass, p1.blurMode, p1.blur, p1.tint], ['light', true, 'plain', 8, 50]);
   await page.close();
@@ -313,15 +313,15 @@ test('見た目: 既定は白いガラス（ガウス・ぼかし 18px・地 70%
   await ip.click('#try');
   const g = await look(ip);
   assert.equal(g.cls, 'light glass gauss');
-  assert.equal(g.blur, 'blur(18px) saturate(1.8)');
+  assert.equal(g.blur, 'blur(18px) saturate(2)');
   assert.equal(g.mask, true);
-  assert.equal(g.panel, 'blur(18px) saturate(1.8)');
+  assert.equal(g.panel, 'blur(18px) saturate(2)');
   assert.deepEqual(ie, []);
   assert.deepEqual(errors, []);
   await ip.close();
 });
 
-test('見た目（開発用）のパネルは、ツールバーを引いて動かしても閉じず一緒に動く（下の端では上に開く）。引かずに押せば閉じる。ほかのパネルは引くと閉じる', async () => {
+test('見た目（開発用）と色と太さのパネルは、ツールバーを引いて動かしても閉じず一緒に動く（下の端では上に開く）。引かずに押せば閉じる。ほかのパネルは引くと閉じる（設定ですべて閉じなくできる）', async () => {
   const { page, errors } = await openPage(browser, server.base + '/');
   await runCode(page, withDefaults(CODE, { dev: true }));
   const info = () => shadowEval(page, root => {
@@ -351,12 +351,30 @@ test('見た目（開発用）のパネルは、ツールバーを引いて動�
   await mouseClick(page, '.bar [aria-label^="蛍光ペン"]');
   assert.equal((await info()).open, 0);
   assert.match(await toolOn(page), /^蛍光ペン/);
-  // ほかのパネル（色と太さ）は、引き始めると閉じる
+  // 色と太さのパネルも、引いて動かしても閉じない
+  const panelIs = sel => shadowEval(page, (root, sel) => !!root.querySelector('.pn.on ' + sel), sel);
   await mouseClick(page, '[aria-label^="色・太さ"]');
-  assert.equal((await info()).open, 1);
   const [x3, y3] = await center('.bar [aria-label^="ペン"]');
   await drag(page, [[x3, y3], [x3, y3 - 200]], 8);
+  assert.equal((await info()).open, 1, 'style panel stays open');
+  assert.equal(await panelIs('[aria-label="色 1"]'), true);
+  await mouseClick(page, '.bar [aria-label^="ペン"]');
   assert.equal((await info()).open, 0);
+  // ほかのパネル（その他）は、引き始めると閉じる
+  await mouseClick(page, '[aria-label^="その他"]');
+  assert.equal((await info()).open, 1);
+  const [x4, y4] = await center('.bar [aria-label^="ペン"]');
+  await drag(page, [[x4, y4], [x4, y4 + 100]], 8);
+  assert.equal((await info()).open, 0);
+  assert.deepEqual(errors, []);
+  // インストールページの設定（keepPanels）を入れると、その他のパネルも閉じない
+  await page.evaluate(() => window.__paintBookmarklet.destroy());
+  await runCode(page, withDefaults(CODE, { keepPanels: true }));
+  await mouseClick(page, '[aria-label^="その他"]');
+  const [x5, y5] = await center('.bar [aria-label^="ペン"]');
+  await drag(page, [[x5, y5], [x5, y5 + 100]], 8);
+  assert.equal((await info()).open, 1, 'more panel stays open with keepPanels');
+  assert.equal(await panelIs('[aria-label^="全消去"]'), true);
   assert.deepEqual(errors, []);
   await page.close();
 });
@@ -384,9 +402,9 @@ test('見た目（開発用）: インストールページの開発用を入れ
   assert.equal((await st(page)).cls, 'light glass gauss');
   await shadowEval(page, root => { const r = [...root.querySelectorAll('.pn.on .r input')][0]; r.value = 8; r.dispatchEvent(new Event('input')); });
   assert.equal((await st(page)).gb, '8px');
-  // 彩度（既定 180%）を 250% に: ガラスの backdrop-filter に効く
+  // 彩度（既定 200%）を 250% に: ガラスの backdrop-filter に効く
   const sat = () => shadowEval(page, root => getComputedStyle(root.querySelector('.bar'), '::before').backdropFilter);
-  assert.match(await sat(), /saturate\(1\.8\)/);
+  assert.match(await sat(), /saturate\(2\)/);
   await shadowEval(page, root => { const r = [...root.querySelectorAll('.pn.on .r input')][2]; r.value = 250; r.dispatchEvent(new Event('input')); });
   assert.match(await sat(), /saturate\(2\.5\)/);
   assert.equal((await prefs(page)).sat, 250);
@@ -1199,6 +1217,7 @@ test('インストールページで選んだ設定入りのブックマーク�
   assert.equal(p0.touchText, await page.isChecked('#p-touch'));
   assert.equal(p0.calc, await page.isChecked('#p-calc'));
   assert.equal(p0.pickOnce, await page.isChecked('#p-once'));
+  assert.equal(p0.keepPanels, await page.isChecked('#p-keep'));
   assert.equal(p0.glass, await page.isChecked('#p-glass'));
   assert.equal(p0.theme, await page.evaluate(() => document.querySelector('#p-theme input:checked').value));
   assert.equal(p0.blurMode, await page.evaluate(() => document.querySelector('#p-mode input:checked').value));
@@ -1700,7 +1719,7 @@ test('厳格な CSP + Trusted Types のページでもコード自体は動作�
   await page.evaluate(CODE);
   await page.waitForFunction(() => !!window.__paintBookmarklet);
   const bf = await shadowEval(page, root => getComputedStyle(root.querySelector('.bar'), '::before').backdropFilter);
-  assert.equal(bf, 'blur(18px) saturate(1.8)', 'shadow styles applied (adoptedStyleSheets)');
+  assert.equal(bf, 'blur(18px) saturate(2)', 'shadow styles applied (adoptedStyleSheets)');
   await drag(page, [[100, 300], [500, 300]], 10);
   assert.ok((await readMain(page, 300, 300))[3] > 200);
   await page.keyboard.press('Control+z');

@@ -256,7 +256,7 @@ section > .sub + .sub { margin-top: 20px; }
 
 <main class="page">
   <header>
-    <p class="eyebrow">Bookmarklet · シンプル版（研究用）· v1.29.0-simple.12 · %%SIZE%%（gzip %%GZIP%%）</p>
+    <p class="eyebrow">Bookmarklet · シンプル版（研究用）· v1.29.0-simple.13 · %%SIZE%%（gzip %%GZIP%%）</p>
     <h1>ペイント<br>ブックマークレット</h1>
     <p class="lead">開いているページの上に、<span class="mark">そのまま描ける<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d="M18 40C8 22 52 6 108 7s92 13 84 30-62 20-112 17S4 38 30 16" vector-effect="non-scaling-stroke"/></svg></span>ペイントツールです。ブックマークを押すだけで起動し、拡張機能もアカウントも要りません。入力から線が画面に出るまでの遅延を減らす仕組みを、ブラウザが対応している限りすべて使います。</p>
     <div class="cps">
@@ -266,10 +266,12 @@ section > .sub + .sub { margin-top: 20px; }
         <label><input type="radio" name="cp" value="2">2</label>
         <label><input type="radio" name="cp" value="min">2（最小構成のコード）</label>
         <label><input type="radio" name="cp" value="3">3（最新）</label>
+        <label><input type="radio" name="cp" value="min3">3（最小構成のコード）</label>
       </div>
       <p class="aside" id="cp-desc"></p>
     </div>
     <a id="bm-min" hidden href="%%MIN_HREF%%">Paint CP2 最小</a>
+    <a id="bm-min3" hidden href="%%MIN3_HREF%%">Paint CP3 最小</a>
     <div class="actions">
       <a id="bm" class="bm" href="%%BOOKMARKLET_HREF%%" title="ブックマークバーへドラッグ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1.2-4.4L16 4.8a2 2 0 0 1 2.9 0l.3.3a2 2 0 0 1 0 2.9L8.4 18.8zM14 7l3 3"/></svg>Paint</a>
       <span class="hint">← このボタンをブックマークバーへドラッグ（色や太さは下の「デフォルトの設定」で選べます）</span>
@@ -491,6 +493,7 @@ section > .sub + .sub { margin-top: 20px; }
 <script>
 function runPaint() {%%INLINE_CODE%%}
 function runPaintMin() {%%INLINE_MIN%%}
+function runPaintMin3() {%%INLINE_MIN3%%}
 (() => {
   const bm = document.getElementById('bm');
   // ---- デフォルトの設定: 選んだ既定をブックマークレットのコードに埋め込む ----
@@ -514,8 +517,10 @@ function runPaintMin() {%%INLINE_MIN%%}
     2: '1 に、文字のボタン（電卓は入り: 計算式を書くと答えが薄く出て、Tab で書き込める）と、その他の色を足したもの。右端の × は隠すだけ（絵は残り、ブックマークレットでそのまま戻る）で、お知らせは出ない。絵を消して閉じる機能はない。',
     3: '開く物をなくし、ボタンは押すとすぐ効く: ペン（押すたびに消しゴムと入れ替わる）・文字（1 つ書いたらペンに戻る。電卓は入り）・色（押すたびに赤→青→黒→白。丸が今の色）・元に戻す・全消去・×（隠すだけ）。元に戻す・全消去は、できないときは薄くなる。',
     min: '2 と同じ画面で、画面にある機能のほかを外した最小構成のコード（%%MIN_SIZE%%、gzip %%MIN_GZIP%%）。キーのショートカットはなく、下の「デフォルトの設定」も効きません。',
+    min3: '3 と同じ画面で、画面にある機能のほかを外した最小構成のコード（%%MIN3_SIZE%%、gzip %%MIN3_GZIP%%）。開く物がないので、メニューの仕組みもない。キーのショートカットはなく、下の「デフォルトの設定」も効きません。',
   };
-  const MIN_HREF = $('bm-min').getAttribute('href');
+  // 最小構成のコード（設定を受け取らない）: 選んだときのボタンの href と名前
+  const MINS = { min: [$('bm-min').getAttribute('href'), 'Paint CP2 最小'], min3: [$('bm-min3').getAttribute('href'), 'Paint CP3 最小'] };
   // ツールの「デフォルトの変更」から開いたときは、そのブックマークの既定が #defaults=… で届くので、それを読み込む
   let fromTool = false;
   let cur = fromHash() || load();
@@ -549,7 +554,7 @@ function runPaintMin() {%%INLINE_MIN%%}
       if (v.theme === 'light' || v.theme === 'dark' || /^#[0-9a-f]{6}$/i.test(v.theme)) d.theme = v.theme.toLowerCase();
       if (typeof v.dev === 'boolean') d.dev = v.dev;
       if (typeof v.fullBar === 'boolean') d.fullBar = v.fullBar;
-      if (v.cp === 1 || v.cp === 2 || v.cp === 3 || v.cp === 'min') d.cp = v.cp;
+      if (v.cp === 1 || v.cp === 2 || v.cp === 3 || v.cp === 'min' || v.cp === 'min3') d.cp = v.cp;
       if (v.blurMode === 'gauss' || v.blurMode === 'plain') d.blurMode = v.blurMode;
       if (+v.blur >= 0 && +v.blur <= 40) d.blur = +v.blur;
       if (+v.tint >= 30 && +v.tint <= 95) d.tint = +v.tint;
@@ -586,7 +591,7 @@ function runPaintMin() {%%INLINE_MIN%%}
     for (const r of document.querySelectorAll('#p-bar input')) r.checked = r.value === cur.bar;
     $('p-touch').checked = cur.touchText;
     // チェックポイント 2・3 と最小構成は電卓がいつも入り（ここでは変えられない。T-078・T-082）
-    const isMin = cur.cp === 'min' && !cur.fullBar, cp2 = cur.cp !== 1 && !cur.fullBar; // 2・3・最小構成は電卓がいつも入り
+    const mn = !cur.fullBar && MINS[cur.cp], cp2 = cur.cp !== 1 && !cur.fullBar; // 2・3・最小構成は電卓がいつも入り
     $('p-calc').checked = cur.calc || cp2;
     $('p-calc').disabled = cp2;
     $('p-once').checked = cur.pickOnce;
@@ -599,15 +604,15 @@ function runPaintMin() {%%INLINE_MIN%%}
     // チェックポイント（T-078）: 選ぶと Paint ボタンの名前も変わる（ブックマークの名前になるので、並べて入れても見分けられる）
     for (const r of document.querySelectorAll('#p-cp input')) r.checked = r.value === String(cur.cp);
     $('cp-desc').textContent = cur.fullBar ? '「ツールバーにすべてのボタンを出す」が入りなので、本家と同じボタンになります（下の開発用）。' : CP_DESC[cur.cp];
-    bm.lastChild.textContent = cur.fullBar ? 'Paint 本家' : isMin ? 'Paint CP2 最小' : 'Paint CP' + cur.cp;
+    bm.lastChild.textContent = cur.fullBar ? 'Paint 本家' : mn ? mn[1] : 'Paint CP' + cur.cp;
     for (const r of document.querySelectorAll('#p-mode input')) r.checked = r.value === cur.blurMode;
     for (const r of document.querySelectorAll('#p-mpred input')) r.checked = r.value === cur.mpred;
     for (const r of document.querySelectorAll('#p-blend input')) r.checked = r.value === cur.blend;
     for (const k of ['blur', 'tint', 'sat']) { const r = $('p-' + k); r.value = cur[k]; r.nextElementSibling.value = k === 'blur' ? cur[k] + 'px' : cur[k] + '%'; }
     $('p-gdev').classList.toggle('off', !cur.glass);
     const o = diff(cur);
-    bm.setAttribute('href', isMin ? MIN_HREF : hrefFor(o));
-    state.textContent = isMin ? '最小構成のコードは設定を受け取りません（チェックポイントを 1 か 2 にすると効きます）。'
+    bm.setAttribute('href', mn ? mn[0] : hrefFor(o));
+    state.textContent = mn ? '最小構成のコードは設定を受け取りません（チェックポイントを 1・2・3 にすると効きます）。'
       : Object.keys(o).length ? '設定入りのボタンになりました。ドラッグし直すと反映されます。' : '最初の状態です。';
   }
   // 保存も既定との差分だけにする（あとで組み込みの既定を変えたとき、触っていない所には新しい既定が効く）
@@ -629,7 +634,7 @@ function runPaintMin() {%%INLINE_MIN%%}
   $('p-tcolor').addEventListener('input', e => { cur.theme = e.target.value.toLowerCase(); update(); });
   $('p-dev').addEventListener('change', e => { cur.dev = e.target.checked; update(); });
   $('p-full').addEventListener('change', e => { cur.fullBar = e.target.checked; update(); });
-  $('p-cp').addEventListener('change', e => { cur.cp = e.target.value === 'min' ? 'min' : +e.target.value; update(); });
+  $('p-cp').addEventListener('change', e => { const v = e.target.value; cur.cp = /^min/.test(v) ? v : +v; update(); });
   $('p-mode').addEventListener('change', e => { cur.blurMode = e.target.value; update(); });
   $('p-mpred').addEventListener('change', e => { cur.mpred = e.target.value; update(); });
   $('p-blend').addEventListener('change', e => { cur.blend = e.target.value; update(); });
@@ -643,9 +648,13 @@ function runPaintMin() {%%INLINE_MIN%%}
   // このページで試すときは eval を使わず、埋め込み版が読む変数で既定を渡す
   const tryPaint = () => {
     // 動いているツールと違うチェックポイントを選んでいたら、閉じてから選んだ方で起動し直す（2 回目の実行は表示の切り替えになるため）
-    const api = window.__paintBookmarklet, isMin = cur.cp === 'min' && !cur.fullBar;
-    if (api && (/-min$/.test(api.version) ? !isMin : isMin || api.stats().prefs.cp !== (cur.fullBar ? 0 : cur.cp))) api.destroy();
-    if (isMin) { runPaintMin(); return; }
+    // 最小構成は版の末尾（-min・-min3）で見分ける。本体はチェックポイント（本家なら 0）で見分ける
+    const api = window.__paintBookmarklet, want = cur.fullBar ? 0 : cur.cp, run = { min: runPaintMin, min3: runPaintMin3 }[want];
+    if (api) {
+      const m = /-(min3?)$/.exec(api.version);
+      if ((m ? m[1] : api.stats().prefs.cp) !== want) api.destroy();
+    }
+    if (run) { run(); return; }
     window.__paintBookmarkletDefaults = JSON.stringify(diff(cur));
     try { runPaint(); } finally { delete window.__paintBookmarkletDefaults; }
   };

@@ -20,16 +20,23 @@ const toBookmarklet = c => {
 const src = await readFile('src/paint.js', 'utf8');
 const { code } = await minify(src, TERSER);
 const bookmarklet = toBookmarklet(code);
-// 最小構成のコード（チェックポイント 2 の画面にある機能だけ。T-080）。既定を受け取らないので、目印はない
-const srcMin = await readFile('src/paint-min.js', 'utf8');
-const { code: codeMin } = await minify(srcMin, TERSER);
-const bookmarkletMin = toBookmarklet(codeMin);
+// 最小構成のコード（チェックポイントの画面にある機能だけ。2 は T-080、3 は T-083）。既定を受け取らないので、目印はない。
+// インストールページの %%<mark>_HREF%%・%%<mark>_SIZE%%・%%<mark>_GZIP%%・%%INLINE_<mark>%% を置き換える
+const MINS = [{ id: 'min', src: 'src/paint-min.js', mark: 'MIN' }, { id: 'min3', src: 'src/paint-min3.js', mark: 'MIN3' }];
+for (const m of MINS) {
+  m.text = await readFile(m.src, 'utf8');
+  m.code = (await minify(m.text, TERSER)).code;
+  m.bookmarklet = toBookmarklet(m.code);
+  m.gz = gzipSync(m.code).length;
+}
 
 await mkdir('dist', { recursive: true });
 await writeFile('dist/paint.min.js', code + '\n');
 await writeFile('dist/bookmarklet.txt', bookmarklet + '\n');
-await writeFile('dist/paint-min.min.js', codeMin + '\n');
-await writeFile('dist/bookmarklet-min.txt', bookmarkletMin + '\n');
+for (const m of MINS) {
+  await writeFile(`dist/paint-${m.id}.min.js`, m.code + '\n');
+  await writeFile(`dist/bookmarklet-${m.id}.txt`, m.bookmarklet + '\n');
+}
 
 // インストールページの「このページで試す」用。既定の文字列を、ページが渡す変数を読む式に変える（eval を使わないため）
 const MARK = /'__PAINT_DEFAULTS__'/g;
@@ -48,24 +55,28 @@ const helpHtml = JSON.parse(hm[1]).map(([name, rows]) =>
   rows.filter(r => r[2] !== 'full').map(([k, d]) => `<li${k.includes('{') ? '' : ' class="t"'}><span class="k">${rich(k)}</span><span>${rich(d)}</span></li>`).join('') +
   '</ul></section>').join('\n');
 const kb = n => (n / 1024).toFixed(1) + ' KB';
-const gz = gzipSync(code).length, gzMin = gzipSync(codeMin).length;
+const gz = gzipSync(code).length;
 const tpl = await readFile('src/install.html', 'utf8');
 // 置き換え後の文字列は必ず関数で渡す。文字列で渡すと、コードの中の "$&" などが置き換えの特殊な記号として解釈される
 // （圧縮で変数名が $ になったときに、ボタンの中身が壊れたことがある）
-const page = tpl
+let page = tpl
   .replaceAll('%%BOOKMARKLET_HREF%%', () => escAttr(bookmarklet))
   .replaceAll('%%SIZE%%', () => kb(bookmarklet.length))
   .replaceAll('%%GZIP%%', () => kb(gz))
-  .replaceAll('%%MIN_HREF%%', () => escAttr(bookmarkletMin))
-  .replaceAll('%%MIN_SIZE%%', () => kb(bookmarkletMin.length))
-  .replaceAll('%%MIN_GZIP%%', () => kb(gzMin))
-  .replace('%%INLINE_MIN%%', () => codeMin.replace(/<\/(script)/gi, '<\\/$1'))
   .replace('%%HELP%%', () => helpHtml)
   .replace('%%INLINE_CODE%%', () => inline.replace(/<\/(script)/gi, '<\\/$1'));
-// ボタンの href が、そのままブックマークレットになっているかを確かめる（最小構成は id="bm-min" の隠したリンクに置く）
+for (const m of MINS) {
+  page = page
+    .replaceAll(`%%${m.mark}_HREF%%`, () => escAttr(m.bookmarklet))
+    .replaceAll(`%%${m.mark}_SIZE%%`, () => kb(m.bookmarklet.length))
+    .replaceAll(`%%${m.mark}_GZIP%%`, () => kb(m.gz))
+    .replace(`%%INLINE_${m.mark}%%`, () => m.code.replace(/<\/(script)/gi, '<\\/$1'));
+}
+// ボタンの href が、そのままブックマークレットになっているかを確かめる（最小構成は id="bm-min"・"bm-min3" の隠したリンクに置く）
 const unesc = t => t.replace(/&lt;/g, '<').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
 const hrefs = [...page.matchAll(/href="(javascript:[^"]*)"/g)].map(m => unesc(m[1]));
-if (!hrefs.includes(bookmarklet) || !hrefs.includes(bookmarkletMin) || hrefs.some(h => h !== bookmarklet && h !== bookmarkletMin)) throw new Error('install page bookmarklet href is corrupted');
+const all = [bookmarklet, ...MINS.map(m => m.bookmarklet)];
+if (all.some(b => !hrefs.includes(b)) || hrefs.some(h => !all.includes(h))) throw new Error('install page bookmarklet href is corrupted');
 // テンプレートは本文のみ（<title> と <style> から始まる）。GitHub Pages 用に文書として包む
 await mkdir('docs', { recursive: true });
 await writeFile('docs/index.html', `<!doctype html>\n<html lang="ja">\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n${page}</html>\n`);
@@ -76,4 +87,4 @@ if (pi > 0) await writeFile(process.argv[pi + 1], page);
 console.log(`src            ${kb(src.length)}`);
 console.log(`paint.min.js   ${kb(code.length)} (gzip ${kb(gz)})`);
 console.log(`bookmarklet    ${kb(bookmarklet.length)}`);
-console.log(`min: src ${kb(srcMin.length)}  min.js ${kb(codeMin.length)} (gzip ${kb(gzMin)})  bookmarklet ${kb(bookmarkletMin.length)}`);
+for (const m of MINS) console.log(`${m.id.padEnd(5)}: src ${kb(m.text.length)}  min.js ${kb(m.code.length)} (gzip ${kb(m.gz)})  bookmarklet ${kb(m.bookmarklet.length)}`);

@@ -8,7 +8,7 @@
 - **このブランチ（`research/simple`）は研究用のフォーク**: 本家（main、v1.27.0 の T-070 まで）から分けた「シンプル版」。開いたときに見える UI を少なくする（T-071）。コードは必要以上に削らない（ユーザーの方針）。main には取り込まず、Pages にも出ない（Pages は main だけ）。T-071 の番号はこのブランチで使った（main で次のタスクを作るときは T-072 から）
 - ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない。HEAD は T-070 のコミット（`git log --grep T-070`）
 - CI: GitHub Actions「Pages」は main へのプッシュごとに test → deploy。T-069 の run（38903117452）まで test・deploy とも成功。T-070 のプッシュの結果は Actions で確かめる
-- 公開: https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）の 2 か所。版は v1.27.0
+- 公開: 本家は https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）。シンプル版（このブランチ）は Pages に出ず、Artifact https://claude.ai/artifact/QwgKqQ53neYRYvs6RwZDUi （非公開、版 v1.27.0-simple.1）だけ。更新は `node build.mjs --page <scratchpad>/paint-simple.html` で作って公開
 - 人の操作待ち: R-006（実際に書いた線の入力を録って JSON を送ってもらう。T-060 がこれ待ち）。R-004 は C に決まった（インストールページの既定＋サイトごとに覚える）
 - 次の一手: R-006 の録画が届いたら T-060 を進める（`npm run predict -- <file>` で、予測なし・Chrome の予測・直線の外挿の、8〜33 ms 先のペン先とのずれを比べる。そこへ新しい予測〈曲がりや加速を考える、Kalman など〉を足して比べ、良い物を本体に取り込む）。録る機能は T-070 で作った（開発用の「入力を録る」「録った入力を書き出す」）。白いガラスの既定（T-050・T-069）も使ってみてもらう。効率と中身の改善は、トレードオフがあれば先にユーザーに確認する（履歴のメモリ上限・全消去の後のタイルの解放・塗りつぶしを画面の外まで広げる、は今のままでよいと回答済み）。残りの候補は T-018・T-013・T-031・T-020（T-011・T-017 は後回し）
 

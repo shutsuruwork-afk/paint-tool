@@ -286,3 +286,54 @@ test('インストールページ: 「3（最小構成のコード）」を選�
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('デザイン（T-085）: 本体のチェックポイント 3 と最小構成 3 で同じ。選んだ道具の下の丸が動き、今の色になる。色の輪が回る。ペンのカーソルは今の色。暗いページでは暗いガラス', async () => {
+  const blk = f => { const s = readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8'), i = s.indexOf('/*D3CSS*/'); return s.slice(i, s.indexOf('/*D3CSS*/', i + 1)); };
+  assert.ok(blk('paint.js').length > 1000);
+  assert.equal(blk('paint.js'), blk('paint-min3.js'), 'D3CSS が src/paint.js と src/paint-min3.js でそろっている');
+  const MAIN = readFileSync(new URL('../dist/paint.min.js', import.meta.url), 'utf8');
+  for (const code of [MIN3, MAIN]) {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 700 }, reducedMotion: 'no-preference' });
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.goto(server.base + '/');
+    await runCode(page, code);
+    await page.waitForTimeout(900); // 現れる動きが終わるまで
+    const center = sel => rectOf(page, sel).then(r => [r.x + r.w / 2, r.y + r.h / 2]);
+    const near = async (a, b) => { const [p, q] = [await center(a), await center(b)]; return Math.abs(p[0] - q[0]) < 1 && Math.abs(p[1] - q[1]) < 1; };
+    const sh = fn => shadowEval(page, fn);
+    assert.equal(await sh(root => root.querySelector('.w').classList.contains('d3')), true);
+    assert.equal(await sh(root => root.querySelector('.w').classList.contains('dk')), false);
+    assert.ok(await near('.bar > .ind', '.bar > [aria-label^="ペン"]'), 'pen');
+    await press(page, '文字');
+    await page.waitForTimeout(800);
+    assert.ok(await near('.bar > .ind', '.bar > [aria-label^="文字"]'), 'moved to text');
+    await press(page, '文字');
+    await page.waitForTimeout(800);
+    assert.ok(await near('.bar > .ind', '.bar > [aria-label^="ペン"]'), 'back to pen');
+    // 色: 丸は今の色、輪は 1 色分ずつ同じ向きに回る（白から赤も）
+    const ink = () => sh(root => [root.querySelector('.bar').style.getPropertyValue('--ink'), root.querySelector('.dial').style.getPropertyValue('--r')]);
+    assert.deepEqual(await ink(), ['#e53935', '0deg']);
+    await press(page, '色');
+    assert.deepEqual(await ink(), ['#1e88e5', '-90deg']);
+    assert.match(await sh(root => root.querySelector('.p').style.cursor), /fill%3D%22%231e88e5/);
+    for (let i = 0; i < 3; i++) await press(page, '色');
+    assert.deepEqual(await ink(), ['#e53935', '-360deg']);
+    // 消しゴムは灰色の丸と、消える範囲の輪のカーソル
+    await press(page, 'ペン');
+    assert.equal(await sh(root => root.querySelector('.bar').classList.contains('er')), true);
+    assert.doesNotMatch(await sh(root => root.querySelector('.p').style.cursor), /e53935/);
+    // 押すと動く物があっても、描く・元に戻す・全消去は今まで通り
+    await press(page, '消しゴム');
+    await drag(page, [[100, 300], [500, 300]], 10);
+    await press(page, '全消去');
+    await press(page, '元に戻す');
+    assert.ok((await readMain(page, 300, 300))[3] > 200);
+    assert.deepEqual(errors, []);
+    // 暗いページ
+    await page.evaluate(() => { window.__paintBookmarklet.destroy(); document.body.style.background = '#16181d'; });
+    await runCode(page, code);
+    assert.equal(await sh(root => root.querySelector('.w').classList.contains('dk')), true);
+    await page.close();
+  }
+});

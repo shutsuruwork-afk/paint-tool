@@ -11,7 +11,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.29.0-simple.13-min3';
+  const VERSION = '1.30.0-design.1-min3';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -46,7 +46,8 @@
     eraser: 'M8 20h12M4.7 14.7l9-9a2 2 0 0 1 2.8 0l2.3 2.3a2 2 0 0 1 0 2.8L11 18.6H8.6zM9 10.3l5 5',
     text: 'M5 7V5h14v2M12 5v14M9 19h6',
     undo: 'M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3',
-    trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
+    // 全消去はふたと本体に分ける（押すとふたが開く）
+    trash: ['M3.5 7h17M9 7V5.2C9 4.5 9.5 4 10.2 4h3.6c.7 0 1.2.5 1.2 1.2V7', 'M6 7l.9 12.1c.1.9.8 1.6 1.7 1.6h6.8c.9 0 1.6-.7 1.7-1.6L18 7M10 11v5.5M14 11v5.5'],
     close: 'M6 6l12 12M18 6L6 18',
   };
 
@@ -55,8 +56,51 @@
   const GMASK = [GQ('100% 100%', '0 0'), GQ('0 100%', '100% 0'), GQ('100% 0', '0 100%'), GQ('0 0', '100% 100%'),
     'linear-gradient(#000 0 0) 50% 50%/calc(100% - 2 * var(--gr)) 100% no-repeat content-box',
     'linear-gradient(#000 0 0) 50% 50%/100% calc(100% - 2 * var(--gr)) no-repeat content-box'].join(',');
+  // デザイン（T-085）。src/paint.js のチェックポイント 3 と同じ物（D3CSS）。変えるときは両方を直す
+  /*D3CSS*/
+  // ばね（減衰振動）の動き。D3_SPRING は少しだけ行き過ぎて戻る、D3_BOUNCE ははずむ
+  const D3_SPRING = 'linear(0,.115,.348,.586,.778,.911,.989,1.026,1.038,1.036,1.027,1.018,1.01,1.004,1.001,.999,1)';
+  const D3_BOUNCE = 'linear(0,.14,.431,.725,.948,1.076,1.124,1.117,1.084,1.046,1.014,.994,.985,.984,.988,.993,.997,1,1.002,1)';
+  const D3CSS = `
+.w.d3{--fg:#1b1c20;--mu:#1b1c20a8;--hov:#0000000d;--prs:#00000017;--ol:#00000030;--rim:#fffffff2,#ffffff47 38%,#ffffff1a 62%,#00000014;--er:#5d6069;--bs:34px;--bp:5px;--ink:#e53935;--sp:${D3_SPRING};--bo:${D3_BOUNCE}}
+.w.d3 .bar{gap:2px;padding:var(--bp);border:0;border-radius:999px;background:none;color:var(--fg);box-shadow:0 0 0 .5px #0000001c,0 1px 2px #0000000d,0 8px 18px -6px #00000026,0 26px 48px -18px #00000038;transition:scale .45s var(--bo),box-shadow .3s;animation:d3in .6s var(--bo) backwards}
+.w.d3 .bar.drag{scale:1.035;box-shadow:0 0 0 .5px #0000001c,0 2px 4px #00000012,0 16px 30px -10px #00000033,0 40px 70px -24px #00000047}
+.w.d3 .bar::before{--gr:calc(var(--bs) / 2 + var(--bp));content:"";position:absolute;inset:calc(var(--gm) * -1);padding:var(--gm);z-index:-1;border-radius:0;background:rgb(var(--gc) / var(--gt));-webkit-backdrop-filter:blur(var(--gb)) saturate(var(--gs));backdrop-filter:blur(var(--gb)) saturate(var(--gs));pointer-events:none;-webkit-mask:${GMASK};mask:${GMASK};animation:d3fade .3s ease-out backwards}
+.w.d3 .bar::after{content:"";position:absolute;inset:0;padding:1px;border-radius:inherit;background:linear-gradient(var(--rim));-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0);pointer-events:none}
+.w.d3 .b{position:relative;width:var(--bs);height:var(--bs);padding:0;border-radius:50%;background:none;color:inherit;opacity:1;transition:color .2s,background-color .15s,opacity .3s,scale .45s var(--bo);animation:d3b .55s var(--bo) backwards;animation-delay:calc(var(--i,0) * 32ms + 80ms)}
+.w.d3 .b:hover{background:var(--hov)}
+.w.d3 .b:active{background:var(--prs);scale:.86;transition-duration:.2s,.1s,.3s,.09s}
+.w.d3 .b.on,.w.d3 .b.on:hover,.w.d3 .b.on:active{color:#fff;background:none}
+.w.d3 .bar.wh .b.on{color:#1b1c20}
+.w.d3 .b:disabled{opacity:.24;background:none;scale:1}
+.w.d3 .b:focus-visible{outline:2px solid #3d7cff;outline-offset:1px}
+.w.d3 .b svg{width:20px;height:20px;stroke-width:1.75}
+.w.d3 .b.x{color:var(--mu)}.w.d3 .b.x:hover{color:var(--fg)}
+.w.d3 .gap{flex:none;width:10px;height:auto;margin:0;background:none}
+.w.d3 .ind{position:absolute;left:0;top:0;width:var(--bs);height:var(--bs);border-radius:50%;background:linear-gradient(#ffffff47,#fff0 58%) var(--ink);box-shadow:inset 0 0 0 .5px #00000029,inset 0 1px .5px #ffffff66,0 1px 2px #0000002e,0 6px 14px -5px var(--ink);pointer-events:none;transition:background-color .35s,box-shadow .35s,opacity .25s,scale .45s var(--bo);animation:d3b .55s var(--bo) .08s backwards}
+.w.d3 .bar.rd .ind{transition:translate .55s var(--sp),background-color .35s,box-shadow .35s,opacity .25s,scale .45s var(--bo)}
+.w.d3 .bar:has(.b.on:active) .ind{scale:.86;transition-duration:.55s,.35s,.35s,.25s,.09s}
+.w.d3 .bar.er .ind{--ink:var(--er)}
+.w.d3 .bar.wh .ind{background-color:#fff;box-shadow:inset 0 0 0 1px #00000021,inset 0 -1px 1px #0000000d,0 1px 2px #00000026,0 6px 14px -5px #00000040}
+.w.d3 .bar.no .ind{opacity:0}
+.w.d3 .dial{position:absolute;inset:5px;border-radius:50%;pointer-events:none;-webkit-mask:conic-gradient(from -45deg,#000 25%,#0000007a 0);mask:conic-gradient(from -45deg,#000 25%,#0000007a 0)}
+.w.d3 .dial svg{position:absolute;inset:0;width:100%;height:100%;rotate:var(--r,0deg);transition:rotate .7s var(--sp),transform .5s var(--bo)}
+.w.d3 .b:hover .dial svg{transform:rotate(-14deg)}
+.w.d3 .dial .ol{stroke:var(--ol)}
+.w.d3 .dot{position:relative;width:12px;height:12px;border-radius:50%;opacity:1;background:radial-gradient(circle at 34% 30%,#ffffff85,#fff0 55%) var(--c);box-shadow:inset 0 0 0 .5px #0000003d,0 1px 1.5px #0000002e;transition:background-color .35s}
+.w.d3.dk{--fg:#f3f4f6;--mu:#f3f4f6a6;--hov:#ffffff14;--prs:#ffffff24;--ol:#ffffff3d;--gc:34 36 42;--gt:.72;--rim:#ffffff4d,#ffffff14 40%,#ffffff0a 70%,#ffffff1f;--er:#8b8e97;color-scheme:dark}
+.w.d3.dk .bar{box-shadow:0 0 0 .5px #00000080,0 1px 2px #00000040,0 8px 18px -6px #00000066,0 26px 48px -18px #0000008c}
+.w.d3.dk .ind{box-shadow:inset 0 0 0 .5px #ffffff2e,inset 0 1px .5px #ffffff4d,0 1px 2px #00000059,0 6px 14px -5px var(--ink)}
+.w.d3 .tl{transform-box:fill-box;transform-origin:8% 100%}
+@media (pointer:coarse){.w.d3{--bs:40px;--bp:6px}.w.d3 .dial{inset:6px}.w.d3 .dot{width:14px;height:14px}}
+@keyframes d3in{from{scale:.82;translate:0 -8px;box-shadow:0 0 0 0 #0000,0 0 0 0 #0000,0 0 0 0 #0000,0 0 0 0 #0000}}
+@keyframes d3fade{from{opacity:0}}
+@keyframes d3b{from{opacity:0;scale:.3}}
+@media (prefers-reduced-motion:reduce){.w.d3 *,.w.d3 ::before,.w.d3 ::after{animation:none!important;transition:none!important}}
+`;
+  /*D3CSS*/
   const CSS = `
-.w{--gm:36px;all:initial;position:absolute;inset:0;overflow:hidden;contain:strict;pointer-events:none;outline:none;font:12px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;color:#1d2026;color-scheme:light;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+.w{--gc:250 250 252;--gt:.8;--gb:18px;--gs:2;--gm:36px;all:initial;position:absolute;inset:0;overflow:hidden;contain:strict;pointer-events:none;outline:none;font:12px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;color:#1d2026;color-scheme:light;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
 .s{position:absolute;inset:0}
 .gh{position:absolute;white-space:pre;pointer-events:none;color:var(--c);opacity:.45;font:600 var(--fs)/${LH} ${FONT}}
 .to{position:absolute;z-index:1;white-space:pre;pointer-events:none;color:var(--c);font:600 var(--fs)/${LH} ${FONT}}
@@ -64,21 +108,13 @@
 canvas{position:absolute;left:0;top:0;pointer-events:none}
 .g,.p{position:absolute;inset:0}
 .p{pointer-events:auto;touch-action:none;cursor:crosshair}
-.bar{position:absolute;left:0;top:0;cursor:grab;display:flex;align-items:center;gap:2px;padding:4px;box-sizing:border-box;border:1px solid #0000001f;border-radius:12px;box-shadow:0 6px 24px #0003,inset 0 1px 0 #ffffff99;pointer-events:auto;touch-action:none;will-change:transform}
-.bar::before{--gr:11px;content:"";position:absolute;inset:calc(var(--gm) * -1);padding:var(--gm);z-index:-1;background:rgb(250 250 252 / .8);-webkit-backdrop-filter:blur(18px) saturate(2);backdrop-filter:blur(18px) saturate(2);pointer-events:none;-webkit-mask:${GMASK};mask:${GMASK}}
+.bar{position:absolute;left:0;top:0;cursor:grab;display:flex;align-items:center;box-sizing:border-box;pointer-events:auto;touch-action:none;will-change:transform}
 .bar.drag,.bar.drag *{cursor:grabbing}
-.b{all:unset;box-sizing:border-box;flex:none;width:30px;height:30px;display:grid;place-items:center;border-radius:8px;cursor:pointer;color:inherit}
-.b:hover{background:#0000000f}.b:active{background:#0000001c}
-.b.on{background:#3d7cff;color:#fff}.b.on:hover,.b.on:active{background:#2f6bea}
-.b:disabled{opacity:.3;cursor:default;background:none}
-.b:focus-visible{outline:2px solid #3d7cff;outline-offset:-2px}
-
-.gap{flex:none;width:6px}
-.dot{width:18px;height:18px;border-radius:50%;background:var(--c);box-shadow:0 0 0 1px #0000003a}
-svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.b{all:unset;box-sizing:border-box;flex:none;display:grid;place-items:center;cursor:pointer}
+.b:disabled{cursor:default}
+svg{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round;pointer-events:none;overflow:visible}
 .tx{all:unset;position:absolute;box-sizing:content-box;padding:${TA_PAD}px;white-space:pre;overflow:hidden;resize:none;pointer-events:auto;cursor:text;color:var(--c);caret-color:var(--c);font:600 var(--fs)/${LH} ${FONT};outline:1px dashed #3d7cffb0;outline-offset:${5 - TA_PAD}px;-webkit-user-select:text;user-select:text}
-@media (pointer:coarse){.b{width:38px;height:38px}}
-`;
+` + D3CSS;
 
   // ---------- DOM ヘルパ（innerHTML を使わないので Trusted Types 強制ページでも動く） ----------
   const el = (tag, cls, attrs) => {
@@ -87,12 +123,17 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (attrs) for (const k in attrs) e.setAttribute(k, attrs[k]);
     return e;
   };
+  // d が配列なら、パスを分けて置く（最初のパスは .tl。全消去のふたを動かすため）
   const icon = d => {
-    const s = doc.createElementNS(SVGNS, 'svg'), p = doc.createElementNS(SVGNS, 'path');
+    const s = doc.createElementNS(SVGNS, 'svg');
     s.setAttribute('viewBox', '0 0 24 24');
     s.setAttribute('aria-hidden', 'true');
-    p.setAttribute('d', d);
-    s.append(p);
+    for (const x of [].concat(d)) {
+      const p = doc.createElementNS(SVGNS, 'path');
+      p.setAttribute('d', x);
+      if (Array.isArray(d) && x === d[0]) p.setAttribute('class', 'tl');
+      s.append(p);
+    }
     return s;
   };
   const btn = (title, d, fn, cls) => {
@@ -141,7 +182,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const sbox = el('div', 's');
   sroot.append(sbox);
 
-  const wrap = el('div', 'w', { tabindex: '-1' });
+  const wrap = el('div', 'w d3', { tabindex: '-1' });
   const layer = cls => {
     const c = el('canvas', cls);
     return [c, c.getContext('2d', CTX_OPT)];
@@ -234,14 +275,40 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     setColor(COLORS[(COLORS.indexOf(color) + 1) % COLORS.length]);
     if (tool === 'eraser') setTool('pen');
   });
-  const colorD = el('span', 'dot');
-  colorB.append(colorD);
+  // 色の輪: 4 色を時計回りに並べ、今の色を上（濃い所）に置く。押すたびに 1 色分だけ回る。中の丸が今の色
+  // 弧は SVG の円の破線（端は丸い）。下に少し太い縁を敷いて、白い弧も見えるようにする
+  const dialD = el('span', 'dial'), colorD = el('span', 'dot');
+  {
+    const s = doc.createElementNS(SVGNS, 'svg'), n = COLORS.length, C = 2 * PI * 10, len = C / n - 4.6;
+    s.setAttribute('viewBox', '0 0 24 24');
+    s.setAttribute('aria-hidden', 'true');
+    for (const ol of [1, 0]) COLORS.forEach((c, i) => {
+      const a = doc.createElementNS(SVGNS, 'circle');
+      for (const [k, v] of [['cx', 12], ['cy', 12], ['r', 10], ['stroke', c], ['stroke-width', ol ? 3.6 : 2.6],
+        ['stroke-dasharray', `${len} ${C}`], ['transform', `rotate(${-90 + i * 360 / n - len / C * 180} 12 12)`]]) a.setAttribute(k, v);
+      if (ol) a.setAttribute('class', 'ol');
+      s.append(a);
+    });
+    dialD.append(s);
+  }
+  colorB.append(dialD, colorD);
   const undoB = btn('元に戻す', I.undo, undo);
   const trashB = btn('全消去（元に戻せます）', I.trash, clearAll);
   // 閉じる（×）の見た目だが、中身は隠す: 絵は残り、ブックマークレットを押すとそのまま戻る。お知らせは出さない
-  const hideB = btn('閉じる — ブックマークレットを再度押すと、絵もそのまま再表示', I.close, hide);
+  const hideB = btn('閉じる — ブックマークレットを再度押すと、絵もそのまま再表示', I.close, hide, 'x');
+  // 選んでいる道具の下に敷く丸（今の色。消しゴムは灰色）。道具を替えると、ばねで次のボタンへ動く
+  const ind = el('div', 'ind');
   // 区切り線ではなく、間隔で分ける
-  bar.append(penB, textB, colorB, el('div', 'gap'), undoB, trashB, el('div', 'gap'), hideB);
+  bar.append(ind, penB, textB, colorB, el('div', 'gap'), undoB, trashB, el('div', 'gap'), hideB);
+  [penB, textB, colorB, undoB, trashB, hideB].forEach((b, i) => b.style.setProperty('--i', i));
+  // 押したときの小さな動き（WAAPI。動きを減らす設定なら動かさない）
+  const RM = win.matchMedia && win.matchMedia('(prefers-reduced-motion: reduce)');
+  const anim = (e, kf, ms, ease) => { if (e && e.animate && !(RM && RM.matches)) e.animate(kf, { duration: ms, easing: ease || D3_BOUNCE }); };
+  undoB.addEventListener('click', () => anim(undoB.firstChild, { rotate: ['0deg', '-50deg', '0deg'] }, 500, D3_SPRING));
+  trashB.addEventListener('click', () => {
+    anim(trashB.querySelector('.tl'), { rotate: ['0deg', '-24deg', '6deg', '0deg'], translate: ['0 0', '0 -1.5px', '0 0', '0 0'] }, 520, 'ease-out');
+    anim(trashB.firstChild, { rotate: ['0deg', '-7deg', '6deg', '-3deg', '0deg'] }, 460, 'ease-out');
+  });
 
   // ボタンがフォーカスを奪うと Space/Enter で誤作動するため、クリックでのフォーカス移動を抑止
   bar.addEventListener('pointerdown', e => { if (e.target.closest('.b')) e.preventDefault(); });
@@ -299,26 +366,65 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     syncTool();
   }
   // ペンのボタンは、消しゴムのときは消しゴムの印と名前にし、ペンか消しゴムのとき選んだ見た目にする
+  let indAt = null, wasEr = null;
+  // 暗いページでは暗いガラスにする（html か body の地の色。地がなければ color-scheme）
+  function pageDark() {
+    for (const e of [doc.body, doc.documentElement]) {
+      const m = e && getComputedStyle(e).backgroundColor.match(/[\d.]+/g);
+      if (m && m.length > 2 && (m.length < 4 || +m[3] > .5)) return .2126 * m[0] + .7152 * m[1] + .0722 * m[2] < 110;
+    }
+    return /dark/.test(getComputedStyle(doc.documentElement).colorScheme) && !!(win.matchMedia && win.matchMedia('(prefers-color-scheme: dark)').matches);
+  }
+  // 敷く丸を、選んでいるボタンの位置へ（初めはそのまま置き、それからはばねで動かす）
+  function placeInd() {
+    if (!visible) return; // 隠している間は位置を測れないので、show で置く
+    const b = tool === 'text' ? textB : penB;
+    ind.style.translate = `${b.offsetLeft}px ${b.offsetTop}px`;
+    if (indAt && indAt !== b) anim(ind, { scale: ['1 1', '1.28 .84', '1 1'] }, 520, 'cubic-bezier(.3,.7,.4,1)');
+    if (!indAt) requestAnimationFrame(() => bar.classList.add('rd'));
+    indAt = b;
+  }
   function syncTool() {
     const er = tool === 'eraser', t = er ? '消しゴム' : 'ペン';
     penD.setAttribute('d', er ? I.eraser : I.pen);
+    if (wasEr !== null && wasEr !== er) anim(penB.firstChild, { rotate: [er ? '-90deg' : '90deg', '0deg'], scale: [.4, 1], opacity: [0, 1] }, 560);
+    wasEr = er;
+    bar.classList.toggle('er', er);
+    placeInd();
     penB.title = t;
     penB.setAttribute('aria-label', t);
     penB.classList.toggle('on', tool !== 'text');
     textB.classList.toggle('on', tool === 'text');
     // カーソル画像は OS/コンポジタが描くので遅延ゼロ（DOM で追従させるとフレーム遅れが出る）
+    syncCur();
+  }
+  // ペンのカーソルは今の色で塗った丸（線の太さ）、消しゴムは消える範囲の輪
+  function syncCur() {
     let cur = 'text';
     if (tool !== 'text') {
-      const d = er ? ERASER_W : PEN_W, s = d + 4, m = s / 2, r = d / 2;
-      const svg = `<svg xmlns="${SVGNS}" width="${s}" height="${s}"><circle cx="${m}" cy="${m}" r="${r}" fill="none" stroke="#000" stroke-opacity=".75" stroke-width="1.5"/><circle cx="${m}" cy="${m}" r="${max(r - 1.25, 0.5)}" fill="none" stroke="#fff" stroke-opacity=".9"/></svg>`;
+      const er = tool === 'eraser', d = er ? ERASER_W : PEN_W, s = d + 6, m = s / 2, r = d / 2;
+      const svg = er
+        ? `<svg xmlns="${SVGNS}" width="${s}" height="${s}"><circle cx="${m}" cy="${m}" r="${r}" fill="#fff" fill-opacity=".18" stroke="#000" stroke-opacity=".7" stroke-width="1.5"/><circle cx="${m}" cy="${m}" r="${r - 1.25}" fill="none" stroke="#fff" stroke-opacity=".9"/></svg>`
+        : `<svg xmlns="${SVGNS}" width="${s}" height="${s}"><circle cx="${m}" cy="${m}" r="${r + 1.5}" fill="#000" fill-opacity=".5"/><circle cx="${m}" cy="${m}" r="${r + .75}" fill="#fff"/><circle cx="${m}" cy="${m}" r="${r}" fill="${color}"/></svg>`;
       cur = `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${m | 0} ${m | 0},crosshair`;
     }
     pad.style.cursor = cur;
   }
+  let dialK = -1;
   function setColor(c) {
     color = c.toLowerCase();
     const i = COLORS.indexOf(color);
     colorD.style.setProperty('--c', color);
+    bar.style.setProperty('--ink', color);
+    bar.classList.toggle('wh', color === '#ffffff');
+    // 輪は前へだけ回す（白から赤へも、同じ向きに 1 色分）
+    if (i >= 0) {
+      const n = COLORS.length, k = dialK < 0 ? i : dialK + ((i - dialK % n + n) % n);
+      dialD.style.setProperty('--r', `${-k * 360 / n}deg`);
+      if (dialK >= 0 && k !== dialK) anim(colorD, { scale: [.35, 1] }, 520);
+      dialK = k;
+    }
+    syncCur();
     colorB.title = `色（${COLOR_N[i] || '今の色'}）— 押すと${COLOR_N[(i + 1) % COLORS.length]}に`;
     colorB.setAttribute('aria-label', colorB.title);
     if (ta) { taC = color; styleTa(); }
@@ -1290,6 +1396,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     topLayer();
     win.addEventListener('resize', onResize);
     fit();
+    wrap.classList.toggle('dk', pageDark());
+    placeInd();
     wrap.focus({ preventScroll: true });
   }
   function hide() {

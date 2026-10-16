@@ -30,8 +30,15 @@ export async function startServer() {
   return { srv, base: `http://localhost:${srv.address().port}` };
 }
 
+// チェックポイント 3 のデザイン（T-085）は、出るときにバーとボタンが拡大しながら現れる。押す位置が動かないように、
+// テストのページは既定で「動きを減らす」で開く（動きは reducedMotion: 'no-preference' で開いて確かめる）
 export async function launch() {
-  return chromium.launch();
+  const b = await chromium.launch();
+  for (const k of ['newPage', 'newContext']) {
+    const f = b[k].bind(b);
+    b[k] = (o = {}) => f({ reducedMotion: 'reduce', ...o });
+  }
+  return b;
 }
 
 export async function openPage(browser, url, viewport = { width: 1000, height: 700 }) {

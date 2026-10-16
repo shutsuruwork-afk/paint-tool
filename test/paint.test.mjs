@@ -181,6 +181,27 @@ test('シンプル版: ツールバーはペン・消しゴム・色と太さ・
   const b = await bar(page);
   assert.deepEqual(b.titles, want);
   assert.equal(b.tops.length, 1);
+  // 選んでいるペン・消しゴムをもう一度押すと、選択が外れてページ操作モードになる（種類のパネルは出ない）。もう一度押すと描画に戻る（T-073）
+  const st = page => shadowEval(page, root => ({
+    pass: !!root.querySelector('.pass'), on: [...root.querySelectorAll('.bar > .b.on')].map(b => b.title.split(/[ （(]/)[0]),
+    panel: [...root.querySelectorAll('.pn')].some(p => getComputedStyle(p).display !== 'none'),
+  }));
+  const onPage = () => page.evaluate(() => document.elementFromPoint(500, 400).tagName !== 'PAINT-BOOKMARKLET');
+  assert.deepEqual(await st(page), { pass: false, on: ['ペン'], panel: false });
+  assert.equal(await onPage(), false);
+  await mouseClick(page, '.bar > [aria-label^="ペン"]');
+  assert.deepEqual(await st(page), { pass: true, on: [], panel: false });
+  assert.equal(await onPage(), true, 'the page gets the clicks');
+  await mouseClick(page, '.bar > [aria-label^="ペン"]');
+  assert.deepEqual(await st(page), { pass: false, on: ['ペン'], panel: false });
+  await mouseClick(page, '.bar > [aria-label^="消しゴム"]');
+  assert.deepEqual(await st(page), { pass: false, on: ['消しゴム'], panel: false });
+  await mouseClick(page, '.bar > [aria-label^="消しゴム"]');
+  assert.deepEqual(await st(page), { pass: true, on: [], panel: false });
+  await mouseClick(page, '.bar > [aria-label^="ペン"]');
+  assert.deepEqual(await st(page), { pass: false, on: ['ペン'], panel: false });
+  await drag(page, [[300, 300], [400, 320]]);
+  assert.equal(await page.evaluate(() => window.__paintBookmarklet.stats().history), 1, 'draws again with the pen');
   // ほかの道具もショートカットで選べる
   await page.keyboard.press('s');
   assert.equal((await page.evaluate(() => window.__paintBookmarklet.stats().prefs.tool)), 'select');
@@ -1413,7 +1434,7 @@ const timedStroke = (page, pts, gap) => page.evaluate(async ([pts, gap]) => {
 const line = (x0, y0, x1, y1, n) => Array.from({ length: n + 1 }, (_, i) => [x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n]);
 
 test('ペンの種類: ペンでないときは押してもペンになるだけ、ペンのときにもう一度押すと種類のパネル。万年筆は向き・筆は速さで太さが変わり、鉛筆はかすれる', async () => {
-  const { page, errors } = await fresh();
+  const { page, errors } = await freshFull();
   await page.keyboard.press('h');
   await mouseClick(page, '.bar > [aria-label^="ペン"]');
   assert.match(await toolOn(page), /^ペン/);

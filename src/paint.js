@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.27.0-simple.2';
+  const VERSION = '1.27.0-simple.3';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -433,15 +433,18 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // ペン: ペンでないときに押すとペンになる。ペンのときにもう一度押すと、種類のパネルが開く（pickOnce なら 1 回目から開く）。
   // ページ操作モードのときは、ペンのままでも押せば描画に戻り、パネルも普段と同じに開く（T-057・T-062）
   const penP = pnl();
+  // シンプル版（T-073）: 選んでいるペン・消しゴムをもう一度押すと、選択が外れてページ操作モードになる（種類のパネルは出さない）。
+  // ページ操作モードで押すと、その道具で描画に戻る。fullBar なら本家と同じ（ペンは種類のパネル）
   const penB = btn(TITLES.pen, I.pen, () => {
-    if (tool === 'pen') { if (pass) setTool('pen'); togglePanel(penP, penB); }
+    if (!fullBar) { if (tool === 'pen' && !pass) togglePass(); else setTool('pen'); }
+    else if (tool === 'pen') { if (pass) setTool('pen'); togglePanel(penP, penB); }
     else { setTool('pen'); if (pickOnce) openPanel(penP, penB); }
   }, 'dd');
   const penD = penB.querySelector('path');
   toolBtns.pen = penB;
   const penBtns = {};
   penP.append(row(...PENS.map(k => penBtns[k] = btn(PEN_TITLES[k], I[k === 'pen' ? 'pen' : k], () => { setPen(k); closePanel(); }))));
-  for (const t of ['marker', 'eraser']) toolBtns[t] = btn(TITLES[t], I[t], () => setTool(t));
+  for (const t of ['marker', 'eraser']) toolBtns[t] = btn(TITLES[t], I[t], () => { if (!fullBar && t === 'eraser' && tool === t && !pass) togglePass(); else setTool(t); });
   // 図形: 最後に使った図形を表示する。押すとその図形になり、図形のときにもう一度押すと 4 つの図形のパネルが開く（ペンと同じ）
   let lastShape = 'line';
   const shapeP = pnl();
@@ -718,7 +721,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     remember();
   }
   function syncTool(fromSlider) {
-    for (const k in toolBtns) toolBtns[k].classList.toggle('on', k === tool);
+    for (const k in toolBtns) toolBtns[k].classList.toggle('on', k === tool && (fullBar || !pass));
     const shape = SHAPES.includes(tool);
     if (shape && lastShape !== tool) {
       lastShape = tool;
@@ -836,7 +839,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     pass = !pass;
     wrap.classList.toggle('pass', pass);
     passB.classList.toggle('on', pass);
-    say(pass ? 'ページ操作モード（V で描画に戻る）' : '描画モード');
+    // シンプル版はバーにページ操作のボタンがないので、ページ操作の間は道具のボタンの選択を外して見せる（T-073）
+    if (!fullBar) for (const k in toolBtns) toolBtns[k].classList.toggle('on', k === tool && !pass);
+    say(pass ? (fullBar ? 'ページ操作モード（V で描画に戻る）' : 'ページ操作モード（ペンか消しゴムで描画に戻る）') : '描画モード');
   }
   // カーソル画像は OS/コンポジタが描くので遅延ゼロ（DOM で追従させるとフレーム遅れが出る）
   function updateCursor() {

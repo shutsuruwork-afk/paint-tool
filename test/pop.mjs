@@ -1,5 +1,5 @@
 // 蛍光ペンの先端の「ぴょこぴょこ」を測る（T-055）。
-// 入力ごとに見えている画素（live ∪ pred）を取り、前の入力で見えていて次の入力で消えた画素を数える（一度描いた所は消えないのが理想）。
+// 入力ごとに見えている画素（live と pred を重ねた濃さ × まとめた要素の opacity が 4 を超える所）を取り、前の入力で見えていて次の入力で消えた画素を数える（一度描いた所は消えないのが理想）。
 // あわせて、16 ms・33 ms 後のペン先から線までの隙間（予測で埋めたい遅れ）を測る。
 // 合成のイベントに 8 ms 刻みの timeStamp を与える（計測にかかる時間で速さが狂わないように）。座標は整数、時間は ±1.5 ms ぶらす
 import { CODE, startServer, launch, withDefaults } from './helpers.mjs';
@@ -14,7 +14,7 @@ for (const mpred of ['need', 'off', 'full']) {
     (0, eval)(code);
     await new Promise(r => setTimeout(r, 200));
     const api = window.__paintBookmarklet, root = document.querySelector('paint-bookmarklet').shadowRoot;
-    const pad = root.querySelector('.p'), lv = root.querySelector('canvas.l'), pr = root.querySelector('canvas.q');
+    const pad = root.querySelector('.p'), lv = root.querySelector('canvas.l'), pr = root.querySelector('canvas.q'), grp = root.querySelector('.g');
     const DT = 8;
     const arc = (v, r, ms) => { const pts = []; for (let t = 0; t <= ms; t += DT) { const a = (v * t / 1000) / r; pts.push([500 + r * Math.sin(a), 400 - r * Math.cos(a)]); } return pts; };
     const zigzag = v => {
@@ -39,8 +39,8 @@ for (const mpred of ['need', 'off', 'full']) {
     };
     const X0 = 150, Y0 = 100, WW = 650, HH = 650;
     const mask = () => {
-      const a = lv.getContext('2d').getImageData(X0, Y0, WW, HH).data, c = pr.getContext('2d').getImageData(X0, Y0, WW, HH).data, m = new Uint8Array(WW * HH);
-      for (let i = 0, j = 3; i < m.length; i++, j += 4) m[i] = a[j] > 10 || c[j] > 10 ? 1 : 0;
+      const a = lv.getContext('2d').getImageData(X0, Y0, WW, HH).data, c = pr.getContext('2d').getImageData(X0, Y0, WW, HH).data, m = new Uint8Array(WW * HH), g = +(grp.style.opacity || 1);
+      for (let i = 0, j = 3; i < m.length; i++, j += 4) m[i] = (a[j] + c[j] * (1 - a[j] / 255)) * g > 4 ? 1 : 0;
       return m;
     };
     const gap = (m, x, y) => {
@@ -69,8 +69,8 @@ for (const mpred of ['need', 'off', 'full']) {
       out[name] = [lost / n, g16 / n, g33 / n];
     }
     return out;
-  }, withDefaults(CODE, { mpred }));
-  console.log(`\n■ 蛍光ペンの予測: ${mpred}（太さ 24px、1x）`);
+  }, withDefaults(CODE, { mpred, ...(process.env.BLEND ? { blend: process.env.BLEND } : {}) }));
+  console.log(`\n■ 蛍光ペンの予測: ${mpred}（太さ 24px、1x${process.env.BLEND ? '、半透明の線の描き方: ' + process.env.BLEND : ''}）`);
   console.log('  経路（速さ）           消える画素/入力  16 ms 後の隙間  33 ms 後の隙間');
   for (const [k, [l, a, b]] of Object.entries(r)) console.log(`  ${k}  ${l.toFixed(1).padStart(12)}  ${a.toFixed(1).padStart(11)} px  ${b.toFixed(1).padStart(11)} px`);
 }

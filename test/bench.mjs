@@ -1,7 +1,10 @@
 // 性能計測。入力遅延に効くのは「メインスレッドを塞ぐ時間」なので、それを測る
 // （Chrome の Canvas 2D は描画命令を記録するだけで、ラスタライズは GPU プロセスで非同期に行われる）。
 // 比較対象として「毎イベントでパス全体を描き直す」素朴な実装も同じ入力で測る。
-import { CODE, startServer, launch } from './helpers.mjs';
+import { CODE as BASE, startServer, launch, withDefaults } from './helpers.mjs';
+
+// BLEND=group で、半透明の線を前の方式（まとめた要素の opacity）で描いたときと比べられる
+const CODE = process.env.BLEND ? withDefaults(BASE, { blend: process.env.BLEND }) : BASE;
 
 const N = Number(process.env.N || 3000);
 const { srv, base } = await startServer();
@@ -28,6 +31,8 @@ for (const dpr of [1, 2]) {
       '手書き風': i => [150 + i * 0.5 + Math.sin(i / 6) * 18, 500 + Math.cos(i / 9) * 30],
       '長い対角線': i => [100 + i * 0.55, 100 + i * 0.3],
       '密な塗り込み': i => [200 + (i * 0.5) % 1500, 300 + Math.sin(i / 40) * 250],
+      // 半透明（35%、太さ 24）。線の形を写しに描き、変わった所を live に写す（T-056）
+      '蛍光ペン': i => [150 + i * 0.5 + Math.sin(i / 6) * 18, 750 + Math.cos(i / 9) * 30],
     };
     // JIT が最適化を終えるまでの初回の揺らぎを除くため、計測しない準備ストロークを 1 本描く
     // （取り消すと次の確定で redo 履歴が解放され、履歴メモリの差分が狂うので残しておく）
@@ -37,6 +42,7 @@ for (const dpr of [1, 2]) {
     await frame();
     const strokes = [];
     for (const [name, f] of Object.entries(shapes)) {
+      api.tool(name === '蛍光ペン' ? 'marker' : 'pen');
       const pts = Array.from({ length: N }, (_, i) => f(i));
       const hp0 = api.stats().historyPixels;
       pad.dispatchEvent(ev('pointerdown', pts[0]));
@@ -62,7 +68,7 @@ for (const dpr of [1, 2]) {
       api.redo();
       api.pixels(0, 0, innerWidth, innerHeight);
       await frame();
-      const xs = pts.map(p => p[0] * devicePixelRatio), ys = pts.map(p => p[1] * devicePixelRatio), w = 4 * devicePixelRatio + 4;
+      const xs = pts.map(p => p[0] * devicePixelRatio), ys = pts.map(p => p[1] * devicePixelRatio), w = (name === '蛍光ペン' ? 24 : 4) * devicePixelRatio + 4;
       const bbox = (Math.max(...xs) - Math.min(...xs) + w) * (Math.max(...ys) - Math.min(...ys) + w);
       strokes.push({ name, move, commit, undo, tilesPx: api.stats().historyPixels - hp0, bbox });
     }
@@ -85,7 +91,7 @@ for (const dpr of [1, 2]) {
     }
     const naive = (performance.now() - t) / N * 1000;
 
-    // 3 本のストロークが残った状態で、その周囲（ほぼ全画面）を塗りつぶす
+    // 4 本のストロークが残った状態で、その周囲（ほぼ全画面）を塗りつぶす
     api.tool('fill');
     api.pixels(0, 0, innerWidth, innerHeight);
     await frame();

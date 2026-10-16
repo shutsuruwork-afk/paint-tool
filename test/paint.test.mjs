@@ -310,21 +310,26 @@ test('見た目（開発用）: インストールページの開発用を入れ
   assert.equal((await prefs(page)).theme, '#ffd54f');
   // 蛍光ペンの予測を切り替える（既定は必要な分だけ）
   const mpOn = () => shadowEval(page, root => [...root.querySelectorAll('.pn.on .sg')].filter(b => b.classList.contains('on')).map(b => b.textContent));
-  assert.deepEqual(await mpOn(), ['必要な分だけ']);
+  assert.deepEqual(await mpOn(), ['必要な分だけ', 'キャンバスの中で']);
   await mouseClick(page, '.pn.on [aria-label="蛍光ペンの予測: なし"]');
-  assert.deepEqual(await mpOn(), ['なし']);
+  assert.deepEqual(await mpOn(), ['なし', 'キャンバスの中で']);
   assert.equal((await prefs(page)).mpred, 'off');
+  // 半透明の線の描き方を前の方式（まとめて）にすると、蛍光ペンを選んだ時点でまとめた要素に濃さがかかる
+  await mouseClick(page, '.pn.on [aria-label="半透明の線の描き方: まとめて"]');
+  assert.deepEqual(await mpOn(), ['なし', 'まとめて']);
+  assert.equal((await prefs(page)).blend, 'group');
   // この見た目をデフォルトに: 見た目を持ってインストールページを開く
   await page.evaluate(() => { window.__opened = []; window.open = (...a) => { window.__opened.push(a); return null; }; });
   await mouseClick(page, '.pn.on [aria-label^="この見た目をデフォルトに"]');
   const [url] = (await page.evaluate(() => window.__opened))[0];
   const d = JSON.parse(decodeURIComponent(url.slice(url.indexOf('#defaults=') + 10)));
-  assert.deepEqual([d.dev, d.theme, d.glass, d.blur, d.mpred], [true, '#ffd54f', false, 8, 'off']);
+  assert.deepEqual([d.dev, d.theme, d.glass, d.blur, d.mpred, d.blend], [true, '#ffd54f', false, 8, 'off', 'group']);
   const { page: ip, errors: ie } = await openPage(browser, server.base + '/install' + url.slice(url.indexOf('#')));
   assert.equal(await ip.isChecked('#p-theme input[value="custom"]'), true);
   assert.equal(await ip.inputValue('#p-tcolor'), '#ffd54f');
   assert.equal(await ip.inputValue('#p-blur'), '8');
   assert.equal(await ip.isChecked('#p-mpred input[value="off"]'), true);
+  assert.equal(await ip.isChecked('#p-blend input[value="group"]'), true);
   assert.equal(await ip.isChecked('#p-dev'), true);
   assert.deepEqual(ie, []);
   await ip.close();
@@ -1023,6 +1028,7 @@ test('インストールページで選んだ設定入りのブックマーク�
   assert.equal(String(p0.tint), await page.inputValue('#p-tint'));
   assert.equal(p0.dev, await page.isChecked('#p-dev'));
   assert.equal(p0.mpred, await page.evaluate(() => document.querySelector('#p-mpred input:checked').value));
+  assert.equal(p0.blend, await page.evaluate(() => document.querySelector('#p-blend input:checked').value));
   await page.evaluate(() => window.__paintBookmarklet.destroy());
   // 選ぶと、ボタンの中身が変わる
   await page.click('[aria-label="色 7"]');
@@ -1326,10 +1332,11 @@ test('蛍光ペン: ゆっくり〜ふつうの速さで曲線を描いても、
   const { page, errors } = await fresh();
   const lost = await page.evaluate(() => {
     const api = window.__paintBookmarklet, root = document.querySelector('paint-bookmarklet').shadowRoot;
-    const pad = root.querySelector('.p'), lv = root.querySelector('canvas.l'), pr = root.querySelector('canvas.q');
+    const pad = root.querySelector('.p'), lv = root.querySelector('canvas.l'), pr = root.querySelector('canvas.q'), grp = root.querySelector('.g');
     const ev = (type, x, y, ts, extra) => { const e = new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, pointerId: 9, pointerType: 'mouse', isPrimary: true, clientX: x, clientY: y, button: type === 'pointermove' ? -1 : 0, buttons: 1, ...extra }); Object.defineProperty(e, 'timeStamp', { value: ts }); return e; };
     const k = devicePixelRatio, X0 = 300 * k, Y0 = 200 * k, WW = 400 * k, HH = 300 * k;
-    const mask = () => { const a = lv.getContext('2d').getImageData(X0, Y0, WW, HH).data, c = pr.getContext('2d').getImageData(X0, Y0, WW, HH).data; const m = new Uint8Array(WW * HH); for (let i = 0, j = 3; i < m.length; i++, j += 4) m[i] = a[j] > 10 || c[j] > 10 ? 1 : 0; return m; };
+    // 見えている画素: live と pred を重ねた濃さ（まとめた要素の opacity も掛ける）が 4 を超える所
+    const mask = () => { const a = lv.getContext('2d').getImageData(X0, Y0, WW, HH).data, c = pr.getContext('2d').getImageData(X0, Y0, WW, HH).data, g = +(grp.style.opacity || 1); const m = new Uint8Array(WW * HH); for (let i = 0, j = 3; i < m.length; i++, j += 4) m[i] = (a[j] + c[j] * (1 - a[j] / 255)) * g > 4 ? 1 : 0; return m; };
     const out = {};
     api.tool('marker');
     // 速さ 150 px/s と 600 px/s で半径 100px の弧。入力は 8 ms ごと（±1.5 ms ぶれる）、座標は整数
@@ -1777,27 +1784,88 @@ test('html に position や margin があるページでも、画面上の位置
   await page.close();
 });
 
-test('確定の瞬間にちらつかない（live は隠してから 2 フレーム後に消す）、半透明の濃さは押す前に合わせてある', async () => {
-  const { page } = await fresh('/');
-  await page.keyboard.press('h'); // 蛍光ペン（35%）
-  const r = await shadowEval(page, async root => {
-    const grp = root.querySelector('.g'), live = root.querySelector('canvas.l'), pad = root.querySelector('.p');
-    const before = grp.style.opacity;
-    const ev = (type, x) => new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, pointerId: 5, pointerType: 'mouse', isPrimary: true, clientX: x, clientY: 300, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1 });
-    pad.dispatchEvent(ev('pointerdown', 100));
-    for (let x = 110; x <= 400; x += 10) pad.dispatchEvent(ev('pointermove', x));
-    pad.dispatchEvent(ev('pointerup', 400));
-    const alpha = () => live.getContext('2d').getImageData(250, 300, 1, 1).data[3];
-    const atUp = { opacity: grp.style.opacity, live: alpha(), surface: window.__paintBookmarklet.pixels(250, 300, 1, 1).data[3] };
-    for (let i = 0; i < 3; i++) await new Promise(r => requestAnimationFrame(r));
-    return { before, atUp, after: { opacity: grp.style.opacity, live: alpha() } };
-  });
-  assert.equal(r.before, '0.35', 'opacity set when the tool was chosen');
-  assert.equal(r.atUp.opacity, '0', 'live hidden at commit');
-  assert.ok(r.atUp.live > 200 && r.atUp.surface > 80, 'stroke on both layers at the moment of commit');
-  assert.equal(r.after.live, 0, 'live cleared after frames');
-  assert.equal(r.after.opacity, '0.35', 'opacity restored');
-  await page.close();
+test('確定の瞬間にちらつかない（live は隠してから 2 フレーム後に消す）。半透明の濃さは canvas の中で付ける（前の方式では押す前に合わせてある）', async () => {
+  for (const blend of ['canvas', 'group']) {
+    const { page } = await openPage(browser, server.base + '/');
+    await runCode(page, withDefaults(CODE, { blend }));
+    await page.keyboard.press('h'); // 蛍光ペン（35%）
+    const r = await shadowEval(page, async root => {
+      const grp = root.querySelector('.g'), live = root.querySelector('canvas.l'), pad = root.querySelector('.p');
+      const op = () => grp.style.opacity || '1';
+      const before = op();
+      const ev = (type, x) => new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, pointerId: 5, pointerType: 'mouse', isPrimary: true, clientX: x, clientY: 300, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1 });
+      const alpha = () => live.getContext('2d').getImageData(250, 300, 1, 1).data[3];
+      pad.dispatchEvent(ev('pointerdown', 100));
+      for (let x = 110; x <= 400; x += 10) pad.dispatchEvent(ev('pointermove', x));
+      const during = { opacity: op(), live: alpha() };
+      pad.dispatchEvent(ev('pointerup', 400));
+      const atUp = { opacity: op(), live: alpha(), surface: window.__paintBookmarklet.pixels(250, 300, 1, 1).data[3] };
+      for (let i = 0; i < 3; i++) await new Promise(r => requestAnimationFrame(r));
+      return { before, during, atUp, after: { opacity: op(), live: alpha() } };
+    });
+    const a = blend === 'canvas' ? '1' : '0.35';
+    assert.equal(r.before, a, blend + ': opacity set when the tool was chosen');
+    assert.equal(r.during.opacity, a, blend + ': opacity while drawing');
+    // canvas の方式は live に線の濃さ（35% ≈ 89）で、前の方式は不透明で描く
+    assert.ok(blend === 'canvas' ? Math.abs(r.during.live - 89) <= 2 : r.during.live > 200, blend + ': live alpha ' + r.during.live);
+    assert.equal(r.atUp.opacity, '0', blend + ': live hidden at commit');
+    assert.ok(r.atUp.live > 80 && r.atUp.surface > 80, blend + ': stroke on both layers at the moment of commit');
+    assert.equal(r.after.live, 0, blend + ': live cleared after frames');
+    assert.equal(r.after.opacity, a, blend + ': opacity restored');
+    await page.close();
+  }
+});
+
+test('半透明の線は、描いている途中も重なった所が濃くならず（まとめた要素の opacity は 1）、確定した絵は前の方式とほぼ同じ', async () => {
+  const run = (page, pen) => shadowEval(page, async (root, pen) => {
+    const api = window.__paintBookmarklet, pad = root.querySelector('.p'), lv = root.querySelector('canvas.l'), pr = root.querySelector('canvas.q'), grp = root.querySelector('.g');
+    api.clear(); api.tool(pen === 'marker' ? 'marker' : 'pen');
+    const ev = (type, x, y, ts) => { const e = new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, pointerId: 9, pointerType: 'mouse', isPrimary: true, clientX: x, clientY: y, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1 }); Object.defineProperty(e, 'timeStamp', { value: ts }); return e; };
+    // 自分と交わる線（途中で予測線も出るように、8 ms 刻みで速く動かす）
+    const cs = [[100, 300], [500, 300], [300, 150], [300, 450]], path = [];
+    for (let i = 0; i < cs.length - 1; i++) for (let k = 0; k < 20; k++) path.push([Math.round(cs[i][0] + (cs[i + 1][0] - cs[i][0]) * k / 20), Math.round(cs[i][1] + (cs[i + 1][1] - cs[i][1]) * k / 20)]);
+    path.push(cs.at(-1));
+    const T0 = performance.now() + 1000;
+    pad.dispatchEvent(ev('pointerdown', ...path[0], T0));
+    // 見えている濃さ（live と pred を重ねて、まとめた要素の opacity を掛ける）の最大と、線の濃さ（89）を 6 以上超えた画素の数（1 回の入力での最大）
+    let max = 0, over = 0, ops = new Set();
+    for (let k = 1; k < path.length; k++) {
+      pad.dispatchEvent(ev('pointermove', ...path[k], T0 + k * 8));
+      ops.add(grp.style.opacity || '1');
+      const a = lv.getContext('2d').getImageData(80, 130, 440, 340).data, b = pr.getContext('2d').getImageData(80, 130, 440, 340).data, g = +(grp.style.opacity || 1);
+      let o = 0;
+      for (let i = 3; i < a.length; i += 4) { const t = (a[i] + b[i] * (1 - a[i] / 255)) * g; if (t > max) max = t; if (t > 95) o++; }
+      over = Math.max(over, o);
+    }
+    pad.dispatchEvent(ev('pointerup', ...cs.at(-1), T0 + path.length * 8));
+    const d = api.pixels(80, 130, 440, 340).data, al = [];
+    for (let i = 3; i < d.length; i += 4) al.push(d[i]);
+    return { max: Math.round(max), over, ops: [...ops], al };
+  }, pen);
+  const res = {};
+  for (const blend of ['canvas', 'group']) {
+    const { page, errors } = await openPage(browser, server.base + '/');
+    await runCode(page, withDefaults(CODE, { blend, alpha: { pen: 0.35 }, size: { pen: 24 } }));
+    for (const pen of ['marker', 'pen', 'pencil']) {
+      if (pen === 'pencil') await shadowEval(page, root => root.querySelector('[aria-label^="鉛筆"]').click());
+      res[blend + ' ' + pen] = await run(page, pen);
+    }
+    assert.deepEqual(errors, []);
+    await page.close();
+  }
+  for (const pen of ['marker', 'pen', 'pencil']) {
+    const c = res['canvas ' + pen], g = res['group ' + pen];
+    assert.deepEqual(c.ops, ['1'], pen + ': group opacity stays 1');
+    assert.deepEqual(g.ops, ['0.35'], pen + ': old way uses group opacity');
+    // 重なった所が二重になると 0.35 + 0.35 × 0.65 ≈ 148 になる。縁のぼかしの数画素だけは少し超えてよい
+    assert.ok(c.max < 115 && c.over <= 20, pen + ': while drawing ' + JSON.stringify({ max: c.max, over: c.over }));
+    assert.ok(g.max <= 90, pen + ': old way while drawing ' + g.max);
+    // 確定した絵の濃さは、前の方式と 3 以内（8 ビットで足すときの丸め）
+    let n = 0, dmax = 0;
+    for (let i = 0; i < c.al.length; i++) { if (c.al[i]) n++; dmax = Math.max(dmax, Math.abs(c.al[i] - g.al[i])); }
+    assert.ok(n > 10000, pen + ': stroke committed');
+    assert.ok(dmax <= 3, pen + ': committed alpha differs from the old way by ' + dmax);
+  }
 });
 
 test('scroll / wheel のリスナーを登録しない（スクロール中に JS が動かない）', async () => {

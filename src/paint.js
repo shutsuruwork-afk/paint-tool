@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.22.0';
+  const VERSION = '1.23.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -266,7 +266,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const [liveC, lctx] = layer('l');
   const [predC, pctx] = layer('q');
   const DESYNC = !!(lctx.getContextAttributes && lctx.getContextAttributes().desynchronized);
-  // live と pred をまとめて不透明度をかける（重なり部分が二重に濃くならない）
+  // live と pred をまとめる。blend が 'group' のときは、まとめて不透明度をかける（重なり部分が二重に濃くならない）
   const grp = el('div', 'g');
   grp.append(liveC, predC);
   const pad = el('div', 'p');
@@ -297,6 +297,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 'off' は描かない、'full' はペンと同じ。蛍光ペンは太いので、そのまま描くと外れた予測（ぴょこぴょこ）が目立った。開発用のパネルでも切り替えられる
   const MPREDS = ['need', 'off', 'full'];
   let mpred = MPREDS.includes(DEF.mpred) ? DEF.mpred : 'need';
+  // 半透明の線の描き方（T-056）: 'canvas' は線の濃さを live の canvas の中で付ける（まとめた要素の opacity は 1 のまま。不透明の線と同じ経路）。
+  // 'group' は前の方式（不透明に描き、live と pred をまとめた要素に CSS の opacity）。半透明のときだけ先端がぴょこぴょこ見えていた（ユーザーが実機で確かめた）
+  const BLENDS = ['canvas', 'group'];
+  let blend = BLENDS.includes(DEF.blend) ? DEF.blend : 'canvas';
   function applyLook() {
     const t = look.theme, ws = wrap.style, cl = wrap.classList;
     let lite = t === 'light';
@@ -317,6 +321,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   applyLook();
   let dpr = win.devicePixelRatio || 1, W = 0, H = 0, grpA = 1, pendingFit = false, rz = 0, warmT = 0;
+  let rg = null, rbx = null, rn = 0; // 半透明の線の、描いた部分の形（addPiece）
   // 履歴タイル: ストロークが触れた T×T タイル（面の座標）だけを記録し、確定・undo・消しゴムの退避をその範囲に限定する。
   // 文書は大きいので、印は配列ではなく Set で持つ。番号は 行 × 65536 + 列
   const T = 128;
@@ -554,9 +559,20 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const mpR = el('div', 'r');
   mpR.append(mpL);
   lookP.append(mpR, row(...mpBs));
+  // 半透明の線の描き方を切り替えて見比べる（次に描く線から効く）
+  const blL = el('span');
+  blL.textContent = '半透明の線の描き方';
+  const blBs = [['canvas', 'キャンバスの中で'], ['group', 'まとめて']].map(([k, t]) => {
+    const b = btn(`半透明の線の描き方: ${t}`, null, () => { blend = k; liveAlpha(); syncLook(); }, 'sg');
+    b.textContent = t;
+    return b;
+  });
+  const blR = el('div', 'r');
+  blR.append(blL);
+  lookP.append(blR, row(...blBs));
   const toDefB = btn('この見た目をデフォルトにする — インストールページを開く（新しいタブ）', I.prefs, () => {
     closePanel();
-    openDefaults({ ...DEF, theme: look.theme, glass: look.glass, blurMode: look.blurMode, blur: look.blur, tint: look.tint, mpred });
+    openDefaults({ ...DEF, theme: look.theme, glass: look.glass, blurMode: look.blurMode, blur: look.blur, tint: look.tint, mpred, blend });
   }, 'mi');
   const toDefL = el('span');
   toDefL.textContent = 'この見た目をデフォルトに';
@@ -574,8 +590,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     blurR.value = look.blur; blurO.value = look.blur + 'px';
     tintR.value = look.tint; tintO.value = look.tint + '%';
     mpBs.forEach((b, i) => b.classList.toggle('on', MPREDS[i] === mpred));
+    blBs.forEach((b, i) => b.classList.toggle('on', BLENDS[i] === blend));
   }
-  if (dev) item('見た目（開発用） — ツールバーの色やガラス、蛍光ペンの予測をその場で変える', '見た目（開発用）', '', I.bg, () => openPanel(lookP, moreB));
+  if (dev) item('見た目（開発用） — ツールバーの色やガラス、蛍光ペンの予測、半透明の線の描き方をその場で変える', '見た目（開発用）', '', I.bg, () => openPanel(lookP, moreB));
   bar.append(undoB, redoB, sep(), passB, moreB, sep(),
     btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hideHint), btn('閉じる（8 秒間は元に戻せます）', I.close, close),
     shapeP, penP, styleP, moreP, lookP, lci);
@@ -703,10 +720,12 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     dot.classList.toggle('er', tool === 'eraser');
   }
   // live のグループの不透明度は、ツールや濃さを選んだ時点で合わせておく。押した瞬間に変えると、
-  // desynchronized の live の方が先に画面へ出て、半透明の線が最初の 1 フレームだけ濃く見える
+  // desynchronized の live の方が先に画面へ出て、半透明の線が最初の 1 フレームだけ濃く見える。
+  // blend が 'canvas' なら濃さは canvas の中で付けるので 1 のまま。半透明のペンを選んだら、描いた部分の形を覚える場所を用意しておく
   function liveAlpha() {
-    const a = tool === 'eraser' || tool === 'fill' || tool === 'select' ? 1 : CFG[tool].alpha;
-    if (grpA !== a && !handoff) { grp.style.opacity = a; grpA = a; }
+    const a = tool === 'eraser' || tool === 'fill' || tool === 'select' ? 1 : CFG[tool].alpha, cv = blend === 'canvas', g = cv ? 1 : a;
+    if (cv && a < 1 && (tool === 'pen' || tool === 'marker')) ensureR();
+    if (grpA !== g && !handoff) { grp.style.opacity = g; grpA = g; }
   }
   function setPen(k) {
     penType = k;
@@ -1011,6 +1030,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   let sPen = 0, pf = 1, sDist = 0; // ペンの種類（PENS の番号）と、万年筆・筆の太さの係数、書き始めからの距離
   // 予測線を描くか（蛍光ペンは mpred で決める）、点と点を直線でつなぐか（蛍光ペン。描いた所が後から変わらない）、必要な分だけ予測するか（T-055）
   let sPd = true, sPoly = false, sNeed = false;
+  let sTr = false, sCa = 1, inkS = ''; // 半透明の線を canvas の中で濃さにするか（T-056）、確定で面に合成するときの濃さ、線の色（鉛筆は模様）
   let pvx = 0, pvy = 0, om = 0, fi = 16.7; // 直前の区間の速度、向きの変わる速さ（rad/ms）、1 フレームの長さ（ms。tick で測る）
   let bx = 0, by = 0, bw = 0, mx = 0, my = 0, ps = 1, lt = 0, lastPen = -1e9;
   let x0 = 0, y0 = 0, x1 = 0, y1 = 0, mW = 0; // ストロークの外接矩形
@@ -1086,6 +1106,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     bx = mx = sx = cx = x0 = x1 = x;
     by = my = sy = cy = y0 = y1 = y;
     try { pad.setPointerCapture(act); } catch (_) { }
+    sTr = false;
 
     if (t === 'eraser') {
       mode = 2;
@@ -1095,11 +1116,16 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       ePts[0] = x * sk + sox; ePts[1] = y * sk + soy;
       erasePts(1);
     } else {
-      if (grpA !== sA) { grp.style.opacity = sA; grpA = sA; }
+      const cv = blend === 'canvas', ga = cv ? 1 : sA;
+      if (grpA !== ga) { grp.style.opacity = ga; grpA = ga; }
+      sCa = cv ? 1 : sA;
       setInk(lctx);
       if (t === 'pen' || t === 'marker') {
         mode = 1;
         setInk(pctx);
+        // 半透明の線は live に線の濃さで描く（stk）。pred も線の濃さで描き、live が覆う所を抜く（cutPred）
+        sTr = cv && sA < 1;
+        if (sTr) { ensureR(); rn = 0; pctx.globalAlpha = sA; }
         sP = pen && t === 'pen' && e.pressure > 0;
         ps = sP ? e.pressure : 1;
         sPen = t === 'pen' ? PENS.indexOf(penType) : 0;
@@ -1113,8 +1139,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         if (sPen === 1) bw = qw(bw * (0.2 + 0.8 * pf));
         else if (sPen === 2) bw = qw(bw * 0.35);
         else if (sPen === 3) { const g = grain(); lctx.strokeStyle = lctx.fillStyle = pctx.strokeStyle = g; }
+        inkS = pctx.strokeStyle;
         // 押した瞬間に点を出す（タップでも点が残る）
-        lctx.beginPath(); lctx.arc(x, y, bw / 2, 0, TAU); lctx.fill();
+        lctx.beginPath(); lctx.arc(x, y, bw / 2, 0, TAU);
+        if (sTr) { lctx.globalAlpha = sA; lctx.fill(); lctx.globalAlpha = 1; addPiece(2, x, y, x, y, x, y, bw); } else lctx.fill();
         const p = bw / 2 + 2;
         markBox(x - p, y - p, x + p, y + p);
       } else {
@@ -1123,6 +1151,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         shShift = e.shiftKey; shAlt = e.altKey;
         lctx.lineWidth = sW;
         lctx.lineJoin = t === 'rect' ? 'miter' : 'round';
+        lctx.globalAlpha = sA / sCa; // 図形は毎回描き直すので、canvas の方式ならそのまま線の濃さで描ける
       }
     }
     // 図形は 1 フレームに 1 回の再描画で十分なので rawupdate は使わない
@@ -1209,9 +1238,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       if (sPoly) {
         // 蛍光ペン: 点と点を直線でつなぐ（丸い角）。中点を結ぶ曲線だと、末尾の直線が次の入力で曲線に確定するときに内側へ引っ込む。
         // 太い線では直線でも角は見えない。未確定の末尾がないので、pred には予測だけが残る
-        if (bw !== cw) { if (open) c.stroke(); c.lineWidth = cw = bw; c.beginPath(); c.moveTo(bx, by); open = true; }
+        if (bw !== cw) { if (open) stk(c); c.lineWidth = cw = bw; c.beginPath(); c.moveTo(bx, by); open = true; }
         c.lineTo(x, y);
         markSeg(bx, by, x, y, bw / 2 + 2);
+        if (sTr) addPiece(0, bx, by, bx, by, x, y, bw);
         mx = bx = x; my = by = y; bw = w;
         if (x < x0) x0 = x; else if (x > x1) x1 = x;
         if (y < y0) y0 = y; else if (y > y1) y1 = y;
@@ -1220,7 +1250,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       }
       const nx = (bx + x) * 0.5, ny = (by + y) * 0.5;
       if (bw !== cw) {
-        if (open) c.stroke();
+        if (open) stk(c);
         c.lineWidth = cw = bw;
         c.beginPath();
         c.moveTo(mx, my);
@@ -1228,12 +1258,70 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       }
       c.quadraticCurveTo(bx, by, nx, ny);
       markCurve(mx, my, bx, by, nx, ny, bw / 2 + 2);
+      if (sTr) addPiece(1, mx, my, bx, by, nx, ny, bw);
       mx = nx; my = ny; bx = x; by = y; bw = w;
       if (x < x0) x0 = x; else if (x > x1) x1 = x;
       if (y < y0) y0 = y; else if (y > y1) y1 = y;
       if (w > mW) mW = w;
     }
+    if (open) stk(c);
+  }
+  // 線を live に描く。半透明（sTr）なら、新しい部分の所を先に抜いてから（destination-out）、線の濃さで足す（lighter）。
+  // 濃さは sA ×（今までの形と新しい部分の和）になり、不透明で重ねてから濃さをかける前の方式と同じ計算。線が自分と重なっても濃くならず、キャンバスのコピーも要らない
+  function stk(c) {
+    if (!sTr) { c.stroke(); return; }
+    c.globalCompositeOperation = 'destination-out';
+    c.stroke();
+    c.globalCompositeOperation = 'lighter';
+    c.globalAlpha = sA;
+    c.stroke();
+    c.globalCompositeOperation = 'source-over';
+    c.globalAlpha = 1;
+  }
+  // 半透明の線の、描いた部分の形（T-056）。pred から live が覆う所を抜く（cutPred）のに使う。
+  // 区間を RN 個まで覚え（それより古い物から上書きする）、RB 個ずつの外接矩形で絞り込む。入力のたびに呼ぶので割り当てをしない
+  const RN = 16384, RB = 32;
+  function ensureR() {
+    if (!rg) { rg = new Float64Array(RN * 8); rbx = new Float64Array(RN / RB * 4); }
+  }
+  // k: 0 直線（a → e）/ 1 二次曲線（a → 制御点 c → e）/ 2 点（a が中心）。w は太さ
+  function addPiece(k, ax, ay, cx, cy, ex, ey, w) {
+    const i = rn % RN, o = i * 8, b = ((i / RB) | 0) * 4, r = w / 2 + 1;
+    rg[o] = k; rg[o + 1] = ax; rg[o + 2] = ay; rg[o + 3] = cx; rg[o + 4] = cy; rg[o + 5] = ex; rg[o + 6] = ey; rg[o + 7] = w;
+    const x0 = min(ax, cx, ex) - r, y0 = min(ay, cy, ey) - r, x1 = max(ax, cx, ex) + r, y1 = max(ay, cy, ey) + r;
+    if (i % RB === 0 || x0 < rbx[b]) rbx[b] = x0;
+    if (i % RB === 0 || y0 < rbx[b + 1]) rbx[b + 1] = y0;
+    if (i % RB === 0 || x1 > rbx[b + 2]) rbx[b + 2] = x1;
+    if (i % RB === 0 || y1 > rbx[b + 3]) rbx[b + 3] = y1;
+    rn++;
+  }
+  // pred の矩形 [x0, x1] × [y0, y1] に掛かる、描いた部分の形を不透明で抜く。pred と live を重ねても線の濃さを超えない
+  function cutPred(c, x0, y0, x1, y1) {
+    const n = min(rn, RN);
+    let cw = -1, open = false;
+    c.globalAlpha = 1;
+    c.globalCompositeOperation = 'destination-out';
+    c.strokeStyle = c.fillStyle = '#000';
+    for (let b = 0, q = 0; b * RB < n; b++, q += 4) {
+      if (rbx[q] > x1 || rbx[q + 2] < x0 || rbx[q + 1] > y1 || rbx[q + 3] < y0) continue;
+      for (let i = b * RB, e = min(n, i + RB); i < e; i++) {
+        const o = i * 8, w = rg[o + 7], r = w / 2 + 1, ax = rg[o + 1], ay = rg[o + 2], cx = rg[o + 3], cy = rg[o + 4], ex = rg[o + 5], ey = rg[o + 6];
+        if (min(ax, cx, ex) - r > x1 || max(ax, cx, ex) + r < x0 || min(ay, cy, ey) - r > y1 || max(ay, cy, ey) + r < y0) continue;
+        if (rg[o] === 2) {
+          if (open) { c.stroke(); open = false; cw = -1; }
+          c.beginPath(); c.arc(ax, ay, w / 2, 0, TAU); c.fill();
+          continue;
+        }
+        if (w !== cw) { if (open) c.stroke(); c.lineWidth = cw = w; c.beginPath(); open = true; }
+        c.moveTo(ax, ay);
+        if (rg[o] === 1) c.quadraticCurveTo(cx, cy, ex, ey); else c.lineTo(ex, ey);
+      }
+    }
     if (open) c.stroke();
+    c.globalCompositeOperation = 'source-over';
+    c.globalAlpha = sA;
+    c.strokeStyle = inkS;
+    c.lineWidth = bw;
   }
 
   function readPred(e) {
@@ -1272,7 +1360,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function drawTail() {
     const c = pctx;
     if (tx1 > tx0) c.clearRect(tx0, ty0, tx1 - tx0, ty1 - ty0);
-    let a0 = min(mx, bx), a1 = max(mx, bx), b0 = min(my, by), b1 = max(my, by);
+    let a0 = min(mx, bx), a1 = max(mx, bx), b0 = min(my, by), b1 = max(my, by), any = mx !== bx || my !== by;
     c.lineWidth = bw;
     c.beginPath();
     c.moveTo(mx, my);
@@ -1281,13 +1369,17 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       if (pt[k] && pt[k] <= lt) continue; // 実入力が追い越した予測点は捨てる
       const x = px[k], y = py[k];
       c.lineTo(x, y);
+      any = true;
       if (x < a0) a0 = x; else if (x > a1) a1 = x;
       if (y < b0) b0 = y; else if (y > b1) b1 = y;
     }
+    // 半透明の線で描く物がなければ（蛍光ペンの末尾は空で、ゆっくりなら予測もない）、描くのも抜くのも飛ばす
+    if (sTr && !any) { tx0 = ty0 = tx1 = ty1 = 0; return; }
     c.stroke();
     const m = bw / 2 + 2;
     tx0 = max(0, (a0 - m) | 0); ty0 = max(0, (b0 - m) | 0);
     tx1 = ceil(a1 + m); ty1 = ceil(b1 + m);
+    if (sTr) cutPred(c, tx0, ty0, tx1, ty1); // 線の濃さで描いた pred から、live が覆っている所を抜く（重なった所が濃くならない）
   }
   function clearTail() {
     if (tx1 > tx0) pctx.clearRect(tx0, ty0, tx1 - tx0, ty1 - ty0);
@@ -1443,7 +1535,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       // 最後の半区間（中点→最終点）を確定してから main へ合成
       if (mx !== bx || my !== by) {
         lctx.lineWidth = sPen === 2 ? qw(bw * 0.6) : bw; // 筆は離し際を細く
-        lctx.beginPath(); lctx.moveTo(mx, my); lctx.lineTo(bx, by); lctx.stroke();
+        lctx.beginPath(); lctx.moveTo(mx, my); lctx.lineTo(bx, by); stk(lctx);
         markSeg(mx, my, bx, by, bw / 2 + 2);
       }
       clearTail();
@@ -1508,7 +1600,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     for (let i = 0; i < R.length; i += 6) {
       forTiles(R[i], R[i + 1], R[i + 2], R[i + 3], true, (t, ox, oy, ix, iy, iw, ih) => {
         const c = t.x;
-        c.globalAlpha = sA;
+        c.globalAlpha = sCa;
         c.drawImage(liveC, (ix - sox) / sk, (iy - soy) / sk, iw / sk, ih / sk, ix - ox, iy - oy, iw, ih);
         c.globalAlpha = 1;
       });
@@ -2664,6 +2756,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     cancelAnimationFrame(rz);
     while (hist.length) free(hist.pop());
     for (const c of [liveC, predC]) c.width = c.height = 0;
+    rg = rbx = null;
     for (const t of dtiles.values()) t.c.width = t.c.height = 0;
     dtiles.clear();
     for (const t of pool) t.c.width = t.c.height = 0;
@@ -2743,7 +2836,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const stats = () => ({
     width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, selection: sel ? [selX, selY, selW, selH] : null, texts: tlist.length, fixed, history: hist.length, historyPixels: hpix, events: nEv, points: nPts,
     desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, nativePrediction: nativePred, inkTrail: !!inkP,
-    prefs: { ...snapPrefs(), bar: [barX, barY], touchText, pickOnce, dev, ...look, mpred },
+    prefs: { ...snapPrefs(), bar: [barX, barY], touchText, pickOnce, dev, ...look, mpred, blend },
   });
   win[NS] = { version: VERSION, toggle, show, hide, close, destroy, undo, redo, clear: clearAll, tool: setTool, color: setColor, stats, pixels };
   setColor(color);

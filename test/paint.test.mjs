@@ -1538,7 +1538,7 @@ test('塗りつぶしは見えている画面の外へはみ出さず、元に�
   await scrollTo(page, 500);
   await page.keyboard.press('f');
   await page.mouse.click(500, 400); // 何も描いていない所: 画面いっぱい（文書の y=500〜1200）を塗る
-  assert.ok(await ink(500, 1200) > 600000, '画面の中は塗られる');
+  assert.equal(await ink(500, 1200), 1000 * 700, '画面の中は全部塗られる（何も描いていない画面は 1 つの領域）');
   await scrollTo(page, 900);
   assert.equal(await ink(1200, 1203), 0, '画面の下端の外は塗らない');
   await scrollTo(page, 200);

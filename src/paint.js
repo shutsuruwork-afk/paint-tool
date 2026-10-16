@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.19.3';
+  const VERSION = '1.19.4';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -1582,48 +1582,19 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     }
     const inG = sx0 >= gx && sy0 >= gy && sx0 < gx + gw && sy0 < gy + gh;
     const seed = data && inG ? data[(sy0 - gy) * gw + sx0 - gx] : 0;
-    const tr = seed & 255, tg = (seed >>> 8) & 255, tb = (seed >>> 16) & 255, ta = seed >>> 24;
-    const TL = FILL_TOL, clear = ta <= TL; // clear: 透明な領域（線で囲まれた内側など）を塗る
-    // 判定表 m: 1 = 塗れる / 2 = 塗った。先に 1 回の線形走査で作り、探索中は配列参照だけにする
-    const m = new Uint8Array(W * H);
-    if (clear) m.fill(1);
-    for (let y = 0; y < gh; y++) {
-      for (let x = 0, i = (gy + y) * W + gx, j = y * gw; x < gw; x++, i++, j++) {
-        const c = data[j];
-        if (c === seed) { m[i] = 1; continue; }
-        const a = c >>> 24;
-        if (clear) { m[i] = a <= TL ? 1 : 0; continue; }
-        const d1 = (c & 255) - tr, d2 = ((c >>> 8) & 255) - tg, d3 = ((c >>> 16) & 255) - tb, d4 = a - ta;
-        m[i] = d1 <= TL && d1 >= -TL && d2 <= TL && d2 >= -TL && d3 <= TL && d3 >= -TL && d4 <= TL && d4 >= -TL ? 1 : 0;
-      }
-    }
+    const clear = seed >>> 24 <= FILL_TOL; // clear: 透明な領域（線で囲まれた内側など）を塗る
     // 透明部分を塗るときは各スパンを 1px 膨張させ、背面合成で線のアンチエイリアス縁の下に潜らせる（隙間が出ない）
     const g = clear ? 1 : 0;
     const path = new Path2D();
-    let fx0 = sx0, fx1 = sx0, fy0 = sy0, fy1 = sy0;
-    const stack = [sx0, sy0];
-    while (stack.length) {
-      const y = stack.pop();
-      let x = stack.pop();
-      const row = y * W;
-      if (m[row + x] !== 1) continue;
-      while (x > 0 && m[row + x - 1] === 1) x--;
-      const lx = x, ur = row - W, dr = row + W, hasUp = y > 0, hasDn = y < H - 1;
-      let up = false, dn = false;
-      for (; x < W && m[row + x] === 1; x++) {
-        if (hasUp) { if (m[ur + x] === 1) { if (!up) { stack.push(x, y - 1); up = true; } } else up = false; }
-        if (hasDn) { if (m[dr + x] === 1) { if (!dn) { stack.push(x, y + 1); dn = true; } } else dn = false; }
-      }
-      m.fill(2, row + lx, row + x);
-      // 画素を ImageData に書いて転送する代わりに、スパンを矩形パスにして GPU で 1 回で塗る。
-      // 膨張分も画面の中に収める（画面の外へ 1px はみ出すと履歴の範囲 R から漏れ、元に戻しても細い線が残る）
-      const rx = max(0, lx - g), ry = max(0, y - g);
-      path.rect(rx, ry, min(W, x + g) - rx, min(H, y + 1 + g) - ry);
-      if (lx < fx0) fx0 = lx;
-      if (x - 1 > fx1) fx1 = x - 1;
-      if (y < fy0) fy0 = y;
-      if (y > fy1) fy1 = y;
-    }
+    let fx0 = 0, fy0 = 0, fx1 = W - 1, fy1 = H - 1;
+    if (data) {
+      // 判定表 m: 1 = 塗れる / 2 = 塗った。先に 1 回の線形走査で作り、探索中は配列参照だけにする。
+      // 判定表づくりと探索は小さな関数に分ける（大きな関数の中に置くと、同じループが JIT で 2〜3 倍遅かった）
+      const m = new Uint8Array(W * H);
+      if (clear) maskClear(m, W, data, gx, gy, gw, gh);
+      else maskColor(m, W, data, gx, gy, gw, gh, seed);
+      [fx0, fy0, fx1, fy1] = scanFill(m, W, H, sx0, sy0, g, path);
+    } else path.rect(0, 0, W, H); // 画面に何も描いていなければ、画面全体が 1 つの領域（たどった結果と同じ）
     const ax = max(0, fx0 - g), ay = max(0, fy0 - g), w = min(W, fx1 + 1 + g) - ax, h = min(H, fy1 + 1 + g) - ay;
     const R = rect1(ax + FX, ay + FY, w, h);
     const patch = gather(R, newCanvas(w, h));
@@ -1640,6 +1611,57 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     });
     push(R, patch, [R[0], R[1], R[0] + w, R[1] + h]);
     lastFillMs = now() - t0;
+  }
+  // 透明な所を塗るときの判定表: 透明度だけで決まる（seed と同じ色も透明なので同じ結果になる）。透明度のバイトだけを読む。
+  // 描いた範囲（gx, gy, gw, gh）の外は透明と分かっているので、全部塗れる
+  function maskClear(m, W, data, gx, gy, gw, gh) {
+    m.fill(1);
+    const a8 = new Uint8Array(data.buffer);
+    for (let y = 0; y < gh; y++) {
+      let i = (gy + y) * W + gx, k = y * gw * 4 + 3;
+      for (const e = i + gw; i < e; i++, k += 4) if (a8[k] > FILL_TOL) m[i] = 0;
+    }
+  }
+  // 色の付いた所を塗り替えるときの判定表: seed と各成分の差が許容差以内なら塗れる（描いた範囲の外は透明なので塗れない）
+  function maskColor(m, W, data, gx, gy, gw, gh, seed) {
+    const TL = FILL_TOL, tr = seed & 255, tg = (seed >>> 8) & 255, tb = (seed >>> 16) & 255, ta = seed >>> 24;
+    for (let y = 0; y < gh; y++) {
+      for (let x = 0, i = (gy + y) * W + gx, j = y * gw; x < gw; x++, i++, j++) {
+        const c = data[j];
+        if (c === seed) { m[i] = 1; continue; }
+        const d1 = (c & 255) - tr, d2 = ((c >>> 8) & 255) - tg, d3 = ((c >>> 16) & 255) - tb, d4 = (c >>> 24) - ta;
+        m[i] = d1 <= TL && d1 >= -TL && d2 <= TL && d2 >= -TL && d3 <= TL && d3 >= -TL && d4 <= TL && d4 >= -TL ? 1 : 0;
+      }
+    }
+  }
+  // 判定表 m の (sx0, sy0) から塗れる所をスキャンライン法でたどり、各スパンを g だけ膨張させた矩形を path に足す。
+  // 画素を ImageData に書いて転送する代わりに、矩形のパスにして GPU で 1 回で塗るため。
+  // 膨張分も画面（W × H）の中に収める（画面の外へ 1px はみ出すと履歴の範囲 R から漏れ、元に戻しても細い線が残る）。
+  // 塗ったスパンの範囲 [x0, y0, x1, y1] を返す
+  function scanFill(m, W, H, sx0, sy0, g, path) {
+    let fx0 = sx0, fx1 = sx0, fy0 = sy0, fy1 = sy0;
+    const stack = [sx0, sy0];
+    while (stack.length) {
+      const y = stack.pop();
+      let x = stack.pop();
+      const row = y * W;
+      if (m[row + x] !== 1) continue;
+      while (x > 0 && m[row + x - 1] === 1) x--;
+      const lx = x, ur = row - W, dr = row + W, hasUp = y > 0, hasDn = y < H - 1;
+      let up = false, dn = false;
+      for (; x < W && m[row + x] === 1; x++) {
+        if (hasUp) { if (m[ur + x] === 1) { if (!up) { stack.push(x, y - 1); up = true; } } else up = false; }
+        if (hasDn) { if (m[dr + x] === 1) { if (!dn) { stack.push(x, y + 1); dn = true; } } else dn = false; }
+      }
+      m.fill(2, row + lx, row + x);
+      const rx = max(0, lx - g), ry = max(0, y - g);
+      path.rect(rx, ry, min(W, x + g) - rx, min(H, y + 1 + g) - ry);
+      if (lx < fx0) fx0 = lx;
+      if (x - 1 > fx1) fx1 = x - 1;
+      if (y < fy0) fy0 = y;
+      if (y > fy1) fy1 = y;
+    }
+    return [fx0, fy0, fx1, fy1];
   }
 
   // ---------- 選択（範囲の画素を浮かせ、移動・拡大縮小する） ----------

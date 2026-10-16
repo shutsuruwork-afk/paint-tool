@@ -253,7 +253,7 @@ section > .sub + .sub { margin-top: 20px; }
 
 <main class="page">
   <header>
-    <p class="eyebrow">Bookmarklet · v1.24.1 · %%SIZE%%（gzip %%GZIP%%）</p>
+    <p class="eyebrow">Bookmarklet · v1.25.0 · %%SIZE%%（gzip %%GZIP%%）</p>
     <h1>ペイント<br>ブックマークレット</h1>
     <p class="lead">開いているページの上に、<span class="mark">そのまま描ける<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d="M18 40C8 22 52 6 108 7s92 13 84 30-62 20-112 17S4 38 30 16" vector-effect="non-scaling-stroke"/></svg></span>ペイントツールです。ブックマークを押すだけで起動し、拡張機能もアカウントも要りません。入力から線が画面に出るまでの遅延を減らす仕組みを、ブラウザが対応している限りすべて使います。</p>
     <div class="actions">
@@ -337,6 +337,7 @@ section > .sub + .sub { margin-top: 20px; }
           <div class="sliders">
             <label class="slider"><span>ぼかしの強さ</span><input type="range" id="p-blur" min="0" max="40"><output for="p-blur"></output></label>
             <label class="slider"><span>地の濃さ</span><input type="range" id="p-tint" min="30" max="95"><output for="p-tint"></output></label>
+            <label class="slider"><span>彩度</span><input type="range" id="p-sat" min="100" max="300"><output for="p-sat"></output></label>
           </div>
         </div>
       </fieldset>
@@ -479,7 +480,7 @@ function runPaint() {%%INLINE_CODE%%}
   // ---- デフォルトの設定: 選んだ既定をブックマークレットのコードに埋め込む ----
   // 組み込みの既定（src/paint.js の PALETTE と CFG に合わせる。テストで一致を確かめている）
   const PALETTE = ['#111111', '#ffffff', '#e53935', '#fb8c00', '#fdd835', '#43a047', '#1e88e5', '#8e24aa'];
-  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 4, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: false, pickOnce: false, glass: true, theme: 'light', blurMode: 'gauss', blur: 18, tint: 70, dev: false, mpred: 'full', blend: 'canvas' };
+  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 4, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: false, pickOnce: false, glass: true, theme: 'light', blurMode: 'gauss', blur: 18, tint: 70, sat: 180, dev: false, mpred: 'full', blend: 'canvas' };
   const BASE = bm.getAttribute('href'); // 既定の入っていないブックマークレット
   const KEY = 'paint-defaults';
   const $ = id => document.getElementById(id);
@@ -526,6 +527,7 @@ function runPaint() {%%INLINE_CODE%%}
       if (v.blurMode === 'gauss' || v.blurMode === 'plain') d.blurMode = v.blurMode;
       if (+v.blur >= 0 && +v.blur <= 40) d.blur = +v.blur;
       if (+v.tint >= 30 && +v.tint <= 95) d.tint = +v.tint;
+      if (+v.sat >= 100 && +v.sat <= 300) d.sat = +v.sat;
       if (v.mpred === 'need' || v.mpred === 'off' || v.mpred === 'full') d.mpred = v.mpred;
       if (v.blend === 'canvas' || v.blend === 'group') d.blend = v.blend;
     }
@@ -541,7 +543,7 @@ function runPaint() {%%INLINE_CODE%%}
     if (c.touchText !== BUILTIN.touchText) o.touchText = c.touchText;
     if (c.calc !== BUILTIN.calc) o.calc = c.calc;
     if (c.pickOnce !== BUILTIN.pickOnce) o.pickOnce = c.pickOnce;
-    for (const k of ['glass', 'theme', 'blurMode', 'blur', 'tint', 'dev', 'mpred', 'blend']) if (c[k] !== BUILTIN[k]) o[k] = c[k];
+    for (const k of ['glass', 'theme', 'blurMode', 'blur', 'tint', 'sat', 'dev', 'mpred', 'blend']) if (c[k] !== BUILTIN[k]) o[k] = c[k];
     return o;
   }
   const enc = s => s.replace(/[%#\s"]/g, ch => encodeURIComponent(ch));
@@ -565,7 +567,7 @@ function runPaint() {%%INLINE_CODE%%}
     for (const r of document.querySelectorAll('#p-mode input')) r.checked = r.value === cur.blurMode;
     for (const r of document.querySelectorAll('#p-mpred input')) r.checked = r.value === cur.mpred;
     for (const r of document.querySelectorAll('#p-blend input')) r.checked = r.value === cur.blend;
-    for (const k of ['blur', 'tint']) { const r = $('p-' + k); r.value = cur[k]; r.nextElementSibling.value = k === 'tint' ? cur[k] + '%' : cur[k] + 'px'; }
+    for (const k of ['blur', 'tint', 'sat']) { const r = $('p-' + k); r.value = cur[k]; r.nextElementSibling.value = k === 'blur' ? cur[k] + 'px' : cur[k] + '%'; }
     $('p-gdev').classList.toggle('off', !cur.glass);
     const o = diff(cur);
     bm.setAttribute('href', hrefFor(o));
@@ -591,7 +593,7 @@ function runPaint() {%%INLINE_CODE%%}
   $('p-mode').addEventListener('change', e => { cur.blurMode = e.target.value; update(); });
   $('p-mpred').addEventListener('change', e => { cur.mpred = e.target.value; update(); });
   $('p-blend').addEventListener('change', e => { cur.blend = e.target.value; update(); });
-  for (const k of ['blur', 'tint']) $('p-' + k).addEventListener('input', e => { cur[k] = +e.target.value; update(); });
+  for (const k of ['blur', 'tint', 'sat']) $('p-' + k).addEventListener('input', e => { cur[k] = +e.target.value; update(); });
   $('p-reset').addEventListener('click', () => { cur = JSON.parse(JSON.stringify(BUILTIN)); update(); });
   if (fromTool) {
     update();

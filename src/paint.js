@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.24.1';
+  const VERSION = '1.25.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -110,7 +110,7 @@
     'linear-gradient(#000 0 0) 50% 50%/calc(100% - 2 * var(--gr)) 100% no-repeat content-box',
     'linear-gradient(#000 0 0) 50% 50%/100% calc(100% - 2 * var(--gr)) no-repeat content-box'].join(',');
   const CSS = `
-.w{--gc:28 30 36;--gt:.7;--gb:18px;--gm:36px;all:initial;position:absolute;inset:0;overflow:hidden;contain:strict;pointer-events:none;outline:none;font:12px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e8e9ee;color-scheme:dark;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+.w{--gc:28 30 36;--gt:.7;--gb:18px;--gm:36px;--gs:1.8;all:initial;position:absolute;inset:0;overflow:hidden;contain:strict;pointer-events:none;outline:none;font:12px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e8e9ee;color-scheme:dark;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
 .s{position:absolute;inset:0}.s.bg1{background:#fff}.s.bg2{background:#1d1f23}
 .sel{position:absolute;z-index:2;pointer-events:none}
 .sel b{position:absolute;outline:1px solid #3d7cff}
@@ -137,7 +137,7 @@ canvas{position:absolute;left:0;top:0;pointer-events:none}
 .dot{width:var(--d);height:var(--d);border-radius:50%;background:var(--c);opacity:var(--a);box-shadow:0 0 0 1px #ffffff59}
 .dot.er{background:none;opacity:1;box-shadow:inset 0 0 0 1.5px #e8e9ee}
 .glass .bar,.glass .pn{background:none;border-color:#ffffff30;box-shadow:0 6px 24px #0007,inset 0 1px 0 #ffffff1c}.glass .pn{isolation:isolate}
-.glass .bar::before,.glass .pn::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;background:rgb(var(--gc) / var(--gt));-webkit-backdrop-filter:blur(var(--gb)) saturate(1.8);backdrop-filter:blur(var(--gb)) saturate(1.8);pointer-events:none}
+.glass .bar::before,.glass .pn::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;background:rgb(var(--gc) / var(--gt));-webkit-backdrop-filter:blur(var(--gb)) saturate(var(--gs));backdrop-filter:blur(var(--gb)) saturate(var(--gs));pointer-events:none}
 .gauss .bar::before{--gr:11px}.gauss .pn::before{--gr:9px}
 .gauss .bar::before,.gauss .pn::before{inset:calc(var(--gm) * -1);padding:var(--gm);border-radius:0;-webkit-mask:${GMASK};mask:${GMASK}}
 .light{color:#1d2026;color-scheme:light;--gc:250 250 252}
@@ -167,6 +167,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 .c.on::before{box-shadow:0 0 0 2px var(--bb,#202228),0 0 0 4px #fff}
 .cc::before{background:conic-gradient(#f44,#fd4,#4d4,#4dd,#44f,#d4d,#f44)}
 .sep{flex:none;width:1px;height:22px;margin:0 3px;background:#ffffff24}
+.bar.two .brk{flex-basis:100%;width:auto;height:0;margin:0;background:none}
 .r{display:flex;align-items:center;gap:8px;height:30px;padding:0 6px;color:#a9acb8}
 .r input{flex:1;width:auto;min-width:0;margin:0;accent-color:#3d7cff}
 .r output{min-width:30px;color:#e8e9ee;font-variant-numeric:tabular-nums}
@@ -291,6 +292,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     blurMode: DEF.blurMode === 'plain' ? 'plain' : 'gauss',
     blur: +DEF.blur >= 0 && +DEF.blur <= 40 ? +DEF.blur : 18,
     tint: +DEF.tint >= 30 && +DEF.tint <= 95 ? +DEF.tint : 70,
+    sat: +DEF.sat >= 100 && +DEF.sat <= 300 ? +DEF.sat : 180, // ガラスの彩度（%。T-065）
   };
   const dev = DEF.dev === true;
   // 蛍光ペンの予測: 'full'（既定）はペンと同じ。'need' は丸い先端で届かない分だけ（1 フレーム後のペン先まで）、曲がりに沿って予測し、
@@ -318,6 +320,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     ws.setProperty('--gb', look.blur + 'px');
     ws.setProperty('--gm', look.blur * 2 + 'px');
     ws.setProperty('--gt', look.tint / 100);
+    ws.setProperty('--gs', look.sat / 100);
   }
   applyLook();
   let dpr = win.devicePixelRatio || 1, W = 0, H = 0, grpA = 1, pendingFit = false, rz = 0, warmT = 0;
@@ -450,7 +453,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const styleB = btn('色・太さ・濃さ', null, () => togglePanel(styleP, styleB), 'dd');
   const dot = el('span', 'dot');
   styleB.append(dot);
-  bar.append(styleB, sep());
+  // 色の後ろの区切りは、1 段に収まらないときに段を分ける所（.two .brk。T-064）
+  bar.append(styleB, el('div', 'sep brk'));
   const swBtns = PALETTE.map((c, i) => {
     const b = btn(`色 ${i + 1}`, null, () => setColor(c), 'c');
     b.style.setProperty('--c', c);
@@ -549,6 +553,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   lookP.append(row(...themeBs, lcB), glassSw, gaussSw);
   const [blurW, blurR, blurO] = range('ぼかし', 'ぼかしの強さ', 0, 40, v => setLook('blur', v), lookP);
   const [tintW, tintR, tintO] = range('地', 'ガラスの地の濃さ', 30, 95, v => setLook('tint', v), lookP);
+  const [satW, satR, satO] = range('彩度', 'ガラスの彩度（下のページの色の鮮やかさ）', 100, 300, v => setLook('sat', v), lookP);
   // 蛍光ペンの予測を切り替えて見比べる（次に描く線から効く）
   const mpL = el('span');
   mpL.textContent = '蛍光ペンの予測';
@@ -573,7 +578,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   lookP.append(blR, row(...blBs));
   const toDefB = btn('この見た目をデフォルトにする — インストールページを開く（新しいタブ）', I.prefs, () => {
     closePanel();
-    openDefaults({ ...DEF, theme: look.theme, glass: look.glass, blurMode: look.blurMode, blur: look.blur, tint: look.tint, mpred, blend });
+    openDefaults({ ...DEF, theme: look.theme, glass: look.glass, blurMode: look.blurMode, blur: look.blur, tint: look.tint, sat: look.sat, mpred, blend });
   }, 'mi');
   const toDefL = el('span');
   toDefL.textContent = 'この見た目をデフォルトに';
@@ -587,30 +592,35 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (t[0] === '#') lcB.style.setProperty('--c', t); else lcB.style.removeProperty('--c');
     glassSw.setAttribute('aria-checked', look.glass);
     gaussSw.setAttribute('aria-checked', look.blurMode === 'gauss');
-    for (const w of [gaussSw, blurW, tintW]) w.classList.toggle('dis', !look.glass);
+    for (const w of [gaussSw, blurW, tintW, satW]) w.classList.toggle('dis', !look.glass);
     blurR.value = look.blur; blurO.value = look.blur + 'px';
     tintR.value = look.tint; tintO.value = look.tint + '%';
+    satR.value = look.sat; satO.value = look.sat + '%';
     mpBs.forEach((b, i) => b.classList.toggle('on', MPREDS[i] === mpred));
     blBs.forEach((b, i) => b.classList.toggle('on', BLENDS[i] === blend));
   }
+  const closeB = btn('閉じる（8 秒間は元に戻せます）', I.close, close);
   if (dev) item('見た目（開発用） — ツールバーの色やガラス、蛍光ペンの予測、半透明の線の描き方をその場で変える', '見た目（開発用）', '', I.bg, () => openPanel(lookP, moreB));
   bar.append(undoB, redoB, sep(), passB, moreB, sep(),
-    btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hideHint), btn('閉じる（8 秒間は元に戻せます）', I.close, close),
+    btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hideHint), closeB,
     shapeP, penP, styleP, moreP, lookP, lci);
 
   // パネルは 1 つだけ開く。描き始め・パネルの外を押す・Esc で閉じる。
   // 開いていなければ pointerdown ごとの仕事は比較 1 回だけ（入力のホットパスには触れない）
-  let openP = null, openB = null;
+  let openP = null, openB = null, pW = 0, pH = 0, pL = 0; // 開いているパネルの大きさと、開いたボタンの位置
   function openPanel(p, b) {
     closePanel();
     openP = p; openB = b;
     p.classList.add('on');
     b.classList.add('open');
     measureBar();
-    const pw = p.offsetWidth, ph = p.offsetHeight;
-    // 下に入らなければ上に開く。横は画面からはみ出さないように寄せる
-    bar.classList.toggle('up', barY + barH + ph + 8 > vh && barY >= ph + 8);
-    p.style.left = max(4 - barX, min(b.offsetLeft, vw - barX - pw - 4)) + 'px';
+    pW = p.offsetWidth; pH = p.offsetHeight; pL = b.offsetLeft;
+    placePanel();
+  }
+  // 下に入らなければ上に開く。横は画面からはみ出さないように寄せる（開いたままツールバーを動かす間も呼ぶので、読み取りはしない）
+  function placePanel() {
+    bar.classList.toggle('up', barY + barH + pH + 8 > vh && barY >= pH + 8);
+    openP.style.left = max(4 - barX, min(pL, vw - barX - pW - 4)) + 'px';
   }
   function closePanel() {
     if (!openP) return;
@@ -619,8 +629,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     openP = openB = null;
   }
   function togglePanel(p, b) { openP === p ? closePanel() : openPanel(p, b); }
+  // 開発用の見た目のパネルは、ツールバーを押しただけでは閉じない（引いて動かす間は開いたまま、引かずに離したら閉じる。T-066）
   wrap.addEventListener('pointerdown', e => {
-    if (openP && !openP.contains(e.target) && !openB.contains(e.target)) closePanel();
+    if (openP && !openP.contains(e.target) && !openB.contains(e.target) && !(openP === lookP && bar.contains(e.target))) closePanel();
   }, true);
 
   // ボタンがフォーカスを奪うと Space/Enter で誤作動するため、クリックでのフォーカス移動を抑止
@@ -647,24 +658,28 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (e.button !== 0 || e.target.closest('.pn')) return;
     measureBar();
     const sx = e.clientX, sy = e.clientY, ox = sx - barX, oy = sy - barY, id = e.pointerId;
+    // 開発用の見た目のパネルは、動かす間も開いたまま（下の色を変えてガラスを見比べるため。T-066）。ほかのパネルは引き始めで閉じる
+    const look = openP === lookP, onB = look && openB.contains(e.target);
     let moving = false;
     const mv = ev => {
       if (ev.pointerId !== id) return;
       if (!moving) {
         if (abs(ev.clientX - sx) < 4 && abs(ev.clientY - sy) < 4) return;
         moving = true;
-        closePanel();
+        if (!look) closePanel();
         bar.classList.add('drag');
         try { bar.setPointerCapture(id); } catch (_) { }
       }
       moveBar(ev.clientX - ox, ev.clientY - oy);
+      if (look && openP === lookP) placePanel();
     };
     const up = ev => {
       if (ev.pointerId !== id) return;
       win.removeEventListener('pointermove', mv, true);
       win.removeEventListener('pointerup', up, true);
       win.removeEventListener('pointercancel', up, true);
-      if (!moving) return;
+      // 引かずに離したら、ほかのパネルと同じに閉じる（開いたボタンの上なら、そのボタンが開け閉めする）
+      if (!moving) { if (look && !onB && openP === lookP) closePanel(); return; }
       bar.classList.remove('drag');
       barMoved = true;
       remember();
@@ -857,7 +872,17 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const cw = W / dpr + 'px', ch = H / dpr + 'px';
     for (const c of [liveC, predC]) { c.style.width = cw; c.style.height = ch; }
     tx0 = ty0 = tx1 = ty1 = 0;
-    if (visible) { sizeSurface(); measureBar(); moveBar(barX, barY); }
+    if (visible) { sizeSurface(); layBar(); measureBar(); moveBar(barX, barY); }
+  }
+  // 1 段に収まらない幅（スマホなど）では、上の段に道具と色、下の段に元に戻す・その他などの 2 段に整える（T-064）。
+  // 幅は決め打ちせず、折り返すかを測る（タッチの端末はボタンが大きい）。ツールバーの幅は上の段に合わせる
+  function layBar() {
+    const cl = bar.classList;
+    cl.remove('two');
+    bar.style.removeProperty('width');
+    if (closeB.offsetTop === toolBtns.select.offsetTop) return;
+    cl.add('two');
+    bar.style.width = ceil(styleB.getBoundingClientRect().right - bar.getBoundingClientRect().left) + 5 + 'px';
   }
   // 暖機: キャンバスの GPU バッキング確保や合成パスの初回コンパイルは初回描画時に数十 ms かかる。
   // 描き始めてから払うと最初の一筆が引っかかるので、起動直後の何もしていない時間に済ませておく。
@@ -2874,5 +2899,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   show();
   placeBar();
   ready = true;
-  say('Esc で隠す');
+  // キーのないタッチの端末（スマホなど）では、隠すボタンで案内する
+  say(win.matchMedia && win.matchMedia('(hover:none)').matches ? '− で隠す' : 'Esc で隠す');
 })();

@@ -163,6 +163,50 @@ const mouseClick = async (page, sel) => {
   await page.mouse.click(r.x + r.w / 2, r.y + r.h / 2);
 };
 
+test('スマホ（1 段に収まらない幅）では、ツールバーを道具と色の段・元に戻す以降の段の 2 段に整える。広げると 1 段に戻る', async () => {
+  const rows = page => shadowEval(page, root => {
+    const bar = root.querySelector('.bar'), b = bar.getBoundingClientRect();
+    const tops = [...bar.children].filter(e => e.classList.contains('b')).map(e => Math.round(e.getBoundingClientRect().top));
+    const right = Math.max(...[...bar.children].filter(e => e.classList.contains('b')).map(e => e.getBoundingClientRect().right));
+    return { two: bar.classList.contains('two'), tops, w: Math.round(b.width), over: Math.round(right - b.right), toast: root.querySelector('.t').textContent };
+  });
+  // タッチのスマホ（390px・360px）: 上の段に 8 個（選択〜塗りつぶし・色と太さ）、下の段に 6 個（元に戻す・やり直す・ページ操作・その他・隠す・閉じる）
+  for (const width of [390, 360]) {
+    const page = await browser.newPage({ viewport: { width, height: 800 }, isMobile: true, hasTouch: true });
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    // viewport の指定があるページ（ないと、スマホは 980px 幅で描いて縮めて見せる）
+    await page.route('**/phone', r => r.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><p>phone</p>' }));
+    await page.goto(server.base + '/phone');
+    await runCode(page, CODE);
+    const r = await rows(page);
+    assert.equal(r.two, true, width + ': two rows');
+    assert.equal(new Set(r.tops.slice(0, 8)).size, 1, width + ': first row ' + r.tops);
+    assert.equal(new Set(r.tops.slice(8)).size, 1, width + ': second row ' + r.tops);
+    assert.equal(r.tops.length, 14);
+    assert.ok(r.tops[8] > r.tops[0], width + ': second row below');
+    assert.ok(r.w <= 345 && r.over <= 0, width + ': fits the first row ' + JSON.stringify(r));
+    // キーのない端末では、隠すボタンで案内する
+    assert.equal(r.toast, '− で隠す');
+    assert.deepEqual(errors, []);
+    await page.close();
+  }
+  // マウスの画面を狭めると 2 段に、広げると 1 段に戻る
+  const { page, errors } = await fresh('/', { width: 1000, height: 700 });
+  assert.equal((await rows(page)).two, false);
+  assert.equal((await rows(page)).toast, 'Esc で隠す');
+  await page.setViewportSize({ width: 440, height: 700 });
+  await page.waitForFunction(() => document.querySelector('paint-bookmarklet').shadowRoot.querySelector('.bar.two'));
+  const n = await rows(page);
+  assert.equal(new Set(n.tops.slice(0, 8)).size, 1, String(n.tops));
+  assert.ok(n.tops[8] > n.tops[0]);
+  await page.setViewportSize({ width: 1000, height: 700 });
+  await page.waitForFunction(() => !document.querySelector('paint-bookmarklet').shadowRoot.querySelector('.bar.two'));
+  assert.equal(new Set((await rows(page)).tops).size, 1, 'one row again');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('ツールバーは 1 段で幅 520px 以下。図形は最後に使った物を出し、押すとその図形に、もう一度押すとパネルが開く', async () => {
   const { page, errors } = await fresh();
   const bar = await rectOf(page, '.bar');
@@ -277,6 +321,46 @@ test('見た目: 既定は白いガラス（ガウス・ぼかし 18px・地 70%
   await ip.close();
 });
 
+test('見た目（開発用）のパネルは、ツールバーを引いて動かしても閉じず一緒に動く（下の端では上に開く）。引かずに押せば閉じる。ほかのパネルは引くと閉じる', async () => {
+  const { page, errors } = await openPage(browser, server.base + '/');
+  await runCode(page, withDefaults(CODE, { dev: true }));
+  const info = () => shadowEval(page, root => {
+    const p = root.querySelector('.pn.on'), r = p && p.getBoundingClientRect(), b = root.querySelector('.bar').getBoundingClientRect();
+    return { open: root.querySelectorAll('.pn.on').length, look: !!(p && p.querySelector('[aria-label^="ツールバーの色"]')), px: r && Math.round(r.left - b.left), top: r && Math.round(r.top), bottom: r && Math.round(r.bottom), bx: Math.round(b.left), by: Math.round(b.top) };
+  });
+  const center = sel => shadowEval(page, (root, sel) => { const r = root.querySelector(sel).getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }, sel);
+  await mouseClick(page, '[aria-label^="その他"]');
+  await mouseClick(page, '.pn.on [aria-label^="見た目"]');
+  const a = await info();
+  assert.equal(a.look, true);
+  // ペンのボタンの上から引いて、右下へ動かす: 開いたまま、ツールバーと一緒に動く
+  const [x, y] = await center('.bar [aria-label^="ペン"]');
+  await drag(page, [[x, y], [x + 120, y + 80]], 8);
+  const b = await info();
+  assert.equal(b.open, 1, 'still open while moving');
+  assert.equal(b.look, true);
+  assert.ok(b.bx === a.bx + 120 && b.by === a.by + 80, JSON.stringify([a, b]));
+  assert.equal(await toolOn(page).then(t => /^ペン/.test(t)), true, 'the button under the drag is not pressed');
+  // 画面の下の端まで動かすと、パネルは上に開き直して画面に収まる
+  const [x2, y2] = await center('.bar [aria-label^="ペン"]');
+  await drag(page, [[x2, y2], [x2, 690]], 8);
+  const c = await info();
+  assert.equal(c.open, 1);
+  assert.ok(c.top >= 0 && c.bottom <= c.by, 'opens upward: ' + JSON.stringify(c));
+  // 引かずにツールバーを押したら閉じる（押したボタンは効く）
+  await mouseClick(page, '.bar [aria-label^="蛍光ペン"]');
+  assert.equal((await info()).open, 0);
+  assert.match(await toolOn(page), /^蛍光ペン/);
+  // ほかのパネル（色と太さ）は、引き始めると閉じる
+  await mouseClick(page, '[aria-label^="色・太さ"]');
+  assert.equal((await info()).open, 1);
+  const [x3, y3] = await center('.bar [aria-label^="ペン"]');
+  await drag(page, [[x3, y3], [x3, y3 - 200]], 8);
+  assert.equal((await info()).open, 0);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('見た目（開発用）: インストールページの開発用を入れるとメニューに出て、ツールバーの色（暗い・明るい・好きな色）とガラスをその場で変えられ、その見た目をデフォルトにできる', async () => {
   const st = page => shadowEval(page, root => {
     const w = root.querySelector('.w');
@@ -300,6 +384,12 @@ test('見た目（開発用）: インストールページの開発用を入れ
   assert.equal((await st(page)).cls, 'light glass gauss');
   await shadowEval(page, root => { const r = [...root.querySelectorAll('.pn.on .r input')][0]; r.value = 8; r.dispatchEvent(new Event('input')); });
   assert.equal((await st(page)).gb, '8px');
+  // 彩度（既定 180%）を 250% に: ガラスの backdrop-filter に効く
+  const sat = () => shadowEval(page, root => getComputedStyle(root.querySelector('.bar'), '::before').backdropFilter);
+  assert.match(await sat(), /saturate\(1\.8\)/);
+  await shadowEval(page, root => { const r = [...root.querySelectorAll('.pn.on .r input')][2]; r.value = 250; r.dispatchEvent(new Event('input')); });
+  assert.match(await sat(), /saturate\(2\.5\)/);
+  assert.equal((await prefs(page)).sat, 250);
   // 好きな色: 濃い色なら白い文字、明るい色なら黒い文字
   const pick = c => shadowEval(page, (root, c) => { const i = root.querySelectorAll('.bar > input.ci')[1]; i.value = c; i.dispatchEvent(new Event('input')); }, c);
   await mouseClick(page, '.pn.on [aria-label^="ガラス風"]');
@@ -323,11 +413,12 @@ test('見た目（開発用）: インストールページの開発用を入れ
   await mouseClick(page, '.pn.on [aria-label^="この見た目をデフォルトに"]');
   const [url] = (await page.evaluate(() => window.__opened))[0];
   const d = JSON.parse(decodeURIComponent(url.slice(url.indexOf('#defaults=') + 10)));
-  assert.deepEqual([d.dev, d.theme, d.glass, d.blur, d.mpred, d.blend], [true, '#ffd54f', false, 8, 'off', 'group']);
+  assert.deepEqual([d.dev, d.theme, d.glass, d.blur, d.sat, d.mpred, d.blend], [true, '#ffd54f', false, 8, 250, 'off', 'group']);
   const { page: ip, errors: ie } = await openPage(browser, server.base + '/install' + url.slice(url.indexOf('#')));
   assert.equal(await ip.isChecked('#p-theme input[value="custom"]'), true);
   assert.equal(await ip.inputValue('#p-tcolor'), '#ffd54f');
   assert.equal(await ip.inputValue('#p-blur'), '8');
+  assert.equal(await ip.inputValue('#p-sat'), '250');
   assert.equal(await ip.isChecked('#p-mpred input[value="off"]'), true);
   assert.equal(await ip.isChecked('#p-blend input[value="group"]'), true);
   assert.equal(await ip.isChecked('#p-dev'), true);
@@ -1113,6 +1204,7 @@ test('インストールページで選んだ設定入りのブックマーク�
   assert.equal(p0.blurMode, await page.evaluate(() => document.querySelector('#p-mode input:checked').value));
   assert.equal(String(p0.blur), await page.inputValue('#p-blur'));
   assert.equal(String(p0.tint), await page.inputValue('#p-tint'));
+  assert.equal(String(p0.sat), await page.inputValue('#p-sat'));
   assert.equal(p0.dev, await page.isChecked('#p-dev'));
   assert.equal(p0.mpred, await page.evaluate(() => document.querySelector('#p-mpred input:checked').value));
   assert.equal(p0.blend, await page.evaluate(() => document.querySelector('#p-blend input:checked').value));

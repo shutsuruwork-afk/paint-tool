@@ -164,13 +164,14 @@ const mouseClick = async (page, sel) => {
 
 // その他のメニュー（全消去の項目の親）に並ぶ項目の名前
 const menuItems = page => shadowEval(page, root => [...[...root.querySelectorAll('.mi')].find(b => b.title.startsWith('全消去')).parentElement.children].map(b => b.querySelector('span').textContent));
-test('シンプル版: ツールバーはペン（押すと消しゴムと入れ替わる）・元に戻す・その他・隠すだけで、スマホでも 1 段。お知らせは再表示と元に戻すだけ。ほかの道具はキーで使え、その他は全消去と閉じるだけ', async () => {
+test('チェックポイント 1: ツールバーはペン（押すと消しゴムと入れ替わる）・元に戻す・その他・隠すだけで、スマホでも 1 段。お知らせは再表示と元に戻すだけ。ほかの道具はキーで使え、その他は全消去と閉じるだけ', async () => {
   const bar = page => shadowEval(page, root => {
     const bs = [...root.querySelector('.bar').children].filter(e => e.classList.contains('b'));
     return { titles: bs.map(b => b.title.split(/[ （(]/)[0]), tops: [...new Set(bs.map(b => Math.round(b.getBoundingClientRect().top)))], two: root.querySelector('.bar').classList.contains('two') };
   });
   const want = ['ペン', '元に戻す', 'その他', '隠す'];
-  const { page, errors } = await fresh();
+  const { page, errors } = await openPage(browser, server.base + '/');
+  await runCode(page, withDefaults(CODE, { cp: 1 }));
   const b = await bar(page);
   assert.deepEqual(b.titles, want);
   assert.equal(b.tops.length, 1);
@@ -221,7 +222,7 @@ test('シンプル版: ツールバーはペン（押すと消しゴムと入れ
   await click(page, '[title^="その他"]');
   await click(page, '.mi[title^="閉じる"]');
   await page.waitForFunction(() => !window.__paintBookmarklet);
-  await runCode(page, withDefaults(CODE, { dev: true }));
+  await runCode(page, withDefaults(CODE, { dev: true, cp: 1 }));
   assert.deepEqual(await menuItems(page), ['全消去', '閉じる']);
   assert.deepEqual(errors, []);
   await page.close();
@@ -229,12 +230,67 @@ test('シンプル版: ツールバーはペン（押すと消しゴムと入れ
   const ph = await browser.newPage({ viewport: { width: 360, height: 800 }, isMobile: true, hasTouch: true });
   await ph.route('**/phone', r => r.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><p>phone</p>' }));
   await ph.goto(server.base + '/phone');
-  await runCode(ph, CODE);
+  await runCode(ph, withDefaults(CODE, { cp: 1 }));
   const m = await bar(ph);
   assert.deepEqual(m.titles, want);
   assert.equal(m.two, false);
   assert.equal(m.tops.length, 1);
   await ph.close();
+});
+
+test('チェックポイント 2（既定）: ツールバーはペン・文字・元に戻す・その他・隠す。文字は電卓が入り、その他は全消去・色・閉じる。インストールページでチェックポイントを選べる（T-078）', async () => {
+  const { page, errors } = await fresh();
+  const bar = () => shadowEval(page, root => [...root.querySelector('.bar').children].filter(e => e.classList.contains('b'))
+    .map(b => b.title.split(/[ （(]/)[0] + (b.classList.contains('on') ? '*' : '')));
+  const prefs = () => page.evaluate(() => window.__paintBookmarklet.stats().prefs);
+  assert.equal((await prefs()).cp, 2);
+  assert.deepEqual(await bar(), ['ペン*', '文字', '元に戻す', 'その他', '隠す']);
+  // 文字: 押すと文字の道具になり、計算式を書くと答えが薄く出て Tab で書き込める（電卓は入り）
+  await mouseClick(page, '.bar > [aria-label^="文字"]');
+  assert.deepEqual(await bar(), ['ペン', '文字*', '元に戻す', 'その他', '隠す']);
+  assert.equal((await prefs()).calc, true);
+  await page.mouse.click(300, 300);
+  await page.keyboard.type('12+30');
+  assert.equal(await shadowEval(page, root => root.querySelector('.gh').textContent), '=42');
+  await page.keyboard.press('Tab');
+  assert.equal(await shadowEval(page, root => root.querySelector('textarea').value), '12+30=42');
+  // ペンを押すと文字は確定してペンに、もう一度で消しゴム
+  await mouseClick(page, '.bar > [aria-label^="ペン"]');
+  assert.equal((await page.evaluate(() => window.__paintBookmarklet.stats().texts)), 1);
+  assert.deepEqual(await bar(), ['ペン*', '文字', '元に戻す', 'その他', '隠す']);
+  await mouseClick(page, '.bar > [aria-label^="ペン"]');
+  assert.deepEqual(await bar(), ['消しゴム*', '文字', '元に戻す', 'その他', '隠す']);
+  // その他: 全消去・色（8 色）・閉じる。色を選ぶとメニューは閉じ、消しゴムのときはペンに戻る
+  await mouseClick(page, '.bar > [aria-label^="その他"]');
+  const menu = () => shadowEval(page, root => {
+    const p = [...root.querySelectorAll('.mi')].find(b => b.title.startsWith('全消去')).parentElement;
+    return { open: p.classList.contains('on'), items: [...p.children].map(e => e.classList.contains('mi') ? e.querySelector('span').textContent : e.querySelectorAll('.c').length + ' 色'),
+      on: [...p.querySelectorAll('.c.on')].map(b => b.title) };
+  });
+  assert.deepEqual(await menu(), { open: true, items: ['全消去', '8 色', '閉じる'], on: ['色 3'] });
+  await mouseClick(page, '.pn.on [title="色 7"]');
+  assert.equal((await prefs()).color, '#1e88e5');
+  assert.equal((await prefs()).tool, 'pen');
+  assert.deepEqual(await menu(), { open: false, items: ['全消去', '8 色', '閉じる'], on: ['色 7'] });
+  assert.deepEqual(errors, []);
+  await page.close();
+  // インストールページ: チェックポイントを選ぶと Paint ボタンの名前と中身が変わり、試すとそのチェックポイントで起動し直す
+  const ins = await openPage(browser, server.base + '/install');
+  const ip = ins.page;
+  assert.equal((await ip.textContent('#bm')).trim(), 'Paint CP2');
+  assert.ok(await ip.isChecked('#p-cp input[value="2"]'));
+  await ip.check('#p-cp input[value="1"]');
+  assert.equal((await ip.textContent('#bm')).trim(), 'Paint CP1');
+  assert.ok(decodeURIComponent(await ip.getAttribute('#bm', 'href')).includes('{\\"cp\\":1}'));
+  await ip.click('#try');
+  assert.equal(await ip.evaluate(() => window.__paintBookmarklet.stats().prefs.cp), 1);
+  // ツールがページを覆っているので、隠してから選び直す
+  await ip.keyboard.press('Escape');
+  await ip.check('#p-cp input[value="2"]');
+  await ip.click('#try');
+  assert.equal(await ip.evaluate(() => window.__paintBookmarklet.stats().prefs.cp), 2);
+  assert.deepEqual(ins.errors, []);
+  await ip.close();
 });
 
 test('スマホ: 2 本指で動かすとページがスクロールし、1 本目で描き始めた線は残らない。1 本指では今まで通り描ける（T-074）', async () => {

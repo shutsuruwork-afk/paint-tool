@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.27.0-simple.7';
+  const VERSION = '1.28.0-simple.8';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -288,6 +288,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const keepPanels = DEF.keepPanels === true;
   // シンプル版（T-071）: ツールバーには少しだけ出す。fullBar（インストールページの開発用）なら本家と同じにすべて出す（見比べるため）
   const fullBar = DEF.fullBar === true;
+  // チェックポイント（T-078）: シンプル版の段階を見比べるため、インストールページで選ぶ（DEF.cp）。既定は最新の 2。fullBar のときは 0（本家と同じ）
+  //   1: ペン（消しゴムと入れ替わる）・元に戻す・その他（全消去・閉じる）・隠す
+  //   2: 1 に文字のボタン（電卓は入り）と、その他の色（全消去と閉じるの間）を足す
+  const cp = fullBar ? 0 : DEF.cp === 1 ? 1 : 2;
   // 見た目（インストールページの設定）: 明るい（白に黒）と、ガラス風（半透明にして下をぼかす）。既定は白いガラス（T-050、ユーザーが決めた）。
   // ガラスの調整は開発用: ぼかし方（gauss は周りも拾う本物のガウス、plain は backdrop-filter そのまま）・強さ・地の濃さ
   // theme は 'dark'・'light'・'#rrggbb'（好きな色。明るさで文字を黒か白にする）。開発用の見た目のパネル（dev）からも変えられる
@@ -505,7 +509,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const passB = btn('ページ操作モード (V) — 絵を残したままページを操作', I.pass, togglePass);
   // その他: 名前とショートカット付きのメニュー。keep なら押しても閉じない（背景を続けて切り替えられる）
   const moreP = pnl();
-  const moreB = btn(fullBar ? 'その他（全消去・背景・保存・コピー・電卓・画面に固定・デフォルトの変更）' : 'その他（全消去・閉じる）', I.more, () => togglePanel(moreP, moreB));
+  const moreB = btn(fullBar ? 'その他（全消去・背景・保存・コピー・電卓・画面に固定・デフォルトの変更）' : cp === 2 ? 'その他（全消去・色・閉じる）' : 'その他（全消去・閉じる）', I.more, () => togglePanel(moreP, moreB));
   // sw なら入り・切りのスイッチ（role="switch"。状態は aria-checked で持ち、つまみは CSS で動かす）
   const item = (title, label, key, d, fn, keep, sw) => {
     const b = btn(title, d, () => { if (!keep) closePanel(); fn(); }, 'mi');
@@ -620,9 +624,17 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // シンプル版のその他は全消去と閉じるだけ（T-072）。ほかの項目も作るがメニューには入れない（背景の B・保存の Ctrl+S などのキーは効く）。
   // fullBar なら本家と同じ項目で、閉じるはバーの × にする
   for (const b of [...moreP.children]) if (fullBar ? b === closeMi : b !== clrMi && b !== closeMi) b.remove();
+  // チェックポイント 2: その他の全消去と閉じるの間に色を並べる（選ぶとメニューを閉じる。消しゴムのときはペンに戻す。T-078）
+  const mcBtns = PALETTE.map((c, i) => {
+    const b = btn(`色 ${i + 1}`, null, () => { setColor(c); if (tool === 'eraser') setTool('pen'); closePanel(); }, 'c');
+    b.style.setProperty('--c', c);
+    return b;
+  });
+  if (cp === 2) moreP.insertBefore(row(...mcBtns), closeMi);
   if (fullBar) bar.append(toolBtns.select, penB, toolBtns.marker, toolBtns.eraser, shapeB, toolBtns.text, toolBtns.fill,
     el('div', 'sep brk'), styleB, sep(), undoB, redoB, sep(), passB, moreB, sep(), hideB, closeB); // 1 段に収まらないときは .brk で段を分ける（.two .brk。T-064・T-067）
-  else bar.append(penB, sep(), undoB, sep(), moreB, hideB); // 消しゴムはペンのボタンで切り替える（T-076） // 色と太さのボタンも出さない（T-074。太さは既定のまま、キーの [ ] と数字は効く）
+  else if (cp === 1) bar.append(penB, sep(), undoB, sep(), moreB, hideB); // 消しゴムはペンのボタンで切り替える（T-076）
+  else bar.append(penB, toolBtns.text, sep(), undoB, sep(), moreB, hideB); // チェックポイント 2 は文字も（T-078） // 色と太さのボタンも出さない（T-074。太さは既定のまま、キーの [ ] と数字は効く）
   bar.append(shapeP, penP, styleP, moreP, lookP, lci);
 
   // パネルは 1 つだけ開く。描き始め・パネルの外を押す・Esc で閉じる。
@@ -815,6 +827,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     color = c.toLowerCase();
     let hit = false;
     swBtns.forEach((b, i) => { const on = PALETTE[i] === color; b.classList.toggle('on', on); hit = hit || on; });
+    mcBtns.forEach((b, i) => b.classList.toggle('on', PALETTE[i] === color));
     customB.classList.toggle('on', !hit);
     customB.style.setProperty('--c', color);
     if (ta) { taC = color; styleTa(); }
@@ -3027,9 +3040,11 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     else moveBar((vw - barW) / 2, 10);
   }
   applyPrefs(DEF);
+  if (cp === 2) calc = true; // チェックポイント 2 は電卓が入り（切り替えはない。T-078）
   base = snapPrefs();
   const site = loadSite();
   applyPrefs(site);
+  if (cp === 2) calc = true;
   barMoved = !!(site && Array.isArray(site.bar));
 
   // ---------- 起動 ----------
@@ -3037,7 +3052,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, selection: sel ? [selX, selY, selW, selH] : null, texts: tlist.length, fixed, history: hist.length, historyPixels: hpix, events: nEv, points: nPts,
     desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, nativePrediction: nativePred, inkTrail: !!inkP,
     rec: [rec, recS.length, recN],
-    prefs: { ...snapPrefs(), bar: [barX, barY], touchText, pickOnce, keepPanels, fullBar, dev, ...look, mpred, blend },
+    prefs: { ...snapPrefs(), bar: [barX, barY], touchText, pickOnce, keepPanels, fullBar, cp, dev, ...look, mpred, blend },
   });
   win[NS] = { version: VERSION, toggle, show, hide, close, destroy, undo, redo, clear: clearAll, tool: setTool, color: setColor, stats, pixels };
   setColor(color);

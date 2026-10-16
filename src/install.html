@@ -234,6 +234,9 @@ section > .sub + .sub { margin-top: 20px; }
 .slider { display: grid; grid-template-columns: 8.5em minmax(0, 1fr) 3.2em; align-items: center; gap: 12px; }
 .slider input { width: 100%; accent-color: var(--red); }
 .slider output { font: 500 0.9rem/1 var(--font-mono); text-align: right; }
+.cps { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin: 20px 0 0; }
+.cps-l { font-weight: 700; }
+.cps .aside { flex-basis: 100%; margin: 0; }
 .choices { display: flex; flex-wrap: wrap; gap: 8px 18px; }
 .choices label, .check { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
 .choices input, .check input { accent-color: var(--red); width: 18px; height: 18px; margin: 0; flex: none; }
@@ -253,9 +256,17 @@ section > .sub + .sub { margin-top: 20px; }
 
 <main class="page">
   <header>
-    <p class="eyebrow">Bookmarklet · シンプル版（研究用）· v1.27.0-simple.7 · %%SIZE%%（gzip %%GZIP%%）</p>
+    <p class="eyebrow">Bookmarklet · シンプル版（研究用）· v1.28.0-simple.8 · %%SIZE%%（gzip %%GZIP%%）</p>
     <h1>ペイント<br>ブックマークレット</h1>
     <p class="lead">開いているページの上に、<span class="mark">そのまま描ける<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d="M18 40C8 22 52 6 108 7s92 13 84 30-62 20-112 17S4 38 30 16" vector-effect="non-scaling-stroke"/></svg></span>ペイントツールです。ブックマークを押すだけで起動し、拡張機能もアカウントも要りません。入力から線が画面に出るまでの遅延を減らす仕組みを、ブラウザが対応している限りすべて使います。</p>
+    <div class="cps">
+      <span class="cps-l" id="cp-l">チェックポイント</span>
+      <div class="choices" id="p-cp" role="radiogroup" aria-labelledby="cp-l">
+        <label><input type="radio" name="cp" value="1">1</label>
+        <label><input type="radio" name="cp" value="2">2（最新）</label>
+      </div>
+      <p class="aside" id="cp-desc"></p>
+    </div>
     <div class="actions">
       <a id="bm" class="bm" href="%%BOOKMARKLET_HREF%%" title="ブックマークバーへドラッグ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1.2-4.4L16 4.8a2 2 0 0 1 2.9 0l.3.3a2 2 0 0 1 0 2.9L8.4 18.8zM14 7l3 3"/></svg>Paint</a>
       <span class="hint">← このボタンをブックマークバーへドラッグ（色や太さは下の「デフォルトの設定」で選べます）</span>
@@ -481,7 +492,7 @@ function runPaint() {%%INLINE_CODE%%}
   // ---- デフォルトの設定: 選んだ既定をブックマークレットのコードに埋め込む ----
   // 組み込みの既定（src/paint.js の PALETTE と CFG に合わせる。テストで一致を確かめている）
   const PALETTE = ['#111111', '#ffffff', '#e53935', '#fb8c00', '#fdd835', '#43a047', '#1e88e5', '#8e24aa'];
-  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 6, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: false, pickOnce: false, keepPanels: false, fullBar: false, glass: true, theme: 'light', blurMode: 'gauss', blur: 18, tint: 80, sat: 200, dev: false, mpred: 'full', blend: 'canvas' };
+  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 6, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: false, pickOnce: false, keepPanels: false, fullBar: false, cp: 2, glass: true, theme: 'light', blurMode: 'gauss', blur: 18, tint: 80, sat: 200, dev: false, mpred: 'full', blend: 'canvas' };
   const BASE = bm.getAttribute('href'); // 既定の入っていないブックマークレット
   const KEY = 'paint-defaults';
   const $ = id => document.getElementById(id);
@@ -494,6 +505,10 @@ function runPaint() {%%INLINE_CODE%%}
     colorsEl.insertBefore(r, colorsEl.lastElementChild);
   });
   const sizes = ['pen', 'marker', 'eraser', 'text'];
+  const CP_DESC = {
+    1: 'ツールバーは、ペン（押すたびに消しゴムと入れ替わる）・元に戻す・その他（全消去・閉じる）・隠す。',
+    2: '1 に、文字のボタン（電卓は入り: 計算式を書くと答えが薄く出て、Tab で書き込める）と、その他の色（全消去と閉じるの間）を足したもの。',
+  };
   // ツールの「デフォルトの変更」から開いたときは、そのブックマークの既定が #defaults=… で届くので、それを読み込む
   let fromTool = false;
   let cur = fromHash() || load();
@@ -527,6 +542,7 @@ function runPaint() {%%INLINE_CODE%%}
       if (v.theme === 'light' || v.theme === 'dark' || /^#[0-9a-f]{6}$/i.test(v.theme)) d.theme = v.theme.toLowerCase();
       if (typeof v.dev === 'boolean') d.dev = v.dev;
       if (typeof v.fullBar === 'boolean') d.fullBar = v.fullBar;
+      if (v.cp === 1 || v.cp === 2) d.cp = v.cp;
       if (v.blurMode === 'gauss' || v.blurMode === 'plain') d.blurMode = v.blurMode;
       if (+v.blur >= 0 && +v.blur <= 40) d.blur = +v.blur;
       if (+v.tint >= 30 && +v.tint <= 95) d.tint = +v.tint;
@@ -547,7 +563,7 @@ function runPaint() {%%INLINE_CODE%%}
     if (c.calc !== BUILTIN.calc) o.calc = c.calc;
     if (c.pickOnce !== BUILTIN.pickOnce) o.pickOnce = c.pickOnce;
     if (c.keepPanels !== BUILTIN.keepPanels) o.keepPanels = c.keepPanels;
-    for (const k of ['glass', 'theme', 'blurMode', 'blur', 'tint', 'sat', 'dev', 'fullBar', 'mpred', 'blend']) if (c[k] !== BUILTIN[k]) o[k] = c[k];
+    for (const k of ['glass', 'theme', 'blurMode', 'blur', 'tint', 'sat', 'dev', 'fullBar', 'cp', 'mpred', 'blend']) if (c[k] !== BUILTIN[k]) o[k] = c[k];
     return o;
   }
   const enc = s => s.replace(/[%#\s"]/g, ch => encodeURIComponent(ch));
@@ -562,7 +578,10 @@ function runPaint() {%%INLINE_CODE%%}
     $('p-tool').value = cur.tool;
     for (const r of document.querySelectorAll('#p-bar input')) r.checked = r.value === cur.bar;
     $('p-touch').checked = cur.touchText;
-    $('p-calc').checked = cur.calc;
+    // チェックポイント 2 は電卓がいつも入り（ここでは変えられない。T-078）
+    const cp2 = cur.cp === 2 && !cur.fullBar;
+    $('p-calc').checked = cur.calc || cp2;
+    $('p-calc').disabled = cp2;
     $('p-once').checked = cur.pickOnce;
     $('p-keep').checked = cur.keepPanels;
     $('p-glass').checked = cur.glass;
@@ -570,6 +589,10 @@ function runPaint() {%%INLINE_CODE%%}
     if (cur.theme[0] === '#') $('p-tcolor').value = cur.theme;
     $('p-dev').checked = cur.dev;
     $('p-full').checked = cur.fullBar;
+    // チェックポイント（T-078）: 選ぶと Paint ボタンの名前も変わる（ブックマークの名前になるので、並べて入れても見分けられる）
+    for (const r of document.querySelectorAll('#p-cp input')) r.checked = +r.value === cur.cp;
+    $('cp-desc').textContent = cur.fullBar ? '「ツールバーにすべてのボタンを出す」が入りなので、本家と同じボタンになります（下の開発用）。' : CP_DESC[cur.cp];
+    bm.lastChild.textContent = cur.fullBar ? 'Paint 本家' : 'Paint CP' + cur.cp;
     for (const r of document.querySelectorAll('#p-mode input')) r.checked = r.value === cur.blurMode;
     for (const r of document.querySelectorAll('#p-mpred input')) r.checked = r.value === cur.mpred;
     for (const r of document.querySelectorAll('#p-blend input')) r.checked = r.value === cur.blend;
@@ -598,6 +621,7 @@ function runPaint() {%%INLINE_CODE%%}
   $('p-tcolor').addEventListener('input', e => { cur.theme = e.target.value.toLowerCase(); update(); });
   $('p-dev').addEventListener('change', e => { cur.dev = e.target.checked; update(); });
   $('p-full').addEventListener('change', e => { cur.fullBar = e.target.checked; update(); });
+  $('p-cp').addEventListener('change', e => { cur.cp = +e.target.value; update(); });
   $('p-mode').addEventListener('change', e => { cur.blurMode = e.target.value; update(); });
   $('p-mpred').addEventListener('change', e => { cur.mpred = e.target.value; update(); });
   $('p-blend').addEventListener('change', e => { cur.blend = e.target.value; update(); });
@@ -610,6 +634,9 @@ function runPaint() {%%INLINE_CODE%%}
   } else show();
   // このページで試すときは eval を使わず、埋め込み版が読む変数で既定を渡す
   const tryPaint = () => {
+    // 動いているツールと違うチェックポイントを選んでいたら、閉じてから選んだ方で起動し直す（2 回目の実行は表示の切り替えになるため）
+    const api = window.__paintBookmarklet;
+    if (api && api.stats().prefs.cp !== (cur.fullBar ? 0 : cur.cp)) api.destroy();
     window.__paintBookmarkletDefaults = JSON.stringify(diff(cur));
     try { runPaint(); } finally { delete window.__paintBookmarkletDefaults; }
   };

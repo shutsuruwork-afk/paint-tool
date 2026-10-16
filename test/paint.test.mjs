@@ -238,7 +238,7 @@ test('チェックポイント 1: ツールバーはペン（押すと消しゴ�
   await ph.close();
 });
 
-test('チェックポイント 2（既定）: ツールバーはペン・文字・元に戻す・その他・隠す。文字は電卓が入り、その他は全消去・色・閉じる。インストールページでチェックポイントを選べる（T-078）', async () => {
+test('チェックポイント 2（既定）: ツールバーはペン・文字・元に戻す・その他・隠す。文字は電卓が入り、その他は全消去・閉じる・色。インストールページでチェックポイントを選べる（T-078）', async () => {
   const { page, errors } = await fresh();
   const bar = () => shadowEval(page, root => [...root.querySelector('.bar').children].filter(e => e.classList.contains('b'))
     .map(b => b.title.split(/[ （(]/)[0] + (b.classList.contains('on') ? '*' : '')));
@@ -260,18 +260,18 @@ test('チェックポイント 2（既定）: ツールバーはペン・文字�
   assert.deepEqual(await bar(), ['ペン*', '文字', '元に戻す', 'その他', '隠す']);
   await mouseClick(page, '.bar > [aria-label^="ペン"]');
   assert.deepEqual(await bar(), ['消しゴム*', '文字', '元に戻す', 'その他', '隠す']);
-  // その他: 全消去・色（8 色）・閉じる。色を選ぶとメニューは閉じ、消しゴムのときはペンに戻る
+  // その他: 全消去・閉じる・色（8 色。T-079 で閉じるの後へ）。色を選ぶとメニューは閉じ、消しゴムのときはペンに戻る
   await mouseClick(page, '.bar > [aria-label^="その他"]');
   const menu = () => shadowEval(page, root => {
     const p = [...root.querySelectorAll('.mi')].find(b => b.title.startsWith('全消去')).parentElement;
     return { open: p.classList.contains('on'), items: [...p.children].map(e => e.classList.contains('mi') ? e.querySelector('span').textContent : e.querySelectorAll('.c').length + ' 色'),
       on: [...p.querySelectorAll('.c.on')].map(b => b.title) };
   });
-  assert.deepEqual(await menu(), { open: true, items: ['全消去', '8 色', '閉じる'], on: ['色 3'] });
+  assert.deepEqual(await menu(), { open: true, items: ['全消去', '閉じる', '8 色'], on: ['色 3'] });
   await mouseClick(page, '.pn.on [title="色 7"]');
   assert.equal((await prefs()).color, '#1e88e5');
   assert.equal((await prefs()).tool, 'pen');
-  assert.deepEqual(await menu(), { open: false, items: ['全消去', '8 色', '閉じる'], on: ['色 7'] });
+  assert.deepEqual(await menu(), { open: false, items: ['全消去', '閉じる', '8 色'], on: ['色 7'] });
   assert.deepEqual(errors, []);
   await page.close();
   // インストールページ: チェックポイントを選ぶと Paint ボタンの名前と中身が変わり、試すとそのチェックポイントで起動し直す

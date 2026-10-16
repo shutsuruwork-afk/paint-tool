@@ -1224,6 +1224,37 @@ test('電卓: 入りにすると、文字の行が計算式なら答えが薄く
   await page.close();
 });
 
+test('予測線: ペンは最後の点より先まで伸ばし、蛍光ペンは伸ばさない（太い線では外れた予測が目立つため）', async () => {
+  const { page, errors } = await fresh();
+  // 予測は入力の速さで決まるので、間隔を空けた合成のイベントを 1 回の evaluate の中で送り、途中の pred を読む
+  const reach = await page.evaluate(() => {
+    const api = window.__paintBookmarklet, root = document.querySelector('paint-bookmarklet').shadowRoot;
+    const pad = root.querySelector('.p'), q = root.querySelector('canvas.q');
+    const ev = (type, x, y, extra) => new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, pointerId: 9, pointerType: 'mouse', isPrimary: true, clientX: x, clientY: y, button: type === 'pointermove' ? -1 : 0, buttons: 1, ...extra });
+    const wait = ms => { const t = performance.now(); while (performance.now() - t < ms); };
+    const right = () => {
+      const d = q.getContext('2d').getImageData(0, 0, q.width, q.height).data;
+      let m = -1;
+      for (let i = 3; i < d.length; i += 4) if (d[i] > 20 && ((i >> 2) % q.width) > m) m = (i >> 2) % q.width;
+      return m / devicePixelRatio;
+    };
+    const out = {};
+    for (const t of ['pen', 'marker']) {
+      api.tool(t);
+      pad.dispatchEvent(ev('pointerdown', 100, 400));
+      for (let x = 110; x <= 400; x += 10) { wait(2); pad.dispatchEvent(ev('pointermove', x, 400)); }
+      out[t] = right();
+      pad.dispatchEvent(ev('pointerup', 400, 400, { buttons: 0 }));
+    }
+    return out;
+  });
+  // 最後の点は x = 400。ペン（太さ 4）は予測の分だけ先まで、蛍光ペン（太さ 24）は太さの半分まで
+  assert.ok(reach.pen > 415, JSON.stringify(reach));
+  assert.ok(reach.marker <= 413, JSON.stringify(reach));
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('速いマウス移動でも線が途切れない（全中間点を取りこぼさない）', async () => {
   const { page } = await fresh();
   const pts = [];

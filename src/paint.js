@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.20.0';
+  const VERSION = '1.20.1';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -991,6 +991,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   let act = -1, aType = '', mode = 0; // mode: 1 インク / 2 消しゴム / 3 図形 / 4 選択（囲む・移動・拡大縮小）
   let sTool = 'pen', sW = 0, sA = 1, sP = false, sRaw = false, raf = 0;
   let sPen = 0, pf = 1, sDist = 0; // ペンの種類（PENS の番号）と、万年筆・筆の太さの係数、書き始めからの距離
+  let sPd = true; // 予測線を描くか。蛍光ペンは太いので、外れた予測（止めたり曲げたりした瞬間の先端の飛び出し）が目立つため描かない（T-051）
   let bx = 0, by = 0, bw = 0, mx = 0, my = 0, ps = 1, lt = 0, lastPen = -1e9;
   let x0 = 0, y0 = 0, x1 = 0, y1 = 0, mW = 0; // ストロークの外接矩形
   let tx0 = 0, ty0 = 0, tx1 = 0, ty1 = 0; // pred レイヤの汚れ矩形
@@ -1084,6 +1085,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         sPen = t === 'pen' ? PENS.indexOf(penType) : 0;
         pf = sPen === 1 ? 0.6 : 1;
         sDist = 0;
+        sPd = t === 'pen';
         bw = sP ? qw(sW * (0.2 + 0.8 * ps)) : sW;
         if (sPen === 1) bw = qw(bw * (0.2 + 0.8 * pf));
         else if (sPen === 2) bw = qw(bw * 0.35);
@@ -1122,8 +1124,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       inkMove(e, list, n);
       if (inkP && sA === 1 && isMove) {
         // OS が実際のポインタ位置まで線を伸ばすので、推測（予測線）は使わない
-        try { inkP.updateInkTrailStartPoint(e, { color, diameter: bw / dpr }); pn = 0; } catch (_) { readPred(e); }
-      } else if (isMove) readPred(e);
+        try { inkP.updateInkTrailStartPoint(e, { color, diameter: bw / dpr }); pn = 0; } catch (_) { if (sPd) readPred(e); }
+      } else if (isMove && sPd) readPred(e);
       drawTail();
     } else if (mode === 2) {
       eraseMove(e, list, n);

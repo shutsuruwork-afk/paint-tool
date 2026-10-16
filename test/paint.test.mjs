@@ -180,7 +180,6 @@ test('シンプル版: ツールバーはペン（押すと消しゴムと入れ
   // ペンの太さの既定は 6（T-074）
   assert.equal((await page.evaluate(() => window.__paintBookmarklet.stats().prefs.size.pen)), 6);
   // ペンのボタン 1 つで、押すたびにペンと消しゴムが入れ替わり、印と名前も変わる（T-076。種類のパネルは出ない）。
-  // ページ操作モード（V）では選んでいない見た目になり、押すとその印の道具で描画に戻る
   const st = page => shadowEval(page, root => {
     const b = root.querySelector('.bar > .b');
     return {
@@ -203,13 +202,11 @@ test('シンプル版: ツールバーはペン（押すと消しゴムと入れ
   // キーで消しゴムにしても印が変わる
   await page.keyboard.press('e');
   assert.deepEqual(await st(page), ER);
-  // ページ操作モードでは選んでいない見た目で、押すと消しゴムのまま描画に戻る
+  // ページ操作モードはない（V キーも効かない。T-077）
   await page.keyboard.press('v');
-  assert.deepEqual(await st(page), { ...ER, on: false, pass: true });
-  assert.equal(await onPage(), true, 'the page gets the clicks');
-  assert.equal(await toastOn(), false, 'no toast in page mode');
-  await press();
   assert.deepEqual(await st(page), ER);
+  assert.equal(await onPage(), false);
+  assert.equal(await toastOn(), false);
   await press();
   assert.deepEqual(await st(page), PEN);
   await drag(page, [[300, 300], [400, 320]]);

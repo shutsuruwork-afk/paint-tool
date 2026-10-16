@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.27.0-simple.6';
+  const VERSION = '1.27.0-simple.7';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -434,9 +434,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // ページ操作モードのときは、ペンのままでも押せば描画に戻り、パネルも普段と同じに開く（T-057・T-062）
   const penP = pnl();
   // シンプル版（T-076）: ペンのボタン 1 つで、押すたびにペンと消しゴムが入れ替わる。印と名前も今の道具に変わる（markPen）。
-  // 種類のパネルは出さない。ページ操作モード（V）のときに押すと、印の道具で描画に戻る。fullBar なら本家と同じ（ペンは種類のパネル）
+  // 種類のパネルは出さない。fullBar なら本家と同じ（ペンは種類のパネル）
   const penB = btn(TITLES.pen, I.pen, () => {
-    if (!fullBar) setTool(pass ? (tool === 'eraser' ? 'eraser' : 'pen') : tool === 'pen' ? 'eraser' : 'pen');
+    if (!fullBar) setTool(tool === 'pen' ? 'eraser' : 'pen');
     else if (tool === 'pen') { if (pass) setTool('pen'); togglePanel(penP, penB); }
     else { setTool('pen'); if (pickOnce) openPanel(penP, penB); }
   }, fullBar ? 'dd' : null);
@@ -721,7 +721,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     remember();
   }
   function syncTool(fromSlider) {
-    for (const k in toolBtns) toolBtns[k].classList.toggle('on', k === tool && (fullBar || !pass));
+    for (const k in toolBtns) toolBtns[k].classList.toggle('on', k === tool);
     markPen();
     const shape = SHAPES.includes(tool);
     if (shape && lastShape !== tool) {
@@ -778,14 +778,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     for (const k of PENS) penBtns[k].classList.toggle('on', k === penType);
     markPen();
   }
-  // シンプル版（T-076）: ペンのボタンは、消しゴムのときは消しゴムの印と名前にし、ペンか消しゴムのとき（ページ操作でなければ）選んだ見た目にする
+  // シンプル版（T-076）: ペンのボタンは、消しゴムのときは消しゴムの印と名前にし、ペンか消しゴムのとき選んだ見た目にする
   function markPen() {
     if (fullBar) return;
     const er = tool === 'eraser', t = er ? TITLES.eraser : PEN_TITLES[penType];
     penD.setAttribute('d', I[er ? 'eraser' : penType]);
     penB.title = t;
     penB.setAttribute('aria-label', t);
-    penB.classList.toggle('on', (er || tool === 'pen') && !pass);
+    penB.classList.toggle('on', er || tool === 'pen');
   }
   // 鉛筆のかすれ: 色ごとに 1 度だけ作る模様（入力のたびには作らない）
   let grainC = '', grainP = null;
@@ -850,8 +850,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     pass = !pass;
     wrap.classList.toggle('pass', pass);
     passB.classList.toggle('on', pass);
-    // シンプル版はバーにページ操作のボタンがないので、ページ操作の間は道具のボタンの選択を外して見せる（T-073）
-    if (!fullBar) { for (const k in toolBtns) toolBtns[k].classList.toggle('on', k === tool && !pass); markPen(); }
     say(pass ? 'ページ操作モード（V で描画に戻る）' : '描画モード');
   }
   // カーソル画像は OS/コンポジタが描くので遅延ゼロ（DOM で追従させるとフレーム遅れが出る）
@@ -2735,7 +2733,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       ["{Ctrl}+{S}", "PNG で保存"]
     ]],
     ["表示", [
-      ["{V}", "ページ操作モード（ツールを選ぶと描画に戻る）"],
+      ["{V}", "ページ操作モード（ツールを選ぶと描画に戻る）", "full"],
       ["{B}", "背景を透明・白・黒に"],
       ["{D}", "計測表示"],
       ["{?}", "この一覧"],
@@ -2768,7 +2766,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         const sec = el('section'), t = el('h3'), g = el('div', 'hg');
         t.textContent = name;
         for (const [k, d, only] of rows) {
-          if (only === 'touch' && !touchText) continue;
+          if ((only === 'touch' && !touchText) || (only === 'full' && !fullBar)) continue;
           const a = el('span'), b = el('span');
           rich(a, k); rich(b, d);
           g.append(a, b);
@@ -2821,7 +2819,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     else if (k >= '1' && k <= '8' && k.length === 1) setColor(PALETTE[k - 1]);
     else if (k === '[') setSize(round(CFG[tool].size / 1.2));
     else if (k === ']') setSize(max(CFG[tool].size + 1, round(CFG[tool].size * 1.2)));
-    else if (k === 'v') togglePass();
+    else if (k === 'v' && fullBar) togglePass(); // シンプル版にページ操作モードはない（T-077）
     else if (k === 'b') cycleBg();
     else if (k === 'd') toggleHud();
     else if (k === 'i' && HAS_ED) pickColor();

@@ -31,9 +31,10 @@ const escHtml = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g
 const hm = src.match(/\/\*HELP\*\/([\s\S]*?)\/\*HELP\*\//);
 if (!hm) throw new Error('HELP list not found in src/paint.js');
 const rich = t => t.split(/\{([^}]*)\}/).map((x, i) => (i % 2 ? `<kbd>${escHtml(x)}</kbd>` : escHtml(x))).join('');
+// 3 つ目が 'full' の行（ページ操作モード）は、シンプル版のインストールページには出さない（T-077）
 const helpHtml = JSON.parse(hm[1]).map(([name, rows]) =>
   `<section class="help-g"><h3>${escHtml(name)}</h3><ul class="keys">` +
-  rows.map(([k, d]) => `<li${k.includes('{') ? '' : ' class="t"'}><span class="k">${rich(k)}</span><span>${rich(d)}</span></li>`).join('') +
+  rows.filter(r => r[2] !== 'full').map(([k, d]) => `<li${k.includes('{') ? '' : ' class="t"'}><span class="k">${rich(k)}</span><span>${rich(d)}</span></li>`).join('') +
   '</ul></section>').join('\n');
 const kb = n => (n / 1024).toFixed(1) + ' KB';
 const gz = gzipSync(code).length;

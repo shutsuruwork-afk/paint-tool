@@ -253,7 +253,7 @@ section > .sub + .sub { margin-top: 20px; }
 
 <main class="page">
   <header>
-    <p class="eyebrow">Bookmarklet · v1.27.0 · %%SIZE%%（gzip %%GZIP%%）</p>
+    <p class="eyebrow">Bookmarklet · シンプル版（研究用）· v1.27.0-simple.1 · %%SIZE%%（gzip %%GZIP%%）</p>
     <h1>ペイント<br>ブックマークレット</h1>
     <p class="lead">開いているページの上に、<span class="mark">そのまま描ける<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d="M18 40C8 22 52 6 108 7s92 13 84 30-62 20-112 17S4 38 30 16" vector-effect="non-scaling-stroke"/></svg></span>ペイントツールです。ブックマークを押すだけで起動し、拡張機能もアカウントも要りません。入力から線が画面に出るまでの遅延を減らす仕組みを、ブラウザが対応している限りすべて使います。</p>
     <div class="actions">
@@ -351,6 +351,7 @@ section > .sub + .sub { margin-top: 20px; }
       <fieldset>
         <legend>開発用</legend>
         <label class="check"><span class="ct"><b>開発用の項目をツールの中に出す</b><small>その他（⋯）に「見た目（開発用）」が出て、ツールバーの色（暗い・明るい・好きな色）とガラス、蛍光ペンの予測、半透明の線の描き方をその場で変えられます。気に入ったら「この見た目をデフォルトに」で、このページに持ってこられます。「入力を録る（開発用）」を入れると、ペン・蛍光ペンで描いた線の入力（座標・時刻・筆圧・ブラウザの予測）を録って JSON で書き出せます（予測の精度を、実際に書いた線で測るため。ページの URL は入りません）。</small></span><input type="checkbox" role="switch" id="p-dev"></label>
+        <label class="check"><span class="ct"><b>ツールバーにすべてのボタンを出す（本家と同じ）</b><small>シンプル版のツールバーは、ペン・消しゴム・色と太さ・元に戻す・その他・隠すだけです（ほかの道具はショートカットで使えます）。入りにすると、本家と同じにすべてのボタンを並べます（見比べるため）。</small></span><input type="checkbox" role="switch" id="p-full"></label>
         <p class="gdev-h">蛍光ペンの予測（開発用）</p>
         <div class="choices" id="p-mpred" role="radiogroup" aria-label="蛍光ペンの予測">
           <label><input type="radio" name="mpred" value="full">そのまま（ペンと同じ）</label>
@@ -481,7 +482,7 @@ function runPaint() {%%INLINE_CODE%%}
   // ---- デフォルトの設定: 選んだ既定をブックマークレットのコードに埋め込む ----
   // 組み込みの既定（src/paint.js の PALETTE と CFG に合わせる。テストで一致を確かめている）
   const PALETTE = ['#111111', '#ffffff', '#e53935', '#fb8c00', '#fdd835', '#43a047', '#1e88e5', '#8e24aa'];
-  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 4, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: false, pickOnce: false, keepPanels: false, glass: true, theme: 'light', blurMode: 'gauss', blur: 18, tint: 80, sat: 200, dev: false, mpred: 'full', blend: 'canvas' };
+  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 4, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: false, pickOnce: false, keepPanels: false, fullBar: false, glass: true, theme: 'light', blurMode: 'gauss', blur: 18, tint: 80, sat: 200, dev: false, mpred: 'full', blend: 'canvas' };
   const BASE = bm.getAttribute('href'); // 既定の入っていないブックマークレット
   const KEY = 'paint-defaults';
   const $ = id => document.getElementById(id);
@@ -526,6 +527,7 @@ function runPaint() {%%INLINE_CODE%%}
       if (typeof v.glass === 'boolean') d.glass = v.glass;
       if (v.theme === 'light' || v.theme === 'dark' || /^#[0-9a-f]{6}$/i.test(v.theme)) d.theme = v.theme.toLowerCase();
       if (typeof v.dev === 'boolean') d.dev = v.dev;
+      if (typeof v.fullBar === 'boolean') d.fullBar = v.fullBar;
       if (v.blurMode === 'gauss' || v.blurMode === 'plain') d.blurMode = v.blurMode;
       if (+v.blur >= 0 && +v.blur <= 40) d.blur = +v.blur;
       if (+v.tint >= 30 && +v.tint <= 95) d.tint = +v.tint;
@@ -546,7 +548,7 @@ function runPaint() {%%INLINE_CODE%%}
     if (c.calc !== BUILTIN.calc) o.calc = c.calc;
     if (c.pickOnce !== BUILTIN.pickOnce) o.pickOnce = c.pickOnce;
     if (c.keepPanels !== BUILTIN.keepPanels) o.keepPanels = c.keepPanels;
-    for (const k of ['glass', 'theme', 'blurMode', 'blur', 'tint', 'sat', 'dev', 'mpred', 'blend']) if (c[k] !== BUILTIN[k]) o[k] = c[k];
+    for (const k of ['glass', 'theme', 'blurMode', 'blur', 'tint', 'sat', 'dev', 'fullBar', 'mpred', 'blend']) if (c[k] !== BUILTIN[k]) o[k] = c[k];
     return o;
   }
   const enc = s => s.replace(/[%#\s"]/g, ch => encodeURIComponent(ch));
@@ -568,6 +570,7 @@ function runPaint() {%%INLINE_CODE%%}
     for (const r of document.querySelectorAll('#p-theme input[type=radio]')) r.checked = r.value === (cur.theme[0] === '#' ? 'custom' : cur.theme);
     if (cur.theme[0] === '#') $('p-tcolor').value = cur.theme;
     $('p-dev').checked = cur.dev;
+    $('p-full').checked = cur.fullBar;
     for (const r of document.querySelectorAll('#p-mode input')) r.checked = r.value === cur.blurMode;
     for (const r of document.querySelectorAll('#p-mpred input')) r.checked = r.value === cur.mpred;
     for (const r of document.querySelectorAll('#p-blend input')) r.checked = r.value === cur.blend;
@@ -595,6 +598,7 @@ function runPaint() {%%INLINE_CODE%%}
   $('p-theme').addEventListener('change', e => { if (e.target.name === 'theme') { cur.theme = e.target.value === 'custom' ? $('p-tcolor').value : e.target.value; update(); } });
   $('p-tcolor').addEventListener('input', e => { cur.theme = e.target.value.toLowerCase(); update(); });
   $('p-dev').addEventListener('change', e => { cur.dev = e.target.checked; update(); });
+  $('p-full').addEventListener('change', e => { cur.fullBar = e.target.checked; update(); });
   $('p-mode').addEventListener('change', e => { cur.blurMode = e.target.value; update(); });
   $('p-mpred').addEventListener('change', e => { cur.mpred = e.target.value; update(); });
   $('p-blend').addEventListener('change', e => { cur.blend = e.target.value; update(); });

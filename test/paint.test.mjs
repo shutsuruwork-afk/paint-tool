@@ -15,6 +15,12 @@ const fresh = async (path = '/', viewport) => {
   if (path !== '/strict') await runBookmarklet(o.page);
   return o;
 };
+// シンプル版（T-071）: ツールバーのボタンを本家と同じにすべて出して起動する（すべてのボタンを使うテスト用）
+const freshFull = async (path = '/', viewport) => {
+  const o = await openPage(browser, server.base + path, viewport);
+  await runCode(o.page, withDefaults(CODE, { fullBar: true }));
+  return o;
+};
 const checksum = page => page.evaluate(() => {
   const de = document.documentElement;
   const d = window.__paintBookmarklet.pixels(0, 0, de.clientWidth, de.clientHeight).data;
@@ -163,6 +169,38 @@ const mouseClick = async (page, sel) => {
   await page.mouse.click(r.x + r.w / 2, r.y + r.h / 2);
 };
 
+test('シンプル版: ツールバーはペン・消しゴム・色と太さ・元に戻す・その他・隠すだけで、スマホでも 1 段。ほかの道具はキーで使え、閉じるはその他にある', async () => {
+  const bar = page => shadowEval(page, root => {
+    const bs = [...root.querySelector('.bar').children].filter(e => e.classList.contains('b'));
+    return { titles: bs.map(b => b.title.split(/[ （(]/)[0]), tops: [...new Set(bs.map(b => Math.round(b.getBoundingClientRect().top)))], two: root.querySelector('.bar').classList.contains('two') };
+  });
+  const want = ['ペン', '消しゴム', '色・太さ・濃さ', '元に戻す', 'その他', '隠す'];
+  const { page, errors } = await fresh();
+  const b = await bar(page);
+  assert.deepEqual(b.titles, want);
+  assert.equal(b.tops.length, 1);
+  // ほかの道具もショートカットで選べる
+  await page.keyboard.press('s');
+  assert.equal((await page.evaluate(() => window.__paintBookmarklet.stats().prefs.tool)), 'select');
+  await page.keyboard.press('p');
+  // 閉じる（×）はその他のメニューにある（何も描いていなければすぐ閉じる）
+  await click(page, '[title^="その他"]');
+  await click(page, '.mi[title^="閉じる"]');
+  await page.waitForFunction(() => !window.__paintBookmarklet);
+  assert.deepEqual(errors, []);
+  await page.close();
+  // スマホの幅（タッチ・360px）でも 1 段に収まる
+  const ph = await browser.newPage({ viewport: { width: 360, height: 800 }, isMobile: true, hasTouch: true });
+  await ph.route('**/phone', r => r.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><p>phone</p>' }));
+  await ph.goto(server.base + '/phone');
+  await runCode(ph, CODE);
+  const m = await bar(ph);
+  assert.deepEqual(m.titles, want);
+  assert.equal(m.two, false);
+  assert.equal(m.tops.length, 1);
+  await ph.close();
+});
+
 test('スマホ（1 段に収まらない幅）では、ツールバーを道具の段・色と元に戻す以降の段の 2 段に整える。広げると 1 段に戻る', async () => {
   const rows = page => shadowEval(page, root => {
     const bar = root.querySelector('.bar'), b = bar.getBoundingClientRect();
@@ -178,7 +216,7 @@ test('スマホ（1 段に収まらない幅）では、ツールバーを道具
     // viewport の指定があるページ（ないと、スマホは 980px 幅で描いて縮めて見せる）
     await page.route('**/phone', r => r.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><p>phone</p>' }));
     await page.goto(server.base + '/phone');
-    await runCode(page, CODE);
+    await runCode(page, withDefaults(CODE, { fullBar: true }));
     const r = await rows(page);
     assert.equal(r.two, true, width + ': two rows');
     assert.equal(new Set(r.tops.slice(0, 7)).size, 1, width + ': first row ' + r.tops);
@@ -192,7 +230,7 @@ test('スマホ（1 段に収まらない幅）では、ツールバーを道具
     await page.close();
   }
   // マウスの画面を狭めると 2 段に、広げると 1 段に戻る
-  const { page, errors } = await fresh('/', { width: 1000, height: 700 });
+  const { page, errors } = await freshFull();
   assert.equal((await rows(page)).two, false);
   assert.equal((await rows(page)).toast, 'Esc で隠す');
   await page.setViewportSize({ width: 440, height: 700 });
@@ -208,7 +246,7 @@ test('スマホ（1 段に収まらない幅）では、ツールバーを道具
 });
 
 test('ツールバーは 1 段で幅 520px 以下。図形は最後に使った物を出し、押すとその図形に、もう一度押すとパネルが開く', async () => {
-  const { page, errors } = await fresh();
+  const { page, errors } = await freshFull();
   const bar = await rectOf(page, '.bar');
   assert.ok(bar.w <= 520 && bar.h <= 50, JSON.stringify(bar));
   // 起動時のお知らせは「Esc で隠す」だけ
@@ -323,7 +361,7 @@ test('見た目: 既定は白いガラス（ガウス・ぼかし 18px・地 80%
 
 test('見た目（開発用）と色と太さのパネルは、ツールバーを引いて動かしても閉じず一緒に動く（下の端では上に開く）。引かずに押せば閉じる。ほかのパネルは引くと閉じる（設定ですべて閉じなくできる）', async () => {
   const { page, errors } = await openPage(browser, server.base + '/');
-  await runCode(page, withDefaults(CODE, { dev: true }));
+  await runCode(page, withDefaults(CODE, { dev: true, fullBar: true }));
   const info = () => shadowEval(page, root => {
     const p = root.querySelector('.pn.on'), r = p && p.getBoundingClientRect(), b = root.querySelector('.bar').getBoundingClientRect();
     return { open: root.querySelectorAll('.pn.on').length, look: !!(p && p.querySelector('[aria-label^="ツールバーの色"]')), px: r && Math.round(r.left - b.left), top: r && Math.round(r.top), bottom: r && Math.round(r.bottom), bx: Math.round(b.left), by: Math.round(b.top) };
@@ -369,7 +407,7 @@ test('見た目（開発用）と色と太さのパネルは、ツールバー�
   assert.deepEqual(errors, []);
   // インストールページの設定（keepPanels）を入れると、その他のパネルも閉じない
   await page.evaluate(() => window.__paintBookmarklet.destroy());
-  await runCode(page, withDefaults(CODE, { keepPanels: true }));
+  await runCode(page, withDefaults(CODE, { keepPanels: true, fullBar: true }));
   await mouseClick(page, '[aria-label^="その他"]');
   const [x5, y5] = await center('.bar [aria-label^="ペン"]');
   await drag(page, [[x5, y5], [x5, y5 + 100]], 8);
@@ -448,8 +486,8 @@ test('見た目（開発用）: インストールページの開発用を入れ
 
 test('選んでいるボタンは、マウスを重ねても押しても青い地のまま（明るい見た目でも白い印が見える）', async () => {
   for (const d of [{}, { theme: 'dark', glass: false }]) {
-    const { page, errors } = await fresh();
-    if (d.theme) { await page.evaluate(() => window.__paintBookmarklet.destroy()); await runCode(page, withDefaults(CODE, d)); }
+    const { page, errors } = await freshFull();
+    if (d.theme) { await page.evaluate(() => window.__paintBookmarklet.destroy()); await runCode(page, withDefaults(CODE, { ...d, fullBar: true })); }
     await page.keyboard.press('s');
     const st = () => shadowEval(page, root => { const s = getComputedStyle(root.querySelector('.bar [aria-label^="選択"]')); return [s.backgroundColor, s.color]; });
     assert.deepEqual(await st(), ['rgb(61, 124, 255)', 'rgb(255, 255, 255)'], JSON.stringify(d));
@@ -465,7 +503,7 @@ test('選んでいるボタンは、マウスを重ねても押しても青い�
 });
 
 test('ペンと図形の選択肢: 既定はどちらも、選んでいないときは押すとその道具になるだけで、もう一度押すと出る。インストールページで 1 回押しにできる', async () => {
-  const { page, errors } = await fresh();
+  const { page, errors } = await freshFull();
   const check = async (once) => {
     for (const [sel, name] of [['.bar > [aria-label^="ペン"]', /^ペン/], ['.bar > .shp', /^直線/]]) {
       await page.keyboard.press('h');
@@ -481,7 +519,7 @@ test('ペンと図形の選択肢: 既定はどちらも、選んでいないと
   await check(false);
   assert.equal((await prefs(page)).pickOnce, false);
   await page.evaluate(() => window.__paintBookmarklet.destroy());
-  await runCode(page, withDefaults(CODE, { pickOnce: true }));
+  await runCode(page, withDefaults(CODE, { pickOnce: true, fullBar: true }));
   assert.equal((await prefs(page)).pickOnce, true);
   await check(true);
   assert.deepEqual(errors, []);
@@ -489,7 +527,7 @@ test('ペンと図形の選択肢: 既定はどちらも、選んでいないと
 });
 
 test('ツールバーはボタンの上からでも引けば動き（そのボタンは押されない）、引かずに押せばボタンが効く。パネルのスライダーでは動かない', async () => {
-  const { page, errors } = await fresh();
+  const { page, errors } = await freshFull();
   const b0 = await rectOf(page, '.bar');
   const m = await rectOf(page, '.bar > [aria-label^="蛍光ペン"]');
   await page.mouse.move(m.x + m.w / 2, m.y + m.h / 2);
@@ -594,7 +632,7 @@ test('色と太さのパネル: 色を選んでも開いたまま、描き始め
 });
 
 test('その他のパネルに全消去・背景・保存が名前付きで並び、画面の端では内側に開く', async () => {
-  const { page } = await fresh();
+  const { page } = await freshFull();
   await drag(page, [[100, 400], [600, 400]]);
   // ツールバーを右下の隅へ動かす（区切り線の所から引く）
   const g = await rectOf(page, '.bar > .sep');
@@ -637,7 +675,7 @@ const inkAt = async (page, x, y, w, h) => {
 };
 
 test('文字ツール: クリックした所に入力欄が出て日本語も打てる。入力中はショートカットもページへのキーも止まる', async () => {
-  const { page, errors } = await fresh();
+  const { page, errors } = await freshFull();
   await page.evaluate(() => {
     window.__keys = 0;
     for (const t of ['keydown', 'keyup', 'input', 'beforeinput', 'focusin']) document.addEventListener(t, () => window.__keys++);
@@ -786,7 +824,7 @@ test('選択: 押して 1px 動かしただけで囲む枠が出る（描いて�
 });
 
 test('選択: 囲むと中身に詰めた枠で選ばれ、移動して確定・元に戻す・やり直すが画素単位で効く', async () => {
-  const { page, errors } = await fresh();
+  const { page, errors } = await freshFull();
   await drag(page, [[100, 300], [400, 300]], 10);
   const s0 = await checksum(page);
   await page.keyboard.press('s');
@@ -904,7 +942,7 @@ const textInfo = page => page.evaluate(() => [...document.querySelector('paint-b
   .map(e => ({ s: e.textContent, fs: getComputedStyle(e).fontSize, ed: e.classList.contains('ed'), gone: e.classList.contains('gone') })));
 
 test('文字の物: 押してそのまま動かせ、角で拡大すると文字の大きさが変わる。ダブルクリックや文字ツールで書き直せ、どれも元に戻せる', async () => {
-  const { page, errors } = await fresh();
+  const { page, errors } = await freshFull();
   await page.keyboard.press('t');
   await page.mouse.click(200, 300);
   await page.keyboard.type('Hello');
@@ -1108,7 +1146,7 @@ test('文字の上の移動のカーソルは、スクロールした後も文�
 });
 
 test('ページ操作モードでツールを選ぶ（ボタンでもキーでも）と、描画モードに戻ってすぐ描ける', async () => {
-  const { page } = await fresh();
+  const { page } = await freshFull();
   const passOn = () => shadowEval(page, root => root.querySelector('.w').classList.contains('pass'));
   await page.keyboard.press('v');
   assert.equal(await passOn(), true);

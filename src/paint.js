@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.27.0';
+  const VERSION = '1.27.0-simple.1';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -286,6 +286,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const pickOnce = DEF.pickOnce === true;
   // ツールバーを引いて動かしても閉じないパネル: 色と太さ・見た目（開発用）はいつも。keepPanels（インストールページ）ならすべて（T-066・T-068）
   const keepPanels = DEF.keepPanels === true;
+  // シンプル版（T-071）: ツールバーには少しだけ出す。fullBar（インストールページの開発用）なら本家と同じにすべて出す（見比べるため）
+  const fullBar = DEF.fullBar === true;
   // 見た目（インストールページの設定）: 明るい（白に黒）と、ガラス風（半透明にして下をぼかす）。既定は白いガラス（T-050、ユーザーが決めた）。
   // ガラスの調整は開発用: ぼかし方（gauss は周りも拾う本物のガウス、plain は backdrop-filter そのまま）・強さ・地の濃さ
   // theme は 'dark'・'light'・'#rrggbb'（好きな色。明るさで文字を黒か白にする）。開発用の見た目のパネル（dev）からも変えられる
@@ -408,7 +410,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // ---------- ツールバー ----------
 
   // よく使う物だけをバーに並べ、残りはボタンの下に開くパネル（.pn）に入れる。
-  // パネルはバーの子なのでバーと一緒に動き、absolute なのでバーの幅には入らない
+  // パネルはバーの子なのでバーと一緒に動き、absolute なのでバーの幅には入らない。
+  // シンプル版（research/simple。T-071）: ボタンは今まで通り全部作るが、バーに出すのはペン・消しゴム・色と太さ・元に戻す・その他・隠すだけ
+  // （並べるのは最後の bar.append）。ほかの道具はショートカットで使え、閉じる（×）はその他のメニューに入れた。fullBar なら本家と同じ並び
   const TITLES = {
     select: '選択 (S) — 囲むかクリックで選び、ドラッグで移動・角で拡大縮小',
     pen: 'ペン (P)',
@@ -425,7 +429,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const pnl = () => el('div', 'pn');
   const row = (...a) => { const r = el('div', 'row'); r.append(...a); return r; };
   const toolBtns = {};
-  bar.append(toolBtns.select = btn(TITLES.select, I.select, () => setTool('select')));
+  toolBtns.select = btn(TITLES.select, I.select, () => setTool('select'));
   // ペン: ペンでないときに押すとペンになる。ペンのときにもう一度押すと、種類のパネルが開く（pickOnce なら 1 回目から開く）。
   // ページ操作モードのときは、ペンのままでも押せば描画に戻り、パネルも普段と同じに開く（T-057・T-062）
   const penP = pnl();
@@ -437,8 +441,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   toolBtns.pen = penB;
   const penBtns = {};
   penP.append(row(...PENS.map(k => penBtns[k] = btn(PEN_TITLES[k], I[k === 'pen' ? 'pen' : k], () => { setPen(k); closePanel(); }))));
-  bar.append(penB);
-  for (const t of ['marker', 'eraser']) bar.append(toolBtns[t] = btn(TITLES[t], I[t], () => setTool(t)));
+  for (const t of ['marker', 'eraser']) toolBtns[t] = btn(TITLES[t], I[t], () => setTool(t));
   // 図形: 最後に使った図形を表示する。押すとその図形になり、図形のときにもう一度押すと 4 つの図形のパネルが開く（ペンと同じ）
   let lastShape = 'line';
   const shapeP = pnl();
@@ -448,15 +451,15 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }, 'dd shp');
   const shapeD = shapeB.querySelector('path');
   shapeP.append(row(...SHAPES.map(t => toolBtns[t] = btn(TITLES[t], I[t], () => { setTool(t); closePanel(); }))));
-  bar.append(shapeB, toolBtns.text = btn(TITLES.text, I.text, () => setTool('text')),
-    toolBtns.fill = btn(TITLES.fill, I.fill, () => setTool('fill')), el('div', 'sep brk')); // 1 段に収まらないときは、ここで段を分ける（.two .brk。T-064・T-067）
+  toolBtns.text = btn(TITLES.text, I.text, () => setTool('text'));
+  toolBtns.fill = btn(TITLES.fill, I.fill, () => setTool('fill'));
 
   // 色と太さ: 今の色・太さ・濃さを点で見せる。パネルにパレット・カスタム色・スポイト・太さ・濃さ
   const styleP = pnl();
   const styleB = btn('色・太さ・濃さ', null, () => togglePanel(styleP, styleB), 'dd');
   const dot = el('span', 'dot');
   styleB.append(dot);
-  bar.append(styleB, sep());
+
   const swBtns = PALETTE.map((c, i) => {
     const b = btn(`色 ${i + 1}`, null, () => setColor(c), 'c');
     b.style.setProperty('--c', c);
@@ -499,7 +502,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const passB = btn('ページ操作モード (V) — 絵を残したままページを操作', I.pass, togglePass);
   // その他: 名前とショートカット付きのメニュー。keep なら押しても閉じない（背景を続けて切り替えられる）
   const moreP = pnl();
-  const moreB = btn('その他（全消去・背景・保存・コピー・電卓・画面に固定・デフォルトの変更）', I.more, () => togglePanel(moreP, moreB));
+  const moreB = btn('その他（全消去・背景・保存・コピー・電卓・画面に固定・デフォルトの変更・閉じる）', I.more, () => togglePanel(moreP, moreB));
   // sw なら入り・切りのスイッチ（role="switch"。状態は aria-checked で持ち、つまみは CSS で動かす）
   const item = (title, label, key, d, fn, keep, sw) => {
     const b = btn(title, d, () => { if (!keep) closePanel(); fn(); }, 'mi');
@@ -602,6 +605,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     blBs.forEach((b, i) => b.classList.toggle('on', BLENDS[i] === blend));
   }
   const closeB = btn('閉じる（8 秒間は元に戻せます）', I.close, close);
+  if (!fullBar) item('閉じる（8 秒間は元に戻せます）', '閉じる', '', I.close, close);
   // 入力の録画（開発用。T-070）: 描いた線の入力を録って JSON で書き出す。予測の精度を、人が実際に書いた線で測るため（T-060）
   let recB = null;
   if (dev) item('見た目（開発用） — ツールバーの色やガラス、蛍光ペンの予測、半透明の線の描き方をその場で変える', '見た目（開発用）', '', I.bg, () => openPanel(lookP, moreB));
@@ -609,9 +613,11 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     [recB] = item('入力を録る（開発用） — ペン・蛍光ペンで描いた線の入力（座標・時刻・筆圧・Chrome の予測）を録る。入れると前の録画は消える', '入力を録る（開発用）', '', I.rec, toggleRec, true, true);
     item('録った入力を書き出す（開発用） — JSON をダウンロード', '録った入力を書き出す', '', I.save, recExport);
   }
-  bar.append(undoB, redoB, sep(), passB, moreB, sep(),
-    btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hideHint), closeB,
-    shapeP, penP, styleP, moreP, lookP, lci);
+  const hideB = btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hideHint);
+  if (fullBar) bar.append(toolBtns.select, penB, toolBtns.marker, toolBtns.eraser, shapeB, toolBtns.text, toolBtns.fill,
+    el('div', 'sep brk'), styleB, sep(), undoB, redoB, sep(), passB, moreB, sep(), hideB, closeB); // 1 段に収まらないときは .brk で段を分ける（.two .brk。T-064・T-067）
+  else bar.append(penB, toolBtns.eraser, styleB, sep(), undoB, sep(), moreB, hideB);
+  bar.append(shapeP, penP, styleP, moreP, lookP, lci);
 
   // パネルは 1 つだけ開く。描き始め・パネルの外を押す・Esc で閉じる。
   // 開いていなければ pointerdown ごとの仕事は比較 1 回だけ（入力のホットパスには触れない）
@@ -889,7 +895,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const cl = bar.classList;
     cl.remove('two');
     bar.style.removeProperty('width');
-    if (closeB.offsetTop === toolBtns.select.offsetTop) return;
+    if ((fullBar ? closeB : hideB).offsetTop === (fullBar ? toolBtns.select : penB).offsetTop) return;
     cl.add('two');
     let right = 0;
     for (const b of bar.children) if (b.classList.contains('b')) right = max(right, b.getBoundingClientRect().right);
@@ -2966,7 +2972,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, selection: sel ? [selX, selY, selW, selH] : null, texts: tlist.length, fixed, history: hist.length, historyPixels: hpix, events: nEv, points: nPts,
     desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, nativePrediction: nativePred, inkTrail: !!inkP,
     rec: [rec, recS.length, recN],
-    prefs: { ...snapPrefs(), bar: [barX, barY], touchText, pickOnce, keepPanels, dev, ...look, mpred, blend },
+    prefs: { ...snapPrefs(), bar: [barX, barY], touchText, pickOnce, keepPanels, fullBar, dev, ...look, mpred, blend },
   });
   win[NS] = { version: VERSION, toggle, show, hide, close, destroy, undo, redo, clear: clearAll, tool: setTool, color: setColor, stats, pixels };
   setColor(color);

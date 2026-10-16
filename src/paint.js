@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.24.0';
+  const VERSION = '1.24.1';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -421,10 +421,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const toolBtns = {};
   bar.append(toolBtns.select = btn(TITLES.select, I.select, () => setTool('select')));
   // ペン: ペンでないときに押すとペンになる。ペンのときにもう一度押すと、種類のパネルが開く（pickOnce なら 1 回目から開く）。
-  // ページ操作モードのときは、ペンのままでも押せば描画に戻る（パネルは開かない。T-057）
+  // ページ操作モードのときは、ペンのままでも押せば描画に戻り、パネルも普段と同じに開く（T-057・T-062）
   const penP = pnl();
   const penB = btn(TITLES.pen, I.pen, () => {
-    if (tool === 'pen' && !pass) togglePanel(penP, penB);
+    if (tool === 'pen') { if (pass) setTool('pen'); togglePanel(penP, penB); }
     else { setTool('pen'); if (pickOnce) openPanel(penP, penB); }
   }, 'dd');
   const penD = penB.querySelector('path');
@@ -437,7 +437,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   let lastShape = 'line';
   const shapeP = pnl();
   const shapeB = btn(TITLES.line, I.line, () => {
-    if (SHAPES.includes(tool) && !pass) togglePanel(shapeP, shapeB);
+    if (SHAPES.includes(tool)) { if (pass) setTool(tool); togglePanel(shapeP, shapeB); }
     else { setTool(lastShape); if (pickOnce) openPanel(shapeP, shapeB); }
   }, 'dd shp');
   const shapeD = shapeB.querySelector('path');
@@ -975,9 +975,11 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (act !== -1) return;
     settle();
     finishHandoff();
-    // 消す物がなければ何もしない（履歴を増やさない。T-058）: 直前の手が全消去なら面も文字も空。
-    // 画素は描いた範囲（cb*）の中にしかないので、範囲が空で文字もなければ空。積むのも範囲に掛かるタイルだけ
-    if ((hpos && hist[hpos - 1].clr) || (cbx1 <= cbx0 && !tlist.length)) return;
+    // 消す物がなければ何もしない（履歴を増やさない。T-058・T-063）: 直前の手が全消去なら面も文字も空。
+    // 画素は描いた範囲（cb*）の中にしかないので、範囲が空で文字もなければ空。積むのも範囲に掛かるタイルだけ。
+    // 直前の手が描く手（b がある）でなければ、消しゴム・選択の削除・最初まで元に戻した、で空になっているかもしれないので読み戻して確かめる
+    const h = hpos ? hist[hpos - 1] : null;
+    if ((h && h.clr) || (!tlist.length && (cbx1 <= cbx0 || (!(h && h.b) && !hasInk())))) return;
     const R = [], P = tlist.map(o => [o, tSnap(o)]);
     for (const k of dtiles.keys()) {
       const x = (k % 65536) * DT, y = ((k / 65536) | 0) * DT;
@@ -989,6 +991,18 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     for (let i = 0; i < R.length; i += 6) dtiles.get((R[i + 1] / DT) * 65536 + R[i] / DT).x.clearRect(0, 0, DT, DT);
     for (const p of P) tApply(p[0], null);
     cbx0 = cby0 = cbx1 = cby1 = 0;
+  }
+
+  // 描いた範囲（cb*）に画素が 1 つでも残っているか。掛かるタイルの重なる所だけを読み戻す（全消去の前にだけ使う。T-063）
+  function hasInk() {
+    for (const [k, t] of dtiles) {
+      const x = (k % 65536) * DT, y = ((k / 65536) | 0) * DT;
+      const ax = max(floor(cbx0), x), ay = max(floor(cby0), y), ex = min(ceil(cbx1), x + DT), ey = min(ceil(cby1), y + DT);
+      if (ex <= ax || ey <= ay) continue;
+      const d = t.x.getImageData(ax - x, ay - y, ex - ax, ey - ay).data;
+      for (let i = 3; i < d.length; i += 4) if (d[i]) return true;
+    }
+    return false;
   }
 
   // ---------- 画面に固定（動画や地図の上に描く用。その他のメニューで切り替える） ----------

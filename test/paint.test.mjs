@@ -853,6 +853,48 @@ test('文字の物: 押してそのまま動かせ、角で拡大すると文字
   await page.close();
 });
 
+test('全消去は、消しゴム・選択の削除で全部消した後や、最初まで元に戻した後も何もしない。一部だけ消した後は消す', async () => {
+  const { page, errors } = await fresh();
+  const n = async () => (await page.evaluate(() => window.__paintBookmarklet.stats().history));
+  // 消しゴム（32px）で線（4px）を全部なぞる
+  await drag(page, [[100, 300], [200, 300]], 5);
+  await page.keyboard.press('e');
+  await drag(page, [[90, 300], [210, 300]], 10);
+  assert.equal((await alphaStats(page, 80, 280, 140, 40)).count, 0);
+  assert.equal(await n(), 2);
+  await page.keyboard.press('Delete');
+  assert.equal(await n(), 2, 'after erasing everything');
+  // 一部だけ消した後は全消去する
+  await page.keyboard.press('p');
+  await drag(page, [[100, 400], [300, 400]], 5);
+  await page.keyboard.press('e');
+  await drag(page, [[90, 400], [150, 400]], 5);
+  await page.keyboard.press('Delete');
+  assert.equal(await n(), 5, 'partly erased');
+  assert.equal((await alphaStats(page, 80, 380, 240, 40)).count, 0);
+  // 選択して削除した後
+  await page.keyboard.press('p');
+  await drag(page, [[400, 300], [500, 300]], 5);
+  await page.keyboard.press('s');
+  await drag(page, [[380, 270], [520, 330]], 5);
+  await page.keyboard.press('Delete');
+  const k = await n();
+  assert.equal((await alphaStats(page, 380, 280, 140, 40)).count, 0);
+  await page.keyboard.press('Delete');
+  assert.equal(await n(), k, 'after deleting the selection');
+  // 最初まで元に戻した後
+  for (let i = 0; i < k; i++) await page.keyboard.press('Control+z');
+  assert.equal((await alphaStats(page, 0, 0, 1000, 700)).count, 0);
+  await page.keyboard.press('Delete');
+  assert.equal(await n(), k, 'after undoing everything');
+  // やり直して絵が戻れば、全消去は 1 手（やり直した手は描く手なので読み戻さない）
+  await page.keyboard.press('Control+Shift+z');
+  await page.keyboard.press('Delete');
+  assert.equal(await n(), 2);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('全消去は、消す物がないときは何もしない（履歴が増えない）。積むのは描いた範囲に掛かるタイルだけ', async () => {
   const { page, errors } = await fresh();
   const st = () => page.evaluate(() => { const s = window.__paintBookmarklet.stats(); return [s.history, s.historyPixels]; });
@@ -970,7 +1012,7 @@ test('ページ操作モードでツールを選ぶ（ボタンでもキーで�
   await page.keyboard.press('p');
   assert.equal(await passOn(), false);
   assert.match(await toolOn(page), /^ペン/);
-  // ペン・図形を選んだまま、そのボタンを押しても戻る（2 回目のパネルは開かない）。描画モードでもう一度押すとパネル
+  // ペン・図形を選んだまま、そのボタンを押しても戻り、種類のパネルも描画モードの 2 回目と同じに開く。もう一度押すと閉じる
   const panels = () => shadowEval(page, root => root.querySelectorAll('.pn.on').length);
   for (const [key, sel] of [['p', '.bar [aria-label^="ペン"]'], ['l', '.bar .shp']]) {
     await page.keyboard.press(key);
@@ -978,10 +1020,9 @@ test('ページ操作モードでツールを選ぶ（ボタンでもキーで�
     assert.equal(await passOn(), true, key);
     await mouseClick(page, sel);
     assert.equal(await passOn(), false, key + ': back to drawing');
-    assert.equal(await panels(), 0, key + ': no panel');
+    assert.equal(await panels(), 1, key + ': panel opens as usual');
     await mouseClick(page, sel);
-    assert.equal(await panels(), 1, key + ': panel on the next press');
-    await page.keyboard.press('Escape');
+    assert.equal(await panels(), 0, key + ': closes on the next press');
   }
   await page.close();
 });

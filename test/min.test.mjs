@@ -30,7 +30,6 @@ const mouseClick = async (page, sel) => {
 const bar = page => shadowEval(page, root => [...root.querySelector('.bar').children].filter(e => e.classList.contains('b'))
   .map(b => b.title.split(/[ （(]/)[0] + (b.classList.contains('on') ? '*' : '')));
 const stats = page => page.evaluate(() => window.__paintBookmarklet.stats());
-const toastOn = page => shadowEval(page, root => root.querySelector('.t').classList.contains('on'));
 const checksum = page => page.evaluate(() => {
   const de = document.documentElement;
   const d = window.__paintBookmarklet.pixels(0, 0, de.clientWidth, de.clientHeight).data;
@@ -39,13 +38,12 @@ const checksum = page => page.evaluate(() => {
   return h;
 });
 
-test('最小構成: 本体より小さく、画面はチェックポイント 2 と同じ（ペン・文字・元に戻す・その他・隠す）。キーのショートカットはない', async () => {
+test('最小構成: 本体より小さく、画面はチェックポイント 2 と同じ（ペン・文字・元に戻す・その他・閉じる）。キーのショートカットはない', async () => {
   const main = readFileSync(new URL('../dist/paint.min.js', import.meta.url), 'utf8');
   assert.ok(MIN.length < main.length / 2, `min ${MIN.length} vs main ${main.length}`);
   const { page, errors } = await fresh();
   assert.match(await page.evaluate(() => window.__paintBookmarklet.version), /-min$/);
-  assert.deepEqual(await bar(page), ['ペン*', '文字', '元に戻す', 'その他', '隠す']);
-  assert.equal(await toastOn(page), false, 'no toast on start');
+  assert.deepEqual(await bar(page), ['ペン*', '文字', '元に戻す', 'その他', '閉じる']);
   // キーは何もしない（ページへもそのまま届く）
   await page.evaluate(() => { window.__keys = 0; window.addEventListener('keydown', () => window.__keys++); });
   for (const k of ['e', 't', 'Delete', 'Escape', 'Control+z']) await page.keyboard.press(k);
@@ -64,7 +62,7 @@ test('最小構成: ペンで描いて元に戻すと画素単位で戻る。ペ
   assert.equal((await stats(page)).history, 1);
   // ペンのボタンを押すと消しゴム（印と名前も変わる）、もう一度でペン
   await mouseClick(page, '.bar > [aria-label^="ペン"]');
-  assert.deepEqual(await bar(page), ['消しゴム*', '文字', '元に戻す', 'その他', '隠す']);
+  assert.deepEqual(await bar(page), ['消しゴム*', '文字', '元に戻す', 'その他', '閉じる']);
   assert.equal(await shadowEval(page, root => root.querySelector('.bar > .b path').getAttribute('d').slice(0, 8)), 'M8 20h12');
   await drag(page, [[300, 250], [300, 380]], 10);
   assert.equal((await readMain(page, 300, 318))[3], 0, 'erased');
@@ -74,7 +72,7 @@ test('最小構成: ペンで描いて元に戻すと画素単位で戻る。ペ
   assert.equal(await checksum(page), empty, 'undo the stroke');
   assert.equal(await shadowEval(page, root => root.querySelector('[aria-label^="元に戻す"]').disabled), true);
   await mouseClick(page, '.bar > [aria-label^="消しゴム"]');
-  assert.deepEqual(await bar(page), ['ペン*', '文字', '元に戻す', 'その他', '隠す']);
+  assert.deepEqual(await bar(page), ['ペン*', '文字', '元に戻す', 'その他', '閉じる']);
   assert.deepEqual(errors, []);
   await page.close();
 });
@@ -82,7 +80,7 @@ test('最小構成: ペンで描いて元に戻すと画素単位で戻る。ペ
 test('最小構成: 文字は電卓が入り（Tab で答えを書き込む）。文字の道具で押すと書き直せ、消しゴムで消え、元に戻せる', async () => {
   const { page, errors } = await fresh();
   await mouseClick(page, '.bar > [aria-label^="文字"]');
-  assert.deepEqual(await bar(page), ['ペン', '文字*', '元に戻す', 'その他', '隠す']);
+  assert.deepEqual(await bar(page), ['ペン', '文字*', '元に戻す', 'その他', '閉じる']);
   await page.mouse.click(300, 300);
   await page.keyboard.type('12+30');
   assert.equal(await shadowEval(page, root => root.querySelector('.gh').textContent), '=42');
@@ -115,7 +113,7 @@ test('最小構成: 文字は電卓が入り（Tab で答えを書き込む）�
   await page.close();
 });
 
-test('最小構成: その他は全消去・閉じる・8 色。色を選ぶと閉じ、消しゴムならペンに戻る。全消去は元に戻せ、消す物がなければ何もしない', async () => {
+test('最小構成: その他は全消去と 8 色。色を選ぶと閉じ、消しゴムならペンに戻る。全消去は元に戻せ、消す物がなければ何もしない', async () => {
   const { page, errors } = await fresh();
   await drag(page, [[100, 300], [500, 300]], 10);
   await mouseClick(page, '.bar > [aria-label^="ペン"]'); // 消しゴム
@@ -125,7 +123,7 @@ test('最小構成: その他は全消去・閉じる・8 色。色を選ぶと�
     return { open: p.classList.contains('on'), items: [...p.children].map(e => e.classList.contains('mi') ? e.textContent : e.querySelectorAll('.c').length + ' 色'),
       on: [...p.querySelectorAll('.c.on')].map(b => b.title) };
   });
-  assert.deepEqual(await menu(), { open: true, items: ['全消去', '閉じる', '8 色'], on: ['色 3'] });
+  assert.deepEqual(await menu(), { open: true, items: ['全消去', '8 色'], on: ['色 3'] });
   await mouseClick(page, '.pn.on [title="色 7"]');
   const s = await stats(page);
   assert.equal(s.color, '#1e88e5');
@@ -148,34 +146,25 @@ test('最小構成: その他は全消去・閉じる・8 色。色を選ぶと�
   await page.close();
 });
 
-test('最小構成: − で隠すと「ブックマークレットで再表示」が出て、再表示で戻る。閉じると 8 秒の取り消し（元に戻す・×）。何も描いていなければすぐ閉じる', async () => {
+test('最小構成: 閉じる（×）の見た目のボタンは隠すだけ: 絵は残り、お知らせは出ず、ブックマークレットでそのまま戻る（T-081）', async () => {
   const { page, errors } = await fresh();
   await drag(page, [[100, 300], [500, 300]], 10);
-  await mouseClick(page, '.bar > [aria-label^="隠す"]');
-  assert.equal(await shadowEval(page, root => root.querySelector('.t').textContent), 'ブックマークレットで再表示');
-  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('paint-bookmarklet-surface')).display), 'none');
-  await mouseClick(page, '.t button');
-  assert.equal((await readMain(page, 300, 300))[3] > 200, true);
-  assert.deepEqual(await bar(page), ['ペン*', '文字', '元に戻す', 'その他', '隠す']);
-  // 閉じる → 元に戻す
-  await mouseClick(page, '.bar > [aria-label^="その他"]');
-  await mouseClick(page, '.pn.on [title="閉じる"]');
-  assert.match(await shadowEval(page, root => root.querySelector('.t').textContent), /^絵を消して閉じました元に戻す/);
-  await mouseClick(page, '.t button');
-  assert.ok(await page.evaluate(() => !!window.__paintBookmarklet));
-  assert.ok((await readMain(page, 300, 300))[3] > 200, 'drawing kept');
-  // 閉じる → × ですぐ閉じる
-  await mouseClick(page, '.bar > [aria-label^="その他"]');
-  await mouseClick(page, '.pn.on [title="閉じる"]');
-  await mouseClick(page, '.t .tc');
-  assert.equal(await page.evaluate(() => !!window.__paintBookmarklet), false);
-  assert.equal(await page.evaluate(() => !!document.querySelector('paint-bookmarklet, paint-bookmarklet-surface')), false);
-  // 何も描いていなければすぐ閉じる
+  assert.equal(await shadowEval(page, root => root.querySelector('.bar > [aria-label^="閉じる"] path').getAttribute('d')), 'M6 6l12 12M18 6L6 18');
+  await mouseClick(page, '.bar > [aria-label^="閉じる"]');
+  const disp = sel => page.evaluate(s => getComputedStyle(document.querySelector(s)).display, sel);
+  assert.equal(await disp('paint-bookmarklet'), 'none');
+  assert.equal(await disp('paint-bookmarklet-surface'), 'none');
+  assert.equal(await shadowEval(page, root => !!root.querySelector('.t')), false, 'no toast at all');
+  assert.ok(await page.evaluate(() => !!window.__paintBookmarklet), 'still alive');
+  // ページを押せる
+  assert.equal(await page.evaluate(() => document.elementFromPoint(300, 300).tagName === 'PAINT-BOOKMARKLET'), false);
   await page.evaluate(u => { location.href = u; }, MIN_BM);
-  await page.waitForFunction(() => !!window.__paintBookmarklet);
-  await mouseClick(page, '.bar > [aria-label^="その他"]');
-  await mouseClick(page, '.pn.on [title="閉じる"]');
-  assert.equal(await page.evaluate(() => !!window.__paintBookmarklet), false);
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('paint-bookmarklet')).display === 'block');
+  assert.ok((await readMain(page, 300, 300))[3] > 200, 'drawing is back');
+  assert.equal((await stats(page)).history, 1, 'history kept');
+  // API の destroy で片付く
+  await page.evaluate(() => window.__paintBookmarklet.destroy());
+  assert.equal(await page.evaluate(() => !!window.__paintBookmarklet || !!document.querySelector('paint-bookmarklet, paint-bookmarklet-surface')), false);
   assert.deepEqual(errors, []);
   await page.close();
 });

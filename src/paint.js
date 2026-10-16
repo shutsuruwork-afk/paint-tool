@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.28.0-simple.10';
+  const VERSION = '1.28.0-simple.11';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -290,7 +290,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const fullBar = DEF.fullBar === true;
   // チェックポイント（T-078）: シンプル版の段階を見比べるため、インストールページで選ぶ（DEF.cp）。既定は最新の 2。fullBar のときは 0（本家と同じ）
   //   1: ペン（消しゴムと入れ替わる）・元に戻す・その他（全消去・閉じる）・隠す
-  //   2: 1 に文字のボタン（電卓は入り）と、その他の色（全消去・閉じるの後）を足す
+  //   2: 1 に文字のボタン（電卓は入り）と、その他の色を足す。隠すボタンは閉じる（×）の見た目で、お知らせは出さない。閉じる（絵を消す）はない（T-081）
   const cp = fullBar ? 0 : DEF.cp === 1 ? 1 : 2;
   // 見た目（インストールページの設定）: 明るい（白に黒）と、ガラス風（半透明にして下をぼかす）。既定は白いガラス（T-050、ユーザーが決めた）。
   // ガラスの調整は開発用: ぼかし方（gauss は周りも拾う本物のガウス、plain は backdrop-filter そのまま）・強さ・地の濃さ
@@ -509,7 +509,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const passB = btn('ページ操作モード (V) — 絵を残したままページを操作', I.pass, togglePass);
   // その他: 名前とショートカット付きのメニュー。keep なら押しても閉じない（背景を続けて切り替えられる）
   const moreP = pnl();
-  const moreB = btn(fullBar ? 'その他（全消去・背景・保存・コピー・電卓・画面に固定・デフォルトの変更）' : cp === 2 ? 'その他（全消去・閉じる・色）' : 'その他（全消去・閉じる）', I.more, () => togglePanel(moreP, moreB));
+  const moreB = btn(fullBar ? 'その他（全消去・背景・保存・コピー・電卓・画面に固定・デフォルトの変更）' : cp === 2 ? 'その他（全消去・色）' : 'その他（全消去・閉じる）', I.more, () => togglePanel(moreP, moreB));
   // sw なら入り・切りのスイッチ（role="switch"。状態は aria-checked で持ち、つまみは CSS で動かす）
   const item = (title, label, key, d, fn, keep, sw) => {
     const b = btn(title, d, () => { if (!keep) closePanel(); fn(); }, 'mi');
@@ -620,11 +620,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     [recB] = item('入力を録る（開発用） — ペン・蛍光ペンで描いた線の入力（座標・時刻・筆圧・Chrome の予測）を録る。入れると前の録画は消える', '入力を録る（開発用）', '', I.rec, toggleRec, true, true);
     item('録った入力を書き出す（開発用） — JSON をダウンロード', '録った入力を書き出す', '', I.save, recExport);
   }
-  const hideB = btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hideHint);
+  // チェックポイント 2 は、隠すボタンを閉じる（×）の見た目にする。中身は隠すのまま（絵は残り、ブックマークレットでまた出る）で、お知らせも出さない。
+  // 閉じる（絵を消す）はなくした（T-081）
+  const hideB = cp === 2 ? btn('閉じる — ブックマークレットを再度押すと、絵もそのまま再表示', I.close, hide) : btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hideHint);
   // シンプル版のその他は全消去と閉じるだけ（T-072）。ほかの項目も作るがメニューには入れない（背景の B・保存の Ctrl+S などのキーは効く）。
   // fullBar なら本家と同じ項目で、閉じるはバーの × にする
-  for (const b of [...moreP.children]) if (fullBar ? b === closeMi : b !== clrMi && b !== closeMi) b.remove();
-  // チェックポイント 2: その他の全消去・閉じるの後に色を並べる（選ぶとメニューを閉じる。消しゴムのときはペンに戻す。T-078・T-079）
+  for (const b of [...moreP.children]) if (fullBar ? b === closeMi : b !== clrMi && (cp === 2 || b !== closeMi)) b.remove();
+  // チェックポイント 2: その他は全消去と色（選ぶとメニューを閉じる。消しゴムのときはペンに戻す。T-078・T-079。閉じるは T-081 で外した）
   const mcBtns = PALETTE.map((c, i) => {
     const b = btn(`色 ${i + 1}`, null, () => { setColor(c); if (tool === 'eraser') setTool('pen'); closePanel(); }, 'c');
     b.style.setProperty('--c', c);
@@ -2837,7 +2839,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     else if (k === 'd') toggleHud();
     else if (k === 'i' && HAS_ED) pickColor();
     else if (k === 'Delete') clearAll();
-    else if (k === 'Escape') openP ? closePanel() : hideHint();
+    else if (k === 'Escape') openP ? closePanel() : cp === 2 ? hide() : hideHint(); // チェックポイント 2 はお知らせを出さない（T-081）
     else ok = false;
     if (ok) { e.preventDefault(); e.stopPropagation(); }
   }

@@ -256,7 +256,7 @@ section > .sub + .sub { margin-top: 20px; }
 
 <main class="page">
   <header>
-    <p class="eyebrow">Bookmarklet · シンプル版（研究用）· v1.28.0-simple.10 · %%SIZE%%（gzip %%GZIP%%）</p>
+    <p class="eyebrow">Bookmarklet · シンプル版（研究用）· v1.28.0-simple.11 · %%SIZE%%（gzip %%GZIP%%）</p>
     <h1>ペイント<br>ブックマークレット</h1>
     <p class="lead">開いているページの上に、<span class="mark">そのまま描ける<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d="M18 40C8 22 52 6 108 7s92 13 84 30-62 20-112 17S4 38 30 16" vector-effect="non-scaling-stroke"/></svg></span>ペイントツールです。ブックマークを押すだけで起動し、拡張機能もアカウントも要りません。入力から線が画面に出るまでの遅延を減らす仕組みを、ブラウザが対応している限りすべて使います。</p>
     <div class="cps">
@@ -510,7 +510,7 @@ function runPaintMin() {%%INLINE_MIN%%}
   const sizes = ['pen', 'marker', 'eraser', 'text'];
   const CP_DESC = {
     1: 'ツールバーは、ペン（押すたびに消しゴムと入れ替わる）・元に戻す・その他（全消去・閉じる）・隠す。',
-    2: '1 に、文字のボタン（電卓は入り: 計算式を書くと答えが薄く出て、Tab で書き込める）と、その他の色（全消去・閉じるの後）を足したもの。',
+    2: '1 に、文字のボタン（電卓は入り: 計算式を書くと答えが薄く出て、Tab で書き込める）と、その他の色を足したもの。右端の × は隠すだけ（絵は残り、ブックマークレットでそのまま戻る）で、お知らせは出ない。絵を消して閉じる機能はない。',
     min: '2 と同じ画面で、画面にある機能のほかを外した最小構成のコード（%%MIN_SIZE%%、gzip %%MIN_GZIP%%）。キーのショートカットはなく、下の「デフォルトの設定」も効きません。',
   };
   const MIN_HREF = $('bm-min').getAttribute('href');

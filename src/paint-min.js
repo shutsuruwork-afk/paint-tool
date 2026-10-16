@@ -2,7 +2,7 @@
  * Paint Bookmarklet（シンプル版の最小構成）— どんなページの上にも描ける低遅延ペイントツール
  * https://github.com/shutsuruwork-afk/paint-tool (MIT License)
  *
- * チェックポイント 2 の画面にある機能だけを残した版（T-080）。src/paint.js から、画面から使えない機能
+ * チェックポイント 2 の画面にある機能だけを残した版（T-080。T-081 で閉じる〈絵を消す〉とお知らせもなくした）。src/paint.js から、画面から使えない機能
  * （キーボードのショートカット・選択・図形・塗りつぶし・設定の記憶など）を外した。低遅延の仕組みと、
  * 絵をページに貼り付ける仕組みは本体と同じ。
  */
@@ -10,7 +10,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.28.0-simple.10-min';
+  const VERSION = '1.28.0-simple.11-min';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -31,8 +31,6 @@
   const PRED_MAX = 16;  // 保持する予測点の上限
   const PRED_MS = 12;   // 予測 API が無い環境で外挿する時間 (ms)
   const PRED_TTL = 40;  // 入力が途絶えてから予測線を消すまでの時間 (ms)
-  const BYE_MS = 8000;  // 閉じるを取り消せる時間 (ms)
-  const HINT_MS = 4000; // 隠したときに「ブックマークレットで再表示」を出す時間 (ms)
 
   const PALETTE = ['#111111', '#ffffff', '#e53935', '#fb8c00', '#fdd835', '#43a047', '#1e88e5', '#8e24aa'];
   const PEN_W = 6, ERASER_W = 32, TEXT_FS = 24; // ペンと消しゴムの太さ、文字の大きさ（CSS px）
@@ -47,7 +45,6 @@
     text: 'M5 7V5h14v2M12 5v14M9 19h6',
     undo: 'M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3',
     trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
-    hide: 'M5 12h14',
     more: 'M5 12h.01M12 12h.01M19 12h.01',
     close: 'M6 6l12 12M18 6L6 18',
   };
@@ -86,16 +83,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 .c::before{content:"";width:18px;height:18px;border-radius:50%;background:var(--c);box-shadow:inset 0 0 0 1px #00000026}
 .c.on{background:none}.c.on::before{box-shadow:0 0 0 2px #fbfbfc,0 0 0 4px #1d2026}
 .sep{flex:none;width:1px;height:22px;margin:0 3px;background:#0000001f}
-.t{position:absolute;left:50%;bottom:28px;transform:translateX(-50%);padding:8px 14px;border-radius:8px;background:#fbfbfc;box-shadow:0 6px 24px #0003;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap}
-.t.on{opacity:1;pointer-events:auto}
-.t button{all:unset;display:inline-block;margin:-4px -8px -4px 10px;padding:4px 8px;border-radius:6px;color:#2f6bff;font-weight:600;cursor:pointer}
-.t button:hover{background:#0000000f}.t button:focus-visible{outline:2px solid #3d7cff}
-.t .tc{display:none;margin:-4px -10px -4px 2px;padding:4px 6px;color:#5c606b;vertical-align:middle}.t.cx .tc{display:inline-grid;place-items:center}
-.t .tc svg{width:14px;height:14px}
-.t.in button{margin-left:-2px;padding-left:2px}
-.bye .t::after{content:"";position:absolute;left:10px;right:10px;bottom:3px;height:2px;border-radius:1px;background:#2f6bff;transform-origin:left;animation:bye ${BYE_MS}ms linear forwards}
-@keyframes bye{to{transform:scaleX(0)}}
-.bye>:not(.t),.hint>:not(.t){display:none}
 .tx{all:unset;position:absolute;box-sizing:content-box;padding:${TA_PAD}px;white-space:pre;overflow:hidden;resize:none;pointer-events:auto;cursor:text;color:var(--c);caret-color:var(--c);font:600 var(--fs)/${LH} ${FONT};outline:1px dashed #3d7cffb0;outline-offset:${5 - TA_PAD}px;-webkit-user-select:text;user-select:text}
 @media (pointer:coarse){.b{width:38px;height:38px}.c{width:30px}}
 `;
@@ -175,11 +162,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   grp.append(liveC, predC);
   const pad = el('div', 'p');
   const bar = el('div', 'bar', { role: 'toolbar', 'aria-label': 'Paint' });
-  const toast = el('div', 't', { role: 'status' });
-  const toastM = el('span'), toastB = el('button', '', { type: 'button' });
-  const toastX = el('button', 'tc', { type: 'button', title: '今すぐ閉じる', 'aria-label': '今すぐ閉じる' });
-  toast.append(toastM, toastB, toastX);
-  wrap.append(grp, pad, bar, toast);
+  wrap.append(grp, pad, bar);
   shadow.append(wrap);
 
   // ---------- 状態 ----------
@@ -248,14 +231,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     pin(surf, [['width', surfW + 'px'], ['height', surfH + 'px']]);
   }
 
-  // ---------- ツールバー: ペン（押すたびに消しゴムと入れ替わる）・文字・元に戻す・その他・隠す ----------
+  // ---------- ツールバー: ペン（押すたびに消しゴムと入れ替わる）・文字・元に戻す・その他・閉じる ----------
   const penB = btn('ペン', I.pen, () => setTool(tool === 'pen' ? 'eraser' : 'pen'));
   const penD = penB.querySelector('path');
   const textB = btn('文字 — 押した所に入力。計算式を書くと答えが薄く出て、Tab で書き込める', I.text, () => setTool('text'));
   const undoB = btn('元に戻す', I.undo, undo);
-  // その他: 全消去・閉じる・色
+  // その他: 全消去・色
   const moreP = el('div', 'pn');
-  const moreB = btn('その他（全消去・閉じる・色）', I.more, () => (open ? closePanel() : openPanel()));
+  const moreB = btn('その他（全消去・色）', I.more, () => (open ? closePanel() : openPanel()));
   const item = (label, d, fn) => {
     const b = btn(label, d, () => { closePanel(); fn(); }, 'mi');
     const s = el('span');
@@ -271,8 +254,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   });
   const colRow = el('div', 'row');
   colRow.append(...colBtns);
-  moreP.append(item('全消去', I.trash, clearAll), item('閉じる', I.close, close), colRow);
-  const hideB = btn('隠す — ブックマークレットを再度押すと再表示', I.hide, hideHint);
+  moreP.append(item('全消去', I.trash, clearAll), colRow);
+  // 閉じる（×）の見た目だが、中身は隠す: 絵は残り、ブックマークレットを押すとそのまま戻る。お知らせは出さない（T-081）
+  const hideB = btn('閉じる — ブックマークレットを再度押すと、絵もそのまま再表示', I.close, hide);
   bar.append(penB, textB, sep(), undoB, sep(), moreB, hideB, moreP);
 
   // その他のメニュー。描き始め・メニューの外を押す・ツールバーを引くと閉じる。
@@ -379,28 +363,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function syncHist() {
     undoB.disabled = hpos === 0;
   }
-  let toastT = 0, toastFn = null, toastXFn = null;
-  // お知らせは、押せるボタン（act）の付いた物だけ（隠した後の「再表示」と、閉じた後の「元に戻す」）。
-  // xfn を渡すと × のボタンも付く。inl ならボタンを文の続きとして間を空けずに置く
-  function say(msg, ms, act, fn, xfn, inl) {
-    toastM.textContent = msg;
-    toastB.textContent = act;
-    toastFn = fn;
-    toastXFn = xfn || null;
-    toast.classList.toggle('cx', !!xfn);
-    toast.classList.toggle('in', !!inl);
-    toast.classList.add('on');
-    clearTimeout(toastT);
-    toastT = setTimeout(unsay, ms);
-  }
-  function unsay() {
-    toast.classList.remove('on', 'cx', 'in');
-    toastFn = toastXFn = null;
-  }
-  toastB.addEventListener('click', () => { if (toastFn) toastFn(); });
-  toastX.append(icon(I.close));
-  toastX.addEventListener('click', () => { if (toastXFn) toastXFn(); });
-
   // ---------- キャンバスのサイズ管理 ----------
   // live / pred は画面の大きさ。拡大時だけ作り直す（中身は描いている途中の線だけなので引き継がない）
   function fit() {
@@ -1351,8 +1313,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     } catch (_) { }
   }
   function show() {
-    if (byeT) { reopen(); return; }
-    if (hintT) endHint();
     if (visible) return;
     visible = true;
     hs.setProperty('display', 'block', 'important');
@@ -1375,58 +1335,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (doc.activeElement === host) wrap.blur();
   }
   function toggle() { visible ? hide() : show(); }
-  // 「−」で隠すときは、戻し方を HINT_MS だけ出す（「再表示」を押してもその場で戻る）。
-  // その間も閉じるの取り消し待ちと同じく、お知らせ以外は消えて入力のリスナーも外れている
-  let hintT = 0;
-  function hideHint() {
-    if (!visible) return;
-    hide();
-    wrap.classList.add('hint');
-    hs.setProperty('display', 'block', 'important');
-    topLayer();
-    hintT = setTimeout(endHint, HINT_MS);
-    say('ブックマークレットで', HINT_MS, '再表示', show, null, true);
-  }
-  function endHint() {
-    clearTimeout(hintT);
-    hintT = 0;
-    wrap.classList.remove('hint');
-    unsay();
-    if (visible) return;
-    try { if (host.matches(':popover-open')) host.hidePopover(); } catch (_) { }
-    hs.setProperty('display', 'none', 'important');
-  }
-  // 閉じる: 描いた物があれば、BYE_MS の間はお知らせのボタン・ブックマークレットで取り消せる（お知らせの × ですぐ閉じる）。
-  // その間は hide と同じく絵も入力のリスナーも外し、お知らせだけを残す（ページの操作を邪魔しない）
-  let byeT = 0;
-  function close() {
-    if (byeT) return;
-    if (hintT) endHint();
-    if (!hist.length) { destroy(); return; }
-    hide();
-    wrap.classList.add('bye');
-    hs.setProperty('display', 'block', 'important');
-    topLayer();
-    byeT = setTimeout(destroy, BYE_MS);
-    say('絵を消して閉じました', BYE_MS, '元に戻す', reopen, destroy);
-  }
-  function endBye() {
-    clearTimeout(byeT);
-    byeT = 0;
-    wrap.classList.remove('bye');
-  }
-  function reopen() {
-    if (!byeT) return;
-    endBye();
-    unsay();
-    show();
-  }
   function destroy() {
-    if (byeT) endBye();
-    if (hintT) endHint();
     hide();
-    clearTimeout(toastT);
-    toastFn = null;
     finishHandoff();
     // 遅れて動く暖機・リサイズは、キャンバスを 0 にした後で描かないよう止める
     clearTimeout(warmT);
@@ -1448,7 +1358,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, texts: tlist.length, history: hist.length, historyPixels: hpix,
     desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, nativePrediction: nativePred, inkTrail: !!inkP, tool, color,
   });
-  win[NS] = { version: VERSION, toggle, show, hide, close, destroy, undo, clear: clearAll, tool: setTool, color: setColor, stats, pixels };
+  win[NS] = { version: VERSION, toggle, show, hide, destroy, undo, clear: clearAll, tool: setTool, color: setColor, stats, pixels };
   setColor(color);
   syncTool();
   syncHist();

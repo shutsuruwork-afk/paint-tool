@@ -256,15 +256,16 @@ section > .sub + .sub { margin-top: 20px; }
 
 <main class="page">
   <header>
-    <p class="eyebrow">Bookmarklet · シンプル版（研究用）· v1.28.0-simple.11 · %%SIZE%%（gzip %%GZIP%%）</p>
+    <p class="eyebrow">Bookmarklet · シンプル版（研究用）· v1.29.0-simple.12 · %%SIZE%%（gzip %%GZIP%%）</p>
     <h1>ペイント<br>ブックマークレット</h1>
     <p class="lead">開いているページの上に、<span class="mark">そのまま描ける<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d="M18 40C8 22 52 6 108 7s92 13 84 30-62 20-112 17S4 38 30 16" vector-effect="non-scaling-stroke"/></svg></span>ペイントツールです。ブックマークを押すだけで起動し、拡張機能もアカウントも要りません。入力から線が画面に出るまでの遅延を減らす仕組みを、ブラウザが対応している限りすべて使います。</p>
     <div class="cps">
       <span class="cps-l" id="cp-l">チェックポイント</span>
       <div class="choices" id="p-cp" role="radiogroup" aria-labelledby="cp-l">
         <label><input type="radio" name="cp" value="1">1</label>
-        <label><input type="radio" name="cp" value="2">2（最新）</label>
+        <label><input type="radio" name="cp" value="2">2</label>
         <label><input type="radio" name="cp" value="min">2（最小構成のコード）</label>
+        <label><input type="radio" name="cp" value="3">3（最新）</label>
       </div>
       <p class="aside" id="cp-desc"></p>
     </div>
@@ -495,7 +496,7 @@ function runPaintMin() {%%INLINE_MIN%%}
   // ---- デフォルトの設定: 選んだ既定をブックマークレットのコードに埋め込む ----
   // 組み込みの既定（src/paint.js の PALETTE と CFG に合わせる。テストで一致を確かめている）
   const PALETTE = ['#111111', '#ffffff', '#e53935', '#fb8c00', '#fdd835', '#43a047', '#1e88e5', '#8e24aa'];
-  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 6, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: false, pickOnce: false, keepPanels: false, fullBar: false, cp: 2, glass: true, theme: 'light', blurMode: 'gauss', blur: 18, tint: 80, sat: 200, dev: false, mpred: 'full', blend: 'canvas' };
+  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 6, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: false, pickOnce: false, keepPanels: false, fullBar: false, cp: 3, glass: true, theme: 'light', blurMode: 'gauss', blur: 18, tint: 80, sat: 200, dev: false, mpred: 'full', blend: 'canvas' };
   const BASE = bm.getAttribute('href'); // 既定の入っていないブックマークレット
   const KEY = 'paint-defaults';
   const $ = id => document.getElementById(id);
@@ -511,6 +512,7 @@ function runPaintMin() {%%INLINE_MIN%%}
   const CP_DESC = {
     1: 'ツールバーは、ペン（押すたびに消しゴムと入れ替わる）・元に戻す・その他（全消去・閉じる）・隠す。',
     2: '1 に、文字のボタン（電卓は入り: 計算式を書くと答えが薄く出て、Tab で書き込める）と、その他の色を足したもの。右端の × は隠すだけ（絵は残り、ブックマークレットでそのまま戻る）で、お知らせは出ない。絵を消して閉じる機能はない。',
+    3: '開く物をなくし、ボタンは押すとすぐ効く: ペン（押すたびに消しゴムと入れ替わる）・文字（1 つ書いたらペンに戻る。電卓は入り）・色（押すたびに赤→青→黒→白。丸が今の色）・元に戻す・全消去・×（隠すだけ）。元に戻す・全消去は、できないときは薄くなる。',
     min: '2 と同じ画面で、画面にある機能のほかを外した最小構成のコード（%%MIN_SIZE%%、gzip %%MIN_GZIP%%）。キーのショートカットはなく、下の「デフォルトの設定」も効きません。',
   };
   const MIN_HREF = $('bm-min').getAttribute('href');
@@ -547,7 +549,7 @@ function runPaintMin() {%%INLINE_MIN%%}
       if (v.theme === 'light' || v.theme === 'dark' || /^#[0-9a-f]{6}$/i.test(v.theme)) d.theme = v.theme.toLowerCase();
       if (typeof v.dev === 'boolean') d.dev = v.dev;
       if (typeof v.fullBar === 'boolean') d.fullBar = v.fullBar;
-      if (v.cp === 1 || v.cp === 2 || v.cp === 'min') d.cp = v.cp;
+      if (v.cp === 1 || v.cp === 2 || v.cp === 3 || v.cp === 'min') d.cp = v.cp;
       if (v.blurMode === 'gauss' || v.blurMode === 'plain') d.blurMode = v.blurMode;
       if (+v.blur >= 0 && +v.blur <= 40) d.blur = +v.blur;
       if (+v.tint >= 30 && +v.tint <= 95) d.tint = +v.tint;
@@ -583,8 +585,8 @@ function runPaintMin() {%%INLINE_MIN%%}
     $('p-tool').value = cur.tool;
     for (const r of document.querySelectorAll('#p-bar input')) r.checked = r.value === cur.bar;
     $('p-touch').checked = cur.touchText;
-    // チェックポイント 2 は電卓がいつも入り（ここでは変えられない。T-078）
-    const isMin = cur.cp === 'min' && !cur.fullBar, cp2 = (cur.cp === 2 || cur.cp === 'min') && !cur.fullBar;
+    // チェックポイント 2・3 と最小構成は電卓がいつも入り（ここでは変えられない。T-078・T-082）
+    const isMin = cur.cp === 'min' && !cur.fullBar, cp2 = cur.cp !== 1 && !cur.fullBar; // 2・3・最小構成は電卓がいつも入り
     $('p-calc').checked = cur.calc || cp2;
     $('p-calc').disabled = cp2;
     $('p-once').checked = cur.pickOnce;

@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.28.0-simple.11';
+  const VERSION = '1.29.0-simple.12';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -168,6 +168,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 .c.on::before{box-shadow:0 0 0 2px var(--bb,#202228),0 0 0 4px #fff}
 .cc::before{background:conic-gradient(#f44,#fd4,#4d4,#4dd,#44f,#d4d,#f44)}
 .sep{flex:none;width:1px;height:22px;margin:0 3px;background:#ffffff24}
+.gap{flex:none;width:6px}
 .bar.two .brk{flex-basis:100%;width:auto;height:0;margin:0;background:none}
 .r{display:flex;align-items:center;gap:8px;height:30px;padding:0 6px;color:#a9acb8}
 .r input{flex:1;width:auto;min-width:0;margin:0;accent-color:#3d7cff}
@@ -288,10 +289,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const keepPanels = DEF.keepPanels === true;
   // シンプル版（T-071）: ツールバーには少しだけ出す。fullBar（インストールページの開発用）なら本家と同じにすべて出す（見比べるため）
   const fullBar = DEF.fullBar === true;
-  // チェックポイント（T-078）: シンプル版の段階を見比べるため、インストールページで選ぶ（DEF.cp）。既定は最新の 2。fullBar のときは 0（本家と同じ）
+  // チェックポイント（T-078）: シンプル版の段階を見比べるため、インストールページで選ぶ（DEF.cp）。既定は最新の 3。fullBar のときは 0（本家と同じ）。
+  // 前のチェックポイントの形は変えない（1 はブランチ research/simple-cp1、2 は research/simple-cp2 に残してある）
   //   1: ペン（消しゴムと入れ替わる）・元に戻す・その他（全消去・閉じる）・隠す
   //   2: 1 に文字のボタン（電卓は入り）と、その他の色を足す。隠すボタンは閉じる（×）の見た目で、お知らせは出さない。閉じる（絵を消す）はない（T-081）
-  const cp = fullBar ? 0 : DEF.cp === 1 ? 1 : 2;
+  //   3: Claude の案（T-082）。開く物をなくし、ボタンは押すとすぐ効く: ペン（消しゴムと入れ替わる）・文字（1 つ書いたらペンに戻る）・色（押すたびに
+  //      赤→青→黒→白）・元に戻す・全消去・閉じる（×。中身は隠す）。元に戻す・全消去は、できないときは薄くなる。区切り線はなく、間隔で分ける
+  const cp = fullBar ? 0 : DEF.cp === 1 ? 1 : DEF.cp === 2 ? 2 : 3;
   // 見た目（インストールページの設定）: 明るい（白に黒）と、ガラス風（半透明にして下をぼかす）。既定は白いガラス（T-050、ユーザーが決めた）。
   // ガラスの調整は開発用: ぼかし方（gauss は周りも拾う本物のガウス、plain は backdrop-filter そのまま）・強さ・地の濃さ
   // theme は 'dark'・'light'・'#rrggbb'（好きな色。明るさで文字を黒か白にする）。開発用の見た目のパネル（dev）からも変えられる
@@ -458,7 +462,19 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }, 'dd shp');
   const shapeD = shapeB.querySelector('path');
   shapeP.append(row(...SHAPES.map(t => toolBtns[t] = btn(TITLES[t], I[t], () => { setTool(t); closePanel(); }))));
-  toolBtns.text = btn(TITLES.text, I.text, () => setTool('text'));
+  // チェックポイント 3 は、文字のときにもう一度押すとペンに戻る（T-082）
+  toolBtns.text = btn(TITLES.text, I.text, () => setTool(cp === 3 && tool === 'text' ? 'pen' : 'text'));
+  // チェックポイント 3 の色（T-082）: 押すたびに次の色。開く物はなく、ボタンの丸が今の色。消しゴムのときはペンに戻す
+  const CYCLE = ['#e53935', '#1e88e5', '#111111', '#ffffff'], CYCLE_N = ['赤', '青', '黒', '白'];
+  const colorB = btn('色', null, () => {
+    setColor(CYCLE[(CYCLE.indexOf(color) + 1) % CYCLE.length]);
+    if (tool === 'eraser') setTool('pen');
+  });
+  const colorD = el('span', 'dot');
+  colorD.style.setProperty('--d', '18px');
+  colorD.style.setProperty('--a', '1');
+  colorB.append(colorD);
+  const trashB = btn('全消去（元に戻せます）', I.trash, clearAll);
   toolBtns.fill = btn(TITLES.fill, I.fill, () => setTool('fill'));
 
   // 色と太さ: 今の色・太さ・濃さを点で見せる。パネルにパレット・カスタム色・スポイト・太さ・濃さ
@@ -622,7 +638,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   // チェックポイント 2 は、隠すボタンを閉じる（×）の見た目にする。中身は隠すのまま（絵は残り、ブックマークレットでまた出る）で、お知らせも出さない。
   // 閉じる（絵を消す）はなくした（T-081）
-  const hideB = cp === 2 ? btn('閉じる — ブックマークレットを再度押すと、絵もそのまま再表示', I.close, hide) : btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hideHint);
+  const hideB = cp >= 2 ? btn('閉じる — ブックマークレットを再度押すと、絵もそのまま再表示', I.close, hide) : btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hideHint);
   // シンプル版のその他は全消去と閉じるだけ（T-072）。ほかの項目も作るがメニューには入れない（背景の B・保存の Ctrl+S などのキーは効く）。
   // fullBar なら本家と同じ項目で、閉じるはバーの × にする
   for (const b of [...moreP.children]) if (fullBar ? b === closeMi : b !== clrMi && (cp === 2 || b !== closeMi)) b.remove();
@@ -636,7 +652,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   if (fullBar) bar.append(toolBtns.select, penB, toolBtns.marker, toolBtns.eraser, shapeB, toolBtns.text, toolBtns.fill,
     el('div', 'sep brk'), styleB, sep(), undoB, redoB, sep(), passB, moreB, sep(), hideB, closeB); // 1 段に収まらないときは .brk で段を分ける（.two .brk。T-064・T-067）
   else if (cp === 1) bar.append(penB, sep(), undoB, sep(), moreB, hideB); // 消しゴムはペンのボタンで切り替える（T-076）
-  else bar.append(penB, toolBtns.text, sep(), undoB, sep(), moreB, hideB); // チェックポイント 2 は文字も（T-078） // 色と太さのボタンも出さない（T-074。太さは既定のまま、キーの [ ] と数字は効く）
+  else if (cp === 2) bar.append(penB, toolBtns.text, sep(), undoB, sep(), moreB, hideB); // チェックポイント 2 は文字も（T-078） // 色と太さのボタンも出さない（T-074。太さは既定のまま、キーの [ ] と数字は効く）
+  else bar.append(penB, toolBtns.text, colorB, el('div', 'gap'), undoB, trashB, el('div', 'gap'), hideB); // チェックポイント 3（T-082）。その他（⋯）はない
   bar.append(shapeP, penP, styleP, moreP, lookP, lci);
 
   // パネルは 1 つだけ開く。描き始め・パネルの外を押す・Esc で閉じる。
@@ -830,6 +847,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     let hit = false;
     swBtns.forEach((b, i) => { const on = PALETTE[i] === color; b.classList.toggle('on', on); hit = hit || on; });
     mcBtns.forEach((b, i) => b.classList.toggle('on', PALETTE[i] === color));
+    const ci3 = CYCLE.indexOf(color), cn = ci3 < 0 ? '今の色' : CYCLE_N[ci3], nx = CYCLE_N[(ci3 + 1) % CYCLE.length];
+    colorD.style.setProperty('--c', color);
+    colorB.title = `色（${cn}）— 押すと${nx}に`;
+    colorB.setAttribute('aria-label', colorB.title);
     customB.classList.toggle('on', !hit);
     customB.style.setProperty('--c', color);
     if (ta) { taC = color; styleTa(); }
@@ -839,6 +860,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function syncHist() {
     undoB.disabled = hpos === 0;
     redoB.disabled = hpos >= hist.length;
+    // 全消去は、消す物がないと分かっているときは薄くする（直前の手が全消去か、描いた範囲が空で文字もない。T-082）
+    const h = hpos ? hist[hpos - 1] : null;
+    trashB.disabled = !!(h && h.clr) || (!tlist.length && cbx1 <= cbx0);
   }
   function cycleBg() {
     bg = (bg + 1) % BGS.length;
@@ -1067,6 +1091,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     for (let i = 0; i < R.length; i += 6) dtiles.get((R[i + 1] / DT) * 65536 + R[i] / DT).x.clearRect(0, 0, DT, DT);
     for (const p of P) tApply(p[0], null);
     cbx0 = cby0 = cbx1 = cby1 = 0;
+    syncHist();
   }
 
   // 描いた範囲（cb*）に画素が 1 つでも残っているか。掛かるタイルの重なる所だけを読み戻す（全消去の前にだけ使う。T-063）
@@ -2620,6 +2645,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (!ta) return;
     const e = ta, v = e.value.replace(/\s+$/, ''), o = taObj;
     ta = taObj = null;
+    // チェックポイント 3 は、文字を 1 つ書いたらペンに戻る（基本はペン。続けて文字を押し間違えない。T-082）
+    if (cp === 3 && tool === 'text') { tool = 'pen'; syncTool(false); remember(); }
     e.remove();
     ghostEl.remove();
     if (o) o.el.classList.remove('ed');
@@ -2839,7 +2866,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     else if (k === 'd') toggleHud();
     else if (k === 'i' && HAS_ED) pickColor();
     else if (k === 'Delete') clearAll();
-    else if (k === 'Escape') openP ? closePanel() : cp === 2 ? hide() : hideHint(); // チェックポイント 2 はお知らせを出さない（T-081）
+    else if (k === 'Escape') openP ? closePanel() : cp >= 2 ? hide() : hideHint(); // チェックポイント 2・3 はお知らせを出さない（T-081）
     else ok = false;
     if (ok) { e.preventDefault(); e.stopPropagation(); }
   }
@@ -3042,11 +3069,11 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     else moveBar((vw - barW) / 2, 10);
   }
   applyPrefs(DEF);
-  if (cp === 2) calc = true; // チェックポイント 2 は電卓が入り（切り替えはない。T-078）
+  if (cp >= 2) calc = true; // チェックポイント 2・3 は電卓が入り（切り替えはない。T-078）
   base = snapPrefs();
   const site = loadSite();
   applyPrefs(site);
-  if (cp === 2) calc = true;
+  if (cp >= 2) calc = true;
   barMoved = !!(site && Array.isArray(site.bar));
 
   // ---------- 起動 ----------

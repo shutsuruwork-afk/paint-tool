@@ -263,9 +263,9 @@ test('見た目: 明るい（白に黒）とガラス風（既定はガウス）
   await ip.click('#try');
   const g = await look(ip);
   assert.equal(g.cls, 'glass gauss');
-  assert.equal(g.blur, 'blur(20px) saturate(1.8)');
+  assert.equal(g.blur, 'blur(15px) saturate(1.8)');
   assert.equal(g.mask, true);
-  assert.equal(g.panel, 'blur(20px) saturate(1.8)');
+  assert.equal(g.panel, 'blur(15px) saturate(1.8)');
   assert.deepEqual(ie, []);
   assert.deepEqual(errors, []);
   await ip.close();
@@ -288,7 +288,7 @@ test('見た目（開発用）: インストールページの開発用を入れ
   assert.equal(await openPanels(page), 1);
   // 明るい → ガラス風（ガウス）→ ぼかしを 8px
   await mouseClick(page, '.pn.on [aria-label="ツールバーの色: 明るい"]');
-  assert.deepEqual(await st(page), { cls: 'light', bar: 'rgb(251, 251, 252)', gb: '20px', color: 'rgb(29, 32, 38)' });
+  assert.deepEqual(await st(page), { cls: 'light', bar: 'rgb(251, 251, 252)', gb: '15px', color: 'rgb(29, 32, 38)' });
   await mouseClick(page, '.pn.on [aria-label^="ガラス風"]');
   assert.equal((await st(page)).cls, 'light glass gauss');
   await shadowEval(page, root => { const r = [...root.querySelectorAll('.pn.on .r input')][0]; r.value = 8; r.dispatchEvent(new Event('input')); });
@@ -964,6 +964,9 @@ test('インストールページで選んだ設定入りのブックマーク�
   want(await prefs(o2.page));
   assert.deepEqual(o2.errors, []);
   await o2.page.close();
+  // 保存は組み込みの既定との差分だけ（あとで既定を変えると、触っていない所には新しい既定が効く）
+  const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem('paint-defaults')));
+  assert.deepEqual(await saved(), { color: '#1e88e5', tool: 'marker', size: { pen: 10, text: 40 }, bar: 'top-left', touchText: false });
   // 開き直しても残り、「最初の状態に戻す」で元のボタンに戻る
   await page.reload();
   assert.equal(await page.isChecked('[aria-label="色 7"]'), true);
@@ -972,6 +975,7 @@ test('インストールページで選んだ設定入りのブックマーク�
   assert.equal(await page.getAttribute('#bm', 'href'), href);
   await page.click('#p-reset');
   assert.equal(await page.getAttribute('#bm', 'href'), base);
+  assert.deepEqual(await saved(), {});
   assert.deepEqual(errors, []);
   await page.close();
 });

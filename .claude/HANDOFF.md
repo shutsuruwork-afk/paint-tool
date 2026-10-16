@@ -4,12 +4,12 @@
 
 ## 現在地
 
-- 最終更新: 2026-10-16、T-045 の完了時
-- ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない。HEAD は T-045 のコミット（`git log --grep T-045`）
-- CI: GitHub Actions「Pages」は main へのプッシュごとに test → deploy。T-044 の run（38851652776）まで test・deploy とも成功。T-045 のプッシュの結果は Actions で確かめる
-- 公開: https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）の 2 か所。版は v1.19.2
+- 最終更新: 2026-10-16、T-046 の完了時
+- ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない。HEAD は T-046 のコミット（`git log --grep T-046`）
+- CI: GitHub Actions「Pages」は main へのプッシュごとに test → deploy。T-045 の run（38853846958）まで test・deploy とも成功。T-046 のプッシュの結果は Actions で確かめる
+- 公開: https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）の 2 か所。版は v1.19.3
 - 人の操作待ち: なし。R-004 は C に決まった（インストールページの既定＋サイトごとに覚える）。ユーザーのフィードバック（ideas/touch-text.md）で、ペンを選んでいても文字に触れたい（T-022、済み。設定の入り・切りはインストールページの「デフォルトの設定」＝T-005、済み）、ツールを選んだらページ操作モードを解除（T-021、済み）が来た
-- 次の一手: 電卓の枠と空白（T-045）をユーザーが試す。塗りつぶしを画面の外まで広げたいかをユーザーに聞いた（T-044 の残課題。今は見えている画面だけ）。見た目（T-040〜T-042）をユーザーが実機で試す。気に入った色・ガラスの組み合わせを既定にするかを決めてもらう。残りの候補は T-018・T-013・T-031・T-020（T-011・T-017 は後回し）
+- 次の一手: ユーザーの指示で、見た目の調整の間は効率と中身の改善に取り組む（トレードオフがあれば先にユーザーに確認する）。電卓の枠と空白（T-045）とガラスの新しい既定（T-046）をユーザーが試す。塗りつぶしを画面の外まで広げたいかをユーザーに聞いた（T-044 の残課題。今は見えている画面だけ）。見た目（T-040〜T-042）をユーザーが実機で試す。気に入った色・ガラスの組み合わせを既定にするかを決めてもらう。残りの候補は T-018・T-013・T-031・T-020（T-011・T-017 は後回し）
 
 ## 始め方
 
@@ -32,7 +32,7 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
   - ストローク状態と入力: onDown（finishHandoff → mapNow）→ onMove（inkMove, readPred, drawTail / eraseMove → erasePts / drawShape）→ onUp → endStroke（commitLive → 2 フレーム後に finishHandoff）。abortStroke はパームリジェクションで使う
   - タイル（markBox / markSeg / markCurve / markShape / tileRects / resetTiles）。印は面の座標で Set に付ける
   - お知らせ（`say(msg, ms, act, fn, xfn, inl)`。fn を渡すとボタン付き、xfn を渡すと × 付き、inl ならボタンを文の続きに置く）、塗りつぶし（floodFill）、選択（settle / showSel / liftSel → liftRaster + beginSel / dropSel / paintSel / selHit / selHover / selDown / selMove / scaleSel / selUp / selAbort / pickSel / nudgeSel。浮かせた画素は selC、選んだ文字の物の組は selT、どちらも入れ物 selIn に入れて transform で拡大縮小。枠は selEl と selB）、文字（物: tlist / tNew / tSnap / tApply / swapText / textHit / paintText（書き出し用）/ eraseText・showErased・takeErased（消しゴム）。入力: textAt / editText / styleTa / fitTa / commitText。電卓: updateGhost（fitTa も呼ぶ）/ lineW / acceptGhost / calcLine（薄い答えは ghostEl、右端は ghostR）。入力欄は `ta`、書き直し中の物は `taObj`）、書き出し（capture / exportBlob / save / copyImg / pixels）、HUD（D キー）、操作の一覧（HELP / openHelp / closeHelp。? キー）、キーボード（onKey）、設定（applyPrefs / snapPrefs / remember → savePrefs / loadSite / placeBar。DEF ＋ サイトの保存）、表示制御（show / hide / hideHint → endHint / toggle / close → endBye / reopen / onByeKey、destroy）、起動
-- `src/install.html`: インストールページのテンプレート（本文のみ）。並びは T-039 で、見出し（Paint ボタン・試す・目次）→ 入れ方 → 試し書き → デフォルトの設定（id="defaults"、動きはスイッチ）→ 使い方（機能の説明と操作の一覧 %%HELP%%）→ できないこと → 仕組みと計測（仕組み・低遅延機能の表・計測の表）にした。機能の説明は「使い方」に、技術の説明は「仕組みと計測」に分ける。`%%BOOKMARKLET_HREF%%` などを build.mjs が置き換える。「デフォルトの設定」のフォームは、選んだ既定（組み込みの既定との差分）を JSON にして、ボタンの href の `'__PAINT_DEFAULTS__'` を置き換える。フォームの状態はインストールページ自身の localStorage（`paint-defaults`）に残す。組み込みの既定（BUILTIN と PALETTE）は src/paint.js と手で合わせる（テストで一致を確かめている）
+- `src/install.html`: インストールページのテンプレート（本文のみ）。並びは T-039 で、見出し（Paint ボタン・試す・目次）→ 入れ方 → 試し書き → デフォルトの設定（id="defaults"、動きはスイッチ）→ 使い方（機能の説明と操作の一覧 %%HELP%%）→ できないこと → 仕組みと計測（仕組み・低遅延機能の表・計測の表）にした。機能の説明は「使い方」に、技術の説明は「仕組みと計測」に分ける。`%%BOOKMARKLET_HREF%%` などを build.mjs が置き換える。「デフォルトの設定」のフォームは、選んだ既定（組み込みの既定との差分）を JSON にして、ボタンの href の `'__PAINT_DEFAULTS__'` を置き換える。フォームの状態はインストールページ自身の localStorage（`paint-defaults`）に、組み込みの既定との差分だけを残す（T-046。それより前に保存した人は全体の形のまま）。組み込みの既定（BUILTIN と PALETTE）は src/paint.js と手で合わせる（テストで一致を確かめている）
 - `build.mjs`: src/paint.js の HELP（`/*HELP*/` の間の JSON）を読んで、インストールページの `%%HELP%%` にショートカットの一覧を書き出す。terser で圧縮し、`dist/paint.min.js`、`dist/bookmarklet.txt`、`docs/index.html` を作る。「このページで試す」用の埋め込み版は、既定の目印を `window.__paintBookmarkletDefaults` を読む式に変える（eval を使わない）。目印が 1 つだけあることも確かめる。インストールページのボタンの href がブックマークレットと一致するかを、書き出す前に確かめる
 - `test/paint.test.mjs`（テスト 56 件）、`test/helpers.mjs`（既定を埋め込んだコードを作る `withDefaults` と直接起動する `runCode`、サーバー〈`/install` はビルドしたインストールページ〉〈`/long` は縦 3000px、`/offset` は html に余白〉・起動・画素の読み取り `readMain` / `screenPixel`・`scrollTo`）、`test/bench.mjs`
 - `.github/workflows/pages.yml`: main へのプッシュでテストしてから docs/ を Pages に公開。PR ではテストだけ
@@ -84,7 +84,7 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - 設定の記憶は C（R-004 でユーザーが決定）: インストールページで選んだ既定で始まり、サイトで変えた所はそのサイトの localStorage（キー `paint-bookmarklet`）に差分だけを書く。サイトをまたいで自動で共有する方法はない（保存領域はサイトごとに分かれる）ので、共通の既定はブックマークレットの中に埋め込む。差分だけにしたので、あとでインストールページの既定を変えると、サイトで触っていない所には新しい既定が効く。touchText はインストールページだけで選ぶ（ツールの中に切り替えは置いていない）。背景・ページ操作モード・計測表示は覚えない。
 - デフォルトの変更（T-038、ユーザーの提案）: その他のメニューから、インストールページ（PAGE、Pages の URL を直書き）を新しいタブで開く。今のブックマークの DEF を `#defaults=<JSON>` で渡し、ページはそれをフォームに読み込んで保存し、ハッシュを `#defaults` に戻して設定の節（id="defaults"）を見せる。設定はページに集め、メニューの項目は増やさない方針（サイトをまたいで設定を共有する方法はないので、変えたらドラッグし直す）。
 - 見た目の開発用パネル（T-042、ユーザーの要望: 開発用に、操作盤から操作盤の色を変えたい）: DEF.dev（インストールページの「開発用」、既定は切り）のときだけ、その他のメニューに「見た目（開発用）」を出す（ふだんのメニューは増やさない方針のため）。パネル lookP で、ツールバーの色（暗い・明るい・好きな色）・ガラス・ガウス・ぼかし・地の濃さをその場で変える（look を書き換えて applyLook）。「この見た目をデフォルトに」は、DEF に look を重ねて openDefaults（デフォルトの変更と同じく #defaults=）。好きな色は theme='#rrggbb' で、--bb（地）と --gc（ガラスの地）にし、相対輝度 0.3 を超えたら .light（黒い文字）。サイトごとには覚えない。
-- 見た目（T-040・T-041、ユーザーが試したいと言った。インストールページの「見た目」。DEF の theme・glass・blurMode・blur・tint、既定は暗い・ガラスなし）: 明るい（theme='light'）は wrap の .light で、バー・パネル・お知らせ・一覧の色を上書きする（暗い方の規則はそのまま）。ガラスは wrap の .glass で、バーとパネルの背景を消して ::before（z-index:-1）に地 rgb(var(--gc) / var(--gt)) と backdrop-filter: blur(var(--gb)) を置く（バー自体に付けると、子のパネルの backdrop-filter がバーの中しか見なくなるため）。ふつうの backdrop-filter は細長い要素だと下の文字がほぼくっきり残り、薄くなるだけだった（headless で確認。ユーザーも実機で「もっとガウス的に」と言った）。ガウス方式（.gauss、既定）は ::before を周りへ --gm（強さの 2 倍）広げて拾い、mask（角 4 つの radial-gradient と 2 本の linear-gradient、content-box）で角丸の形に切る。外側の要素の overflow や clip-path で切ると、拾う範囲も狭まってぼけが弱くなる。--gb・--gm・--gt は wrap に CSSOM で入れる（style 属性は使わない）。
+- 見た目（T-040・T-041、ユーザーが試したいと言った。インストールページの「見た目」。DEF の theme・glass・blurMode・blur・tint、既定は暗い・ガラスなし。ガラスを入れたときの既定はガウス・ぼかし 15px・地 80%＝T-046、ユーザーが決めた）: 明るい（theme='light'）は wrap の .light で、バー・パネル・お知らせ・一覧の色を上書きする（暗い方の規則はそのまま）。ガラスは wrap の .glass で、バーとパネルの背景を消して ::before（z-index:-1）に地 rgb(var(--gc) / var(--gt)) と backdrop-filter: blur(var(--gb)) を置く（バー自体に付けると、子のパネルの backdrop-filter がバーの中しか見なくなるため）。ふつうの backdrop-filter は細長い要素だと下の文字がほぼくっきり残り、薄くなるだけだった（headless で確認。ユーザーも実機で「もっとガウス的に」と言った）。ガウス方式（.gauss、既定）は ::before を周りへ --gm（強さの 2 倍）広げて拾い、mask（角 4 つの radial-gradient と 2 本の linear-gradient、content-box）で角丸の形に切る。外側の要素の overflow や clip-path で切ると、拾う範囲も狭まってぼけが弱くなる。--gb・--gm・--gt は wrap に CSSOM で入れる（style 属性は使わない）。
 - 入り・切りの項目（その他のメニューの電卓・画面に固定、インストールページの入り・切り）はスイッチの形にする（T-036、ユーザーが画像で示した）。メニューは role="switch" と aria-checked で状態を持ち、つまみ（.sw）は CSS だけで動かす。色はツールが青（#3d7cff）、インストールページはページの赤（チェックボックスのまま appearance: none で見た目だけ変える）。
 - 操作の一覧（T-007、ユーザーの決定）: ? キーで画面の中央に重ねて出す。ツールバーにはボタンを置かない。中身は paint.js の HELP 1 か所に持ち、build.mjs がインストールページにも同じ物を書き出す（食い違わない。テストで両方の行を比べている）。キーは `{…}` で書き、Mac では Ctrl を ⌘ にして出す。DOM は初めて開いたときに作る。外を押すと閉じるだけで、その押下は描画に渡さない。起動時のお知らせは「Esc で隠す」だけ（T-037、ユーザーの要望。? や V は一覧で分かる）。日本語の文字列は圧縮後に \u エスケープになるので、一覧の分でブックマークレットが約 4 KB 増えた。
 - ツールを選ぶ（setTool）とページ操作モードを解除する（T-021、ユーザーの提案）。ツールを選ぶのは描くつもりのときなので。色や太さの変更では解除しない。
@@ -135,6 +135,11 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 
 ## 完了ログ（新しい順）
 
+### T-046 ガラスの既定を、ぼかし 15px・地の濃さ 80% にする — 2026-10-16
+- 変更: ガラス風の既定を、ぼかし 20px・地の濃さ 72% から、ぼかし 15px・地の濃さ 80% にした（ツールとインストールページの両方）。インストールページの保存（localStorage の paint-defaults）を、フォームの全体から組み込みの既定との差分だけにした。これからは既定を変えると、ページで触っていない所には新しい既定が効く。版を 1.19.3 にした。ユーザーの要望（チャット: とりあえずこの値をデフォルトにしてみて）。
+- 確認: 見た目のテスト 2 件の既定の値を 15px に合わせた（組み込みの既定がツールとページで一致することは、インストールページのテストで見ている）。インストールページのテストに、保存が差分だけであること・最初の状態に戻すと空になることを足し、全体を保存する元の処理ではこのテストが落ちることを確かめた。`npm test` 56 件が通過。
+- 残課題: 前にインストールページを開いたことがある人の保存は全体の形なので、古い 20px・72% が残る（既定と同じ値かどうか見分けられないので移し替えない。最初の状態に戻すかスライダーで直す）。
+
 ### T-045 電卓の薄い答えまで点線の枠で囲み、答えの前後の空白を式の書き方に合わせる — 2026-10-16
 - 変更: 電卓の薄い答えが出ている間は、文字の入力欄の点線の枠が答えの右端まで広がる（Tab で書き込んでも枠の大きさは変わらず、答えが消えると元の幅に戻る）。答えの前後の空白を式の書き方に合わせた（`11+1` → `=12`、`11 + 1` → ` = 12`、`11+1=` → `12`、`11 + 1 =` → ` 12`。どちらとも言えない `11+ 1` は空白を入れる方、最後に自分で打った空白には重ねない）。それまでは式に関係なく「 = 12」だった。答えの位置は、見えない入力欄で行の幅を測るようにした（canvas の measureText では、書体によって「*」の組み方が入力欄と変わり、答えの前に 3px ほどの隙間が出ていた）。README に書いた。版を 1.19.2 にした。ユーザーの要望（チャット、画像付き。認識を確かめてから着手）。
 - 確認: 電卓のテストを新しい出方に合わせ、空白の場合分け 10 通り（全角の空白も）と、枠が答えを囲む・答えが消えると縮む・Tab の前後で枠の幅が同じ、を足した。枠を広げる処理と空白の切り替えを、それぞれ外すとテストが落ちることを確かめた。5 つの書き方の Tab の前後を 2x のスクリーンショットで確かめた。`npm test` 56 件が通過。
@@ -180,12 +185,8 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - 確認: 電卓のテストを、文字ではなく aria-checked で確かめる形にした。ツールのメニューとインストールページ（明るい・暗い表示）のスクリーンショットで見た目を確かめた。`npm test` 52 件が通過。
 - 残課題: インストールページの ::before のつまみは Chromium で確かめた（Firefox・Safari は未確認）。
 
-### T-037 起動時のお知らせを「Esc で隠す」だけにする — 2026-10-15
-- 変更: 起動時に画面の下へ出すお知らせを「Esc で隠す ・ V でページ操作 ・ ? で操作の一覧」から「Esc で隠す」だけにした。版を 1.15.1 にした。ユーザーの要望（チャット）。
-- 確認: ツールバーのテストに、起動直後のお知らせの文の確認を足した。`npm test` 52 件が通過。
-- 残課題: なし。
-
 ### それより前（1 行に畳んだもの）
+- T-037 起動時のお知らせを「Esc で隠す」だけにする — 2026-10-15
 - T-016 「画面に固定」モード（その他のメニュー。入れた時の fx / fy で position: fixed、切ると shiftAll で見えている位置のままページに付け直す）— 2026-10-15
 - T-007 ? キーで操作の一覧を出す（HELP を build.mjs がインストールページにも書き出す）— 2026-10-15
 - T-008 隠したときに「ブックマークレットで再表示」を 4 秒出す（再表示は押せる青い文字。hideHint / endHint）— 2026-10-15

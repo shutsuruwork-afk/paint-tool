@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.19.2';
+  const VERSION = '1.19.3';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -110,7 +110,7 @@
     'linear-gradient(#000 0 0) 50% 50%/calc(100% - 2 * var(--gr)) 100% no-repeat content-box',
     'linear-gradient(#000 0 0) 50% 50%/100% calc(100% - 2 * var(--gr)) no-repeat content-box'].join(',');
   const CSS = `
-.w{--gc:28 30 36;--gt:.72;--gb:20px;--gm:40px;all:initial;position:absolute;inset:0;overflow:hidden;contain:strict;pointer-events:none;outline:none;font:12px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e8e9ee;color-scheme:dark;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+.w{--gc:28 30 36;--gt:.8;--gb:15px;--gm:30px;all:initial;position:absolute;inset:0;overflow:hidden;contain:strict;pointer-events:none;outline:none;font:12px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e8e9ee;color-scheme:dark;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
 .s{position:absolute;inset:0}.s.bg1{background:#fff}.s.bg2{background:#1d1f23}
 .sel{position:absolute;z-index:2;pointer-events:none}
 .sel b{position:absolute;outline:1px solid #3d7cff}
@@ -287,8 +287,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     theme: DEF.theme === 'light' || /^#[0-9a-f]{6}$/i.test(DEF.theme) ? DEF.theme.toLowerCase() : 'dark',
     glass: DEF.glass === true,
     blurMode: DEF.blurMode === 'plain' ? 'plain' : 'gauss',
-    blur: +DEF.blur >= 0 && +DEF.blur <= 40 ? +DEF.blur : 20,
-    tint: +DEF.tint >= 30 && +DEF.tint <= 95 ? +DEF.tint : 72,
+    blur: +DEF.blur >= 0 && +DEF.blur <= 40 ? +DEF.blur : 15,
+    tint: +DEF.tint >= 30 && +DEF.tint <= 95 ? +DEF.tint : 80,
   };
   const dev = DEF.dev === true;
   function applyLook() {

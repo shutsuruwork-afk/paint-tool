@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.19.5';
+  const VERSION = '1.20.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -110,7 +110,7 @@
     'linear-gradient(#000 0 0) 50% 50%/calc(100% - 2 * var(--gr)) 100% no-repeat content-box',
     'linear-gradient(#000 0 0) 50% 50%/100% calc(100% - 2 * var(--gr)) no-repeat content-box'].join(',');
   const CSS = `
-.w{--gc:28 30 36;--gt:.8;--gb:15px;--gm:30px;all:initial;position:absolute;inset:0;overflow:hidden;contain:strict;pointer-events:none;outline:none;font:12px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e8e9ee;color-scheme:dark;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+.w{--gc:28 30 36;--gt:.7;--gb:18px;--gm:36px;all:initial;position:absolute;inset:0;overflow:hidden;contain:strict;pointer-events:none;outline:none;font:12px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e8e9ee;color-scheme:dark;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
 .s{position:absolute;inset:0}.s.bg1{background:#fff}.s.bg2{background:#1d1f23}
 .sel{position:absolute;z-index:2;pointer-events:none}
 .sel b{position:absolute;outline:1px solid #3d7cff}
@@ -280,15 +280,15 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   let tool = 'pen', color = PALETTE[2], bg = 0, pass = false, visible = false, touchText = DEF.touchText !== false, penType = 'pen', calc = false;
   // 種類のあるボタン（ペン・図形）: 既定は「選んでいないときに押すとその道具、もう一度押すと選択肢」。pickOnce なら 1 回で選択肢も出す
   const pickOnce = DEF.pickOnce === true;
-  // 見た目（インストールページの設定）: 明るい（白に黒）と、ガラス風（半透明にして下をぼかす）。
+  // 見た目（インストールページの設定）: 明るい（白に黒）と、ガラス風（半透明にして下をぼかす）。既定は白いガラス（T-050、ユーザーが決めた）。
   // ガラスの調整は開発用: ぼかし方（gauss は周りも拾う本物のガウス、plain は backdrop-filter そのまま）・強さ・地の濃さ
   // theme は 'dark'・'light'・'#rrggbb'（好きな色。明るさで文字を黒か白にする）。開発用の見た目のパネル（dev）からも変えられる
   const look = {
-    theme: DEF.theme === 'light' || /^#[0-9a-f]{6}$/i.test(DEF.theme) ? DEF.theme.toLowerCase() : 'dark',
-    glass: DEF.glass === true,
+    theme: DEF.theme === 'dark' || /^#[0-9a-f]{6}$/i.test(DEF.theme) ? DEF.theme.toLowerCase() : 'light',
+    glass: DEF.glass !== false,
     blurMode: DEF.blurMode === 'plain' ? 'plain' : 'gauss',
-    blur: +DEF.blur >= 0 && +DEF.blur <= 40 ? +DEF.blur : 15,
-    tint: +DEF.tint >= 30 && +DEF.tint <= 95 ? +DEF.tint : 80,
+    blur: +DEF.blur >= 0 && +DEF.blur <= 40 ? +DEF.blur : 18,
+    tint: +DEF.tint >= 30 && +DEF.tint <= 95 ? +DEF.tint : 70,
   };
   const dev = DEF.dev === true;
   function applyLook() {

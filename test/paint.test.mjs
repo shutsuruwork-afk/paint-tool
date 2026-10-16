@@ -234,7 +234,7 @@ test('? で操作の一覧が重なって出る（? ・Esc・外を押すと閉�
   await page.close();
 });
 
-test('見た目: 明るい（白に黒）とガラス風（既定はガウス）、ガラスの調整（ぼかし方・強さ・地の濃さ）をインストールページで選べる。既定は今までどおり', async () => {
+test('見た目: 既定は白いガラス（ガウス・ぼかし 18px・地 70%）。暗い（黒に白）・ガラスなし・ガラスの調整（ぼかし方・強さ・地の濃さ）をインストールページで選べる', async () => {
   const look = page => shadowEval(page, root => {
     const w = root.querySelector('.w'), bar = root.querySelector('.bar'), pn = root.querySelector('.pn'), g = getComputedStyle(bar, '::before');
     return {
@@ -248,8 +248,13 @@ test('見た目: 明るい（白に黒）とガラス風（既定はガウス）
     };
   });
   const { page, errors } = await fresh();
+  assert.deepEqual(await look(page), { cls: 'light glass gauss', color: 'rgb(29, 32, 38)', bar: 'rgba(0, 0, 0, 0)', blur: 'blur(18px) saturate(1.8)', tint: 'rgba(250, 250, 252, 0.7)', mask: true, panel: 'blur(18px) saturate(1.8)' });
+  const p0 = await prefs(page);
+  assert.deepEqual([p0.theme, p0.glass, p0.blurMode, p0.blur, p0.tint], ['light', true, 'gauss', 18, 70]);
+  // 暗い・ガラスなし（T-050 より前の既定）
+  await page.evaluate(() => window.__paintBookmarklet.destroy());
+  await runCode(page, withDefaults(CODE, { theme: 'dark', glass: false }));
   assert.deepEqual(await look(page), { cls: '', color: 'rgb(232, 233, 238)', bar: 'rgb(32, 34, 40)', blur: 'none', tint: 'rgba(0, 0, 0, 0)', mask: false, panel: 'none' });
-  assert.equal((await prefs(page)).glass, false);
   // 明るい・ガラス・ふつうのぼかし・強さ 8・濃さ 50%
   await page.evaluate(() => window.__paintBookmarklet.destroy());
   await runCode(page, withDefaults(CODE, { theme: 'light', glass: true, blurMode: 'plain', blur: 8, tint: 50 }));
@@ -257,15 +262,16 @@ test('見た目: 明るい（白に黒）とガラス風（既定はガウス）
   const p1 = await prefs(page);
   assert.deepEqual([p1.theme, p1.glass, p1.blurMode, p1.blur, p1.tint], ['light', true, 'plain', 8, 50]);
   await page.close();
-  // インストールページでガラスを入れて試すと、ガウス（周りも拾い、mask で角丸に切る）で始まる
+  // インストールページの既定のまま試すと、白いガラスのガウス（周りも拾い、mask で角丸に切る）で始まる
   const { page: ip, errors: ie } = await openPage(browser, server.base + '/install');
-  await ip.check('#p-glass');
+  assert.equal(await ip.isChecked('#p-glass'), true);
+  assert.equal(await ip.isChecked('#p-theme input[value="light"]'), true);
   await ip.click('#try');
   const g = await look(ip);
-  assert.equal(g.cls, 'glass gauss');
-  assert.equal(g.blur, 'blur(15px) saturate(1.8)');
+  assert.equal(g.cls, 'light glass gauss');
+  assert.equal(g.blur, 'blur(18px) saturate(1.8)');
   assert.equal(g.mask, true);
-  assert.equal(g.panel, 'blur(15px) saturate(1.8)');
+  assert.equal(g.panel, 'blur(18px) saturate(1.8)');
   assert.deepEqual(ie, []);
   assert.deepEqual(errors, []);
   await ip.close();
@@ -281,14 +287,15 @@ test('見た目（開発用）: インストールページの開発用を入れ
   const { page, errors } = await fresh();
   assert.equal(await hasItem(page), false);
   await page.evaluate(() => window.__paintBookmarklet.destroy());
-  await runCode(page, withDefaults(CODE, { dev: true }));
+  // 暗い・ガラスなしから始めて、切り替えを順に確かめる
+  await runCode(page, withDefaults(CODE, { dev: true, theme: 'dark', glass: false }));
   assert.equal(await hasItem(page), true);
   await mouseClick(page, '[aria-label^="その他"]');
   await mouseClick(page, '.pn.on [aria-label^="見た目"]');
   assert.equal(await openPanels(page), 1);
   // 明るい → ガラス風（ガウス）→ ぼかしを 8px
   await mouseClick(page, '.pn.on [aria-label="ツールバーの色: 明るい"]');
-  assert.deepEqual(await st(page), { cls: 'light', bar: 'rgb(251, 251, 252)', gb: '15px', color: 'rgb(29, 32, 38)' });
+  assert.deepEqual(await st(page), { cls: 'light', bar: 'rgb(251, 251, 252)', gb: '18px', color: 'rgb(29, 32, 38)' });
   await mouseClick(page, '.pn.on [aria-label^="ガラス風"]');
   assert.equal((await st(page)).cls, 'light glass gauss');
   await shadowEval(page, root => { const r = [...root.querySelectorAll('.pn.on .r input')][0]; r.value = 8; r.dispatchEvent(new Event('input')); });
@@ -1376,8 +1383,8 @@ test('厳格な CSP + Trusted Types のページでもコード自体は動作�
   // Firefox 等はブックマークレットを CSP の対象外として実行する。それと同じ状況を DevTools 評価で再現
   await page.evaluate(CODE);
   await page.waitForFunction(() => !!window.__paintBookmarklet);
-  const bg = await shadowEval(page, root => getComputedStyle(root.querySelector('.bar')).backgroundColor);
-  assert.equal(bg, 'rgb(32, 34, 40)', 'shadow styles applied (adoptedStyleSheets)');
+  const bf = await shadowEval(page, root => getComputedStyle(root.querySelector('.bar'), '::before').backdropFilter);
+  assert.equal(bf, 'blur(18px) saturate(1.8)', 'shadow styles applied (adoptedStyleSheets)');
   await drag(page, [[100, 300], [500, 300]], 10);
   assert.ok((await readMain(page, 300, 300))[3] > 200);
   await page.keyboard.press('Control+z');

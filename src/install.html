@@ -253,7 +253,7 @@ section > .sub + .sub { margin-top: 20px; }
 
 <main class="page">
   <header>
-    <p class="eyebrow">Bookmarklet · v1.19.5 · %%SIZE%%（gzip %%GZIP%%）</p>
+    <p class="eyebrow">Bookmarklet · v1.20.0 · %%SIZE%%（gzip %%GZIP%%）</p>
     <h1>ペイント<br>ブックマークレット</h1>
     <p class="lead">開いているページの上に、<span class="mark">そのまま描ける<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d="M18 40C8 22 52 6 108 7s92 13 84 30-62 20-112 17S4 38 30 16" vector-effect="non-scaling-stroke"/></svg></span>ペイントツールです。ブックマークを押すだけで起動し、拡張機能もアカウントも要りません。入力から線が画面に出るまでの遅延を減らす仕組みを、ブラウザが対応している限りすべて使います。</p>
     <div class="actions">
@@ -468,7 +468,7 @@ function runPaint() {%%INLINE_CODE%%}
   // ---- デフォルトの設定: 選んだ既定をブックマークレットのコードに埋め込む ----
   // 組み込みの既定（src/paint.js の PALETTE と CFG に合わせる。テストで一致を確かめている）
   const PALETTE = ['#111111', '#ffffff', '#e53935', '#fb8c00', '#fdd835', '#43a047', '#1e88e5', '#8e24aa'];
-  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 4, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: false, pickOnce: false, glass: false, theme: 'dark', blurMode: 'gauss', blur: 15, tint: 80, dev: false };
+  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 4, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: false, pickOnce: false, glass: true, theme: 'light', blurMode: 'gauss', blur: 18, tint: 70, dev: false };
   const BASE = bm.getAttribute('href'); // 既定の入っていないブックマークレット
   const KEY = 'paint-defaults';
   const $ = id => document.getElementById(id);

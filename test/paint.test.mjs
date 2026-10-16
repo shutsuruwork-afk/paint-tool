@@ -370,6 +370,35 @@ test('チェックポイント 3（既定。Claude の案）: 開く物がなく
   await page.close();
 });
 
+test('チェックポイント 3: 消しゴムで全部消すと、手が空いたときに全消去が薄くなる。一部だけなら濃いまま。消しゴムを元に戻すと濃く、最初まで元に戻すと薄い（T-085）', async () => {
+  const { page, errors } = await fresh();
+  const trashOff = () => page.evaluate(() => document.querySelector('paint-bookmarklet').shadowRoot.querySelector('.bar > [aria-label^="全消去"]').disabled);
+  const waitOff = v => page.waitForFunction(v => document.querySelector('paint-bookmarklet').shadowRoot.querySelector('.bar > [aria-label^="全消去"]').disabled === v, v, { timeout: 5000 });
+  const settle = () => page.evaluate(() => new Promise(r => (window.requestIdleCallback || setTimeout)(() => setTimeout(r, 50), { timeout: 1500 })));
+  await drag(page, [[100, 300], [400, 300]], 10);
+  assert.equal(await trashOff(), false);
+  await mouseClick(page, '.bar > [aria-label^="ペン"]'); // 消しゴム
+  // 一部だけ消す → 確かめても濃いまま
+  await drag(page, [[80, 300], [200, 300]], 10);
+  await settle();
+  assert.equal(await trashOff(), false, 'some ink is left');
+  // 残りも消す → 手が空いたときに確かめて薄くなる
+  await drag(page, [[180, 300], [430, 300]], 20);
+  await waitOff(true);
+  // 消しゴムを元に戻すと、すぐ濃い（確かめても濃いまま）
+  await mouseClick(page, '.bar > [aria-label^="元に戻す"]');
+  assert.equal(await trashOff(), false);
+  await settle();
+  assert.equal(await trashOff(), false, 'ink is back');
+  // 最初まで元に戻すと薄い
+  await mouseClick(page, '.bar > [aria-label^="元に戻す"]');
+  await mouseClick(page, '.bar > [aria-label^="元に戻す"]');
+  await waitOff(true);
+  assert.equal(await page.evaluate(() => window.__paintBookmarklet.stats().history), 3);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('スマホ: 2 本指で動かすとページがスクロールし、1 本目で描き始めた線は残らない。1 本指では今まで通り描ける（T-074）', async () => {
   const page = await browser.newPage({ viewport: { width: 390, height: 700 }, isMobile: true, hasTouch: true });
   const errors = [];

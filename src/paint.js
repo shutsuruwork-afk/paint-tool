@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.29.0-simple.13';
+  const VERSION = '1.29.0-simple.14';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -862,7 +862,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     redoB.disabled = hpos >= hist.length;
     // 全消去は、消す物がないと分かっているときは薄くする（直前の手が全消去か、描いた範囲が空で文字もない。T-082）
     const h = hpos ? hist[hpos - 1] : null;
-    trashB.disabled = !!(h && h.clr) || (!tlist.length && cbx1 <= cbx0);
+    trashB.disabled = !!(h && h.clr) || (!tlist.length && (cbx1 <= cbx0 || (cp === 3 && !inkT.size)));
   }
   function cycleBg() {
     bg = (bg + 1) % BGS.length;
@@ -1042,6 +1042,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function swap(h) {
     const R = h.R, src = h.c, cur = gather(R, newCanvas(src.width, src.height));
     grow(R);
+    if (cp === 3) inkRects(R); // 入れ替えで画素が減ったかもしれない（T-085）
     for (let i = 0; i < R.length; i += 6) {
       const x = R[i], y = R[i + 1], ax = R[i + 4], ay = R[i + 5];
       forTiles(x, y, R[i + 2], R[i + 3], true, (t, ox, oy, ix, iy, iw, ih) => {
@@ -1091,6 +1092,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     for (let i = 0; i < R.length; i += 6) dtiles.get((R[i + 1] / DT) * 65536 + R[i] / DT).x.clearRect(0, 0, DT, DT);
     for (const p of P) tApply(p[0], null);
     cbx0 = cby0 = cbx1 = cby1 = 0;
+    inkT.clear(); inkQ.clear();
     syncHist();
   }
 
@@ -1104,6 +1106,45 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       for (let i = 3; i < d.length; i += 4) if (d[i]) return true;
     }
     return false;
+  }
+
+  // ---- チェックポイント 3: 全消去に消す物があるかを前もって知る（T-085。main の ideas/clear-all-after-erase.md、候補 T-084 を先に試す） ----
+  // inkT は描いた物があるかもしれない履歴タイル（T。番号は tmark と同じ）。線を確定したタイルは読み戻さずに入れる。
+  // 消しゴム・元に戻す・やり直す・塗りつぶし・選択で画素が減ったかもしれないタイルは inkQ に入れ、手が空いたとき（requestIdleCallback）に
+  // そのタイルだけを読み戻して、空なら inkT から外す。inkT が空で文字もなければ、全消去を薄くする（syncHist）。チェックポイント 1・2 では使わない
+  const inkT = new Set(), inkQ = new Set();
+  let inkIdle = 0;
+  const ric = win.requestIdleCallback ? f => win.requestIdleCallback(f, { timeout: 1000 }) : f => setTimeout(f, 300);
+  const cic = win.requestIdleCallback ? id => win.cancelIdleCallback(id) : id => clearTimeout(id);
+  // R（S の矩形群）に掛かるタイルを「あるかもしれない」にして、確かめる列に入れる
+  function inkRects(R) {
+    for (let i = 0; i < R.length; i += 6) {
+      const c0 = max(0, floor(R[i] / T)), r0 = max(0, floor(R[i + 1] / T));
+      const c1 = floor((R[i] + R[i + 2] - 1) / T), r1 = floor((R[i + 1] + R[i + 3] - 1) / T);
+      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) { inkT.add(r * 65536 + c); inkQ.add(r * 65536 + c); }
+    }
+    inkLater();
+  }
+  function inkLater() {
+    if (!inkIdle && inkQ.size) inkIdle = ric(inkCheck);
+  }
+  // 列のタイルを 1 枚ずつ読み戻す（手が空いている間だけ。描いている間は待つ）
+  function inkCheck(dl) {
+    inkIdle = 0;
+    if (act !== -1) { inkLater(); return; }
+    for (const k of inkQ) {
+      inkQ.delete(k);
+      const x = (k % 65536) * T, y = ((k / 65536) | 0) * T, d = dtiles.get(((y / DT) | 0) * 65536 + ((x / DT) | 0));
+      let any = false;
+      if (d) {
+        const a = d.x.getImageData(x % DT, y % DT, T, T).data;
+        for (let i = 3; i < a.length; i += 4) if (a[i]) { any = true; break; }
+      }
+      if (!any) inkT.delete(k);
+      if (dl && dl.timeRemaining && dl.timeRemaining() < 2) break;
+    }
+    inkLater();
+    syncHist();
   }
 
   // ---------- 画面に固定（動画や地図の上に描く用。その他のメニューで切り替える） ----------
@@ -1145,6 +1186,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     }
     for (const o of tlist.slice()) { const q = tSnap(o); st(q); tApply(o, q); }
     if (cbx1 > cbx0) { cbx0 = max(0, cbx0 + dx); cby0 = max(0, cby0 + dy); cbx1 += dx; cby1 += dy; }
+    // タイルの番号がずれるので、全部のタイルを確かめ直す（チェックポイント 3。T-085）
+    if (cp === 3) { inkT.clear(); inkQ.clear(); for (const k of dtiles.keys()) inkRects([(k % 65536) * DT, ((k / 65536) | 0) * DT, DT, DT, 0, 0]); }
   }
 
   // ---------- ストローク状態（ホットパスで割り当てを起こさないよう、すべてスカラーで保持） ----------
@@ -1723,6 +1766,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         ac = pack(R).getContext('2d');
         for (let k = 0, i = 0; i < R.length; k++, i += 6) ac.drawImage(tsave[k].c, 0, 0, R[i + 2], R[i + 3], R[i + 4], R[i + 5], R[i + 2], R[i + 3]);
       }
+      // チェックポイント 3: 消しゴムが触れた、描いた物があるかもしれないタイルだけを、あとで確かめる（T-085）
+      if (cp === 3) { for (const k of tl) if (inkT.has(k)) inkQ.add(k); inkLater(); }
       if (R.length || P) push(R, ac && ac.canvas, null, P);
     }
     resetTiles();
@@ -1775,6 +1820,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         c.globalAlpha = 1;
       });
     }
+    if (cp === 3) for (const k of tl) inkT.add(k); // 線を確定したタイルは、読み戻さずに「ある」にする（T-085）
     push(R, atlas, [bX, bY, bX + bW, bY + bH]);
     // live は desynchronized なので、ここで消すと通常の更新であるタイルより先に画面へ出て、線が一瞬消える。
     // live は残したままグループを隠し（タイルの更新と同じフレームで切り替わる）、2 フレーム後に中身を消す
@@ -2002,6 +2048,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       c.globalCompositeOperation = 'source-over';
       c.setTransform(1, 0, 0, 1, 0, 0);
     });
+    if (cp === 3) inkRects(R); // T-085
     push(R, patch, [R[0], R[1], R[0] + w, R[1] + h]);
     lastFillMs = now() - t0;
   }
@@ -2226,6 +2273,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       }
       const P = selT.map(p => [p[0], p[1]]);
       for (let i = 0; i < selT.length; i++) tApply(selT[i][0], next[i]);
+      if (cp === 3) inkRects(R); // 元の範囲が空いたかもしれない（T-085）
       push(R, atlas, srcW && !del ? [dx, dy, dx + dw, dy + dh] : null, P.length ? P : null);
     }
     selT.length = 0;
@@ -2996,6 +3044,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     // 遅れて動く暖機・リサイズは、キャンバスを 0 にした後で描かないよう止める
     clearTimeout(warmT);
     cancelAnimationFrame(rz);
+    if (inkIdle) cic(inkIdle);
     while (hist.length) free(hist.pop());
     for (const c of [liveC, predC]) c.width = c.height = 0;
     rg = rbx = recA = null;

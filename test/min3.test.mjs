@@ -75,8 +75,9 @@ test('最小構成 3: ペンで描いて元に戻すと画素単位で戻る。�
   assert.equal(await checksum(page), drawn, 'undo the eraser');
   await press(page, '元に戻す');
   assert.equal(await checksum(page), empty, 'undo the stroke');
-  // 最初まで戻すと元に戻すは薄い。全消去は描いた範囲が残っているので濃いまま（押しても何もしない。チェックポイント 3 の本体と同じ）
-  assert.deepEqual(await bar(page), ['消しゴム*', '文字', '色', '元に戻す-', '全消去', '閉じる']);
+  // 最初まで戻すと元に戻すは薄い。全消去も、手が空いたときに確かめて薄くなる（T-085）
+  await page.waitForFunction(() => document.querySelector('paint-bookmarklet').shadowRoot.querySelector('.bar > [aria-label^="全消去"]').disabled, null, { timeout: 5000 });
+  assert.deepEqual(await bar(page), ['消しゴム*', '文字', '色', '元に戻す-', '全消去-', '閉じる']);
   await press(page, '消しゴム');
   assert.deepEqual((await bar(page)).slice(0, 1), ['ペン*']);
   assert.deepEqual(errors, []);
@@ -177,6 +178,35 @@ test('最小構成 3: 全消去はすぐ効き、元に戻せる。消す物が�
   await press(page, '全消去');
   assert.deepEqual(await texts(page), []);
   assert.equal(await trash(), '全消去-');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('最小構成 3: 消しゴムで全部消すと、手が空いたときに全消去が薄くなる。一部だけなら濃いまま。消しゴムを元に戻すと濃く、最初まで元に戻すと薄い（T-085）', async () => {
+  const { page, errors } = await fresh();
+  const trashOff = () => page.evaluate(() => document.querySelector('paint-bookmarklet').shadowRoot.querySelector('.bar > [aria-label^="全消去"]').disabled);
+  const waitOff = v => page.waitForFunction(v => document.querySelector('paint-bookmarklet').shadowRoot.querySelector('.bar > [aria-label^="全消去"]').disabled === v, v, { timeout: 5000 });
+  const settle = () => page.evaluate(() => new Promise(r => (window.requestIdleCallback || setTimeout)(() => setTimeout(r, 50), { timeout: 1500 })));
+  await drag(page, [[100, 300], [400, 300]], 10);
+  assert.equal(await trashOff(), false);
+  await press(page, 'ペン'); // 消しゴム
+  // 一部だけ消す → 確かめても濃いまま
+  await drag(page, [[80, 300], [200, 300]], 10);
+  await settle();
+  assert.equal(await trashOff(), false, 'some ink is left');
+  // 残りも消す → 手が空いたときに確かめて薄くなる
+  await drag(page, [[180, 300], [430, 300]], 20);
+  await waitOff(true);
+  // 消しゴムを元に戻すと、すぐ濃い（確かめても濃いまま）
+  await press(page, '元に戻す');
+  assert.equal(await trashOff(), false);
+  await settle();
+  assert.equal(await trashOff(), false, 'ink is back');
+  // 最初まで元に戻すと薄い
+  await press(page, '元に戻す');
+  await press(page, '元に戻す');
+  await waitOff(true);
+  assert.equal(await page.evaluate(() => window.__paintBookmarklet.stats().history), 3);
   assert.deepEqual(errors, []);
   await page.close();
 });

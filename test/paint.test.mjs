@@ -169,7 +169,9 @@ const mouseClick = async (page, sel) => {
   await page.mouse.click(r.x + r.w / 2, r.y + r.h / 2);
 };
 
-test('シンプル版: ツールバーはペン・消しゴム・色と太さ・元に戻す・その他・隠すだけで、スマホでも 1 段。ほかの道具はキーで使え、閉じるはその他にある', async () => {
+// その他のメニュー（全消去の項目の親）に並ぶ項目の名前
+const menuItems = page => shadowEval(page, root => [...[...root.querySelectorAll('.mi')].find(b => b.title.startsWith('全消去')).parentElement.children].map(b => b.querySelector('span').textContent));
+test('シンプル版: ツールバーはペン・消しゴム・色と太さ・元に戻す・その他・隠すだけで、スマホでも 1 段。ほかの道具はキーで使え、その他は全消去と閉じるだけ', async () => {
   const bar = page => shadowEval(page, root => {
     const bs = [...root.querySelector('.bar').children].filter(e => e.classList.contains('b'));
     return { titles: bs.map(b => b.title.split(/[ （(]/)[0]), tops: [...new Set(bs.map(b => Math.round(b.getBoundingClientRect().top)))], two: root.querySelector('.bar').classList.contains('two') };
@@ -184,9 +186,13 @@ test('シンプル版: ツールバーはペン・消しゴム・色と太さ・
   assert.equal((await page.evaluate(() => window.__paintBookmarklet.stats().prefs.tool)), 'select');
   await page.keyboard.press('p');
   // 閉じる（×）はその他のメニューにある（何も描いていなければすぐ閉じる）
+  // その他は全消去と閉じるだけ（T-072）。開発用を入れていても同じ
+  assert.deepEqual(await menuItems(page), ['全消去', '閉じる']);
   await click(page, '[title^="その他"]');
   await click(page, '.mi[title^="閉じる"]');
   await page.waitForFunction(() => !window.__paintBookmarklet);
+  await runCode(page, withDefaults(CODE, { dev: true }));
+  assert.deepEqual(await menuItems(page), ['全消去', '閉じる']);
   assert.deepEqual(errors, []);
   await page.close();
   // スマホの幅（タッチ・360px）でも 1 段に収まる
@@ -424,11 +430,11 @@ test('見た目（開発用）: インストールページの開発用を入れ
   });
   const hasItem = page => shadowEval(page, root => !!root.querySelector('[aria-label^="見た目"]'));
   // 開発用を入れていなければ、メニューに出ない
-  const { page, errors } = await fresh();
+  const { page, errors } = await freshFull();
   assert.equal(await hasItem(page), false);
   await page.evaluate(() => window.__paintBookmarklet.destroy());
   // 暗い・ガラスなしから始めて、切り替えを順に確かめる
-  await runCode(page, withDefaults(CODE, { dev: true, theme: 'dark', glass: false }));
+  await runCode(page, withDefaults(CODE, { dev: true, theme: 'dark', glass: false, fullBar: true }));
   assert.equal(await hasItem(page), true);
   await mouseClick(page, '[aria-label^="その他"]');
   await mouseClick(page, '.pn.on [aria-label^="見た目"]');
@@ -1312,7 +1318,7 @@ test('インストールページで選んだ設定入りのブックマーク�
 
 test('その他の「デフォルトの変更」で、今のブックマークの既定を持ってインストールページの設定が新しいタブで開き、フォームに読み込まれる', async () => {
   const { page, errors } = await openPage(browser, server.base + '/');
-  const d = { color: '#1e88e5', size: { pen: 10 }, touchText: false };
+  const d = { color: '#1e88e5', size: { pen: 10 }, touchText: false, fullBar: true };
   await runCode(page, withDefaults(CODE, d));
   await page.evaluate(() => { window.__opened = []; window.open = (...a) => { window.__opened.push(a); return null; }; });
   await mouseClick(page, '[aria-label^="その他"]');
@@ -1453,7 +1459,7 @@ test('ペンの種類: ペンでないときは押してもペンになるだけ
 });
 
 test('電卓: 入りにすると、文字の行が計算式なら答えが薄く出て Tab で書き込める。空白は式の書き方に合わせ、点線の枠は答えまで囲む。式でなければ出ない。切りなら今までどおり', async () => {
-  const { page, errors } = await fresh();
+  const { page, errors } = await freshFull();
   const ghost = () => shadowEval(page, root => { const g = root.querySelector('.gh'); return g ? g.textContent : null; });
   const value = async () => (await textBox(page)).value;
   // 切り（既定）: 答えは出ず、Tab でも何も書かれず、入力欄にいたまま
@@ -1809,7 +1815,7 @@ test('入力の録画（開発用）: 入れて描くと、線ごとに入力（
   assert.deepEqual(await items(p0), []);
   await p0.close();
   const { page, errors } = await openPage(browser, server.base + '/');
-  await runCode(page, withDefaults(CODE, { dev: true }));
+  await runCode(page, withDefaults(CODE, { dev: true, fullBar: true }));
   assert.deepEqual(await items(page), ['入力を録る（開発用）', '録った入力を書き出す']);
   // 何も録っていなければ書き出さない
   await click(page, '[title^="録った入力を書き出す"]');
@@ -1855,7 +1861,7 @@ test('入力の録画（開発用）: 入れて描くと、線ごとに入力（
 });
 
 test('PNG 保存がダウンロードされる', async () => {
-  const { page } = await fresh();
+  const { page } = await freshFull();
   await drag(page, [[100, 300], [500, 300]], 5);
   const [dl] = await Promise.all([page.waitForEvent('download'), click(page, '[title^="PNG"]')]);
   assert.match(dl.suggestedFilename(), /^paint-\d{8}-\d{6}\.png$/);
@@ -1931,7 +1937,7 @@ test('スクロールした位置で描いた線が本文の正しい位置に�
 });
 
 test('画面に固定: その他のメニューで入れると、スクロールしても絵と文字が画面の同じ所に留まり、そのまま描ける。切ると見えている位置のままページに付き直し、元に戻す・やり直すも合う', async () => {
-  const { page, errors } = await fresh('/long');
+  const { page, errors } = await freshFull('/long');
   await drag(page, [[120, 200], [380, 200]], 10); // A: 文書の y=200
   await page.keyboard.press('t');
   await page.mouse.click(500, 400);

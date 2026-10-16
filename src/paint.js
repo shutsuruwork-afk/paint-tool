@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.27.0-simple.1';
+  const VERSION = '1.27.0-simple.2';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -502,7 +502,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const passB = btn('ページ操作モード (V) — 絵を残したままページを操作', I.pass, togglePass);
   // その他: 名前とショートカット付きのメニュー。keep なら押しても閉じない（背景を続けて切り替えられる）
   const moreP = pnl();
-  const moreB = btn('その他（全消去・背景・保存・コピー・電卓・画面に固定・デフォルトの変更・閉じる）', I.more, () => togglePanel(moreP, moreB));
+  const moreB = btn(fullBar ? 'その他（全消去・背景・保存・コピー・電卓・画面に固定・デフォルトの変更）' : 'その他（全消去・閉じる）', I.more, () => togglePanel(moreP, moreB));
   // sw なら入り・切りのスイッチ（role="switch"。状態は aria-checked で持ち、つまみは CSS で動かす）
   const item = (title, label, key, d, fn, keep, sw) => {
     const b = btn(title, d, () => { if (!keep) closePanel(); fn(); }, 'mi');
@@ -514,7 +514,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     moreP.append(b);
     return [b, s];
   };
-  item('全消去 (Delete)', '全消去', 'Delete', I.trash, clearAll);
+  const [clrMi] = item('全消去 (Delete)', '全消去', 'Delete', I.trash, clearAll);
   const [bgB, bgL] = item('', '', 'B', I.bg, cycleBg, true);
   item('PNG で保存 (Ctrl/⌘+S)', 'PNG で保存', IS_MAC ? '⌘S' : 'Ctrl+S', I.save, save);
   if (HAS_CLIP) item('画像をクリップボードにコピー', 'クリップボードにコピー', '', I.copy, copyImg);
@@ -605,7 +605,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     blBs.forEach((b, i) => b.classList.toggle('on', BLENDS[i] === blend));
   }
   const closeB = btn('閉じる（8 秒間は元に戻せます）', I.close, close);
-  if (!fullBar) item('閉じる（8 秒間は元に戻せます）', '閉じる', '', I.close, close);
+  const [closeMi] = item('閉じる（8 秒間は元に戻せます）', '閉じる', '', I.close, close);
   // 入力の録画（開発用。T-070）: 描いた線の入力を録って JSON で書き出す。予測の精度を、人が実際に書いた線で測るため（T-060）
   let recB = null;
   if (dev) item('見た目（開発用） — ツールバーの色やガラス、蛍光ペンの予測、半透明の線の描き方をその場で変える', '見た目（開発用）', '', I.bg, () => openPanel(lookP, moreB));
@@ -614,6 +614,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     item('録った入力を書き出す（開発用） — JSON をダウンロード', '録った入力を書き出す', '', I.save, recExport);
   }
   const hideB = btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hideHint);
+  // シンプル版のその他は全消去と閉じるだけ（T-072）。ほかの項目も作るがメニューには入れない（背景の B・保存の Ctrl+S などのキーは効く）。
+  // fullBar なら本家と同じ項目で、閉じるはバーの × にする
+  for (const b of [...moreP.children]) if (fullBar ? b === closeMi : b !== clrMi && b !== closeMi) b.remove();
   if (fullBar) bar.append(toolBtns.select, penB, toolBtns.marker, toolBtns.eraser, shapeB, toolBtns.text, toolBtns.fill,
     el('div', 'sep brk'), styleB, sep(), undoB, redoB, sep(), passB, moreB, sep(), hideB, closeB); // 1 段に収まらないときは .brk で段を分ける（.two .brk。T-064・T-067）
   else bar.append(penB, toolBtns.eraser, styleB, sep(), undoB, sep(), moreB, hideB);

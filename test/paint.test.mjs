@@ -1118,7 +1118,7 @@ test('ペンの種類: ペンでないときは押してもペンになるだけ
   await page.close();
 });
 
-test('電卓: 入りにすると、文字の行が計算式なら答えが薄く出て Tab で書き込める。式でなければ出ない。切りなら今までどおり', async () => {
+test('電卓: 入りにすると、文字の行が計算式なら答えが薄く出て Tab で書き込める。空白は式の書き方に合わせ、点線の枠は答えまで囲む。式でなければ出ない。切りなら今までどおり', async () => {
   const { page, errors } = await fresh();
   const ghost = () => shadowEval(page, root => { const g = root.querySelector('.gh'); return g ? g.textContent : null; });
   const value = async () => (await textBox(page)).value;
@@ -1136,8 +1136,11 @@ test('電卓: 入りにすると、文字の行が計算式なら答えが薄く
   assert.equal(await shadowEval(page, root => root.querySelector('[aria-label^="電卓"]').getAttribute('aria-checked')), 'true');
   await page.keyboard.press('Escape');
   await page.mouse.click(200, 450);
-  const cases = [['12*3', ' = 36'], ['2+3*4', ' = 14'], ['-2^2', ' = -4'], ['2^3^2', ' = 512'], ['50%*200', ' = 100'],
-    ['0.1+0.2', ' = 0.3'], ['1,000+1', ' = 1001'], ['(2+3)^2/5', ' = 5'], ['１２０×１．５＝', '180'], ['10÷4=', '2.5'],
+  const cases = [['12*3', '=36'], ['2+3*4', '=14'], ['-2^2', '=-4'], ['2^3^2', '=512'], ['50%*200', '=100'],
+    ['0.1+0.2', '=0.3'], ['1,000+1', '=1001'], ['(2+3)^2/5', '=5'], ['１２０×１．５＝', '180'], ['10÷4=', '2.5'],
+    // 空白は式の書き方に合わせる（演算子か = の前後に空白があれば入れる。最後に打った空白には重ねない）
+    ['11 + 1', ' = 12'], ['11+ 1', ' = 12'], ['11　＋　1', ' = 12'], ['11 + 1 =', ' 12'], ['11 + 1 = ', '12'], ['11 + 1 ', '= 12'],
+    ['11+1 ', '= 12'], ['11+1=', '12'], ['11+1= ', '12'], ['(1 + 2)*3', ' = 9'],
     ['hello', null], ['12', null], ['-5', null], ['1/0', null], ['3+', null], ['2(3)', null]];
   for (const [ex, want] of cases) {
     await page.keyboard.press('Control+a');
@@ -1154,17 +1157,32 @@ test('電卓: 入りにすると、文字の行が計算式なら答えが薄く
     return { gx: a.x, tx: t.getBoundingClientRect().x + parseFloat(c.paddingLeft) };
   });
   assert.ok(g.gx > g.tx + 20, JSON.stringify(g));
+  // 点線の枠（入力欄）は答えの右端まで広がり、答えが消えると戻る。Tab で書き込んでも枠の大きさは変わらない
+  const box = () => shadowEval(page, root => {
+    const t = root.querySelector('.tx'), r = t.getBoundingClientRect(), gh = root.querySelector('.gh');
+    return { right: r.right - parseFloat(getComputedStyle(t).paddingRight), w: r.width, gr: gh ? gh.getBoundingClientRect().right : null };
+  });
+  const b1 = await box();
+  assert.ok(b1.right >= b1.gr, JSON.stringify(b1));
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Backspace');
+  const b0 = await box();
+  assert.equal(b0.gr, null);
+  assert.ok(b0.w < b1.w - 30, JSON.stringify([b0, b1]));
+  await page.keyboard.type('*3');
+  assert.equal((await box()).w, b1.w);
   await page.keyboard.press('Tab');
-  assert.equal(await value(), '12*3 = 36');
+  assert.equal(await value(), '12*3=36');
   assert.equal(await ghost(), null);
+  assert.ok(Math.abs((await box()).w - b1.w) <= 1, JSON.stringify([await box(), b1]));
   // 2 行目でも、カーソルのある行の答えが出る
   await page.keyboard.press('Enter');
   await page.keyboard.type('7*6=');
   assert.equal(await ghost(), '42');
   await page.keyboard.press('Tab');
-  assert.equal(await value(), '12*3 = 36\n7*6=42');
+  assert.equal(await value(), '12*3=36\n7*6=42');
   await page.keyboard.press('Escape');
-  assert.equal((await textInfo(page)).at(-1).s, '12*3 = 36\n7*6=42');
+  assert.equal((await textInfo(page)).at(-1).s, '12*3=36\n7*6=42');
   // サイトごとに覚える
   await page.waitForTimeout(600);
   assert.equal(JSON.parse(await lsGet(page)).calc, true);

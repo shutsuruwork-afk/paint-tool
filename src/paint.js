@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.19.1';
+  const VERSION = '1.19.2';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -2033,7 +2033,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     ta = el('textarea', 'tx', { spellcheck: 'false', wrap: 'off', rows: '1', 'aria-label': '文字' });
     taX = cx; taCY = cy; // クリックした点が 1 行目の高さの中央になるように置く
     for (const t of TA_STOP) ta.addEventListener(t, stop);
-    ta.addEventListener('input', () => { fitTa(); updateGhost(); });
+    ta.addEventListener('input', updateGhost);
     ta.addEventListener('keyup', updateGhost);
     ta.addEventListener('pointerup', updateGhost);
     ta.addEventListener('keydown', e => {
@@ -2073,45 +2073,64 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     // 余白の分だけ外へずらすので、文字の位置と点線の枠の見た目は変わらない
     s.left = taX - TA_PAD + 'px';
     s.top = taCY - taFs * LH / 2 - TA_PAD + 'px';
-    fitTa();
     updateGhost();
   }
   // 中身に合わせて入力欄を広げる（折り返さない。改行でだけ行が増える）
   // 余白が scrollWidth に入るかはブラウザで違う（Chrome は左だけ）ので、測る間だけ余白を外す。
-  // 空のときは中身の大きさが 0 になるので、少なくとも 1 行・全角 1 文字分の大きさにする（1 文字目で枠が跳ねない）
+  // 空のときは中身の大きさが 0 になるので、少なくとも 1 行・全角 1 文字分の大きさにする（1 文字目で枠が跳ねない）。
+  // 電卓の薄い答えが出ている間は、答えの右端まで広げる（点線の枠で答えも囲む。Tab で書き込んでも枠の大きさが変わらない）
   function fitTa() {
     const s = ta.style;
     s.padding = '0';
     s.width = s.height = '0';
-    const w = max(ta.scrollWidth, ceil(taFs)) + 2, h = max(ta.scrollHeight, round(taFs * LH));
+    const w = max(ta.scrollWidth, ceil(taFs), ghostR) + 2, h = max(ta.scrollHeight, round(taFs * LH));
     s.padding = '';
     s.width = w + 'px';
     s.height = h + 'px';
   }
   // ---- 電卓: カーソルのある行が計算式なら、行の後ろに答えを薄く出す。Tab で書き込む ----
+  // 入力欄の大きさ（fitTa）もここで合わせる。答えの右端（ghostR、行の頭からの CSS px）まで枠を広げるため
   const ghostEl = el('div', 'gh');
-  let ghostTxt = '', ghostEnd = 0;
+  let ghostTxt = '', ghostEnd = 0, ghostR = 0, mta = null;
+  // 1 行の幅を、入力欄と同じ測り方（見えない入力欄の scrollWidth）で測る。答えの位置と枠の幅が、Tab で書き込んだ後の入力欄とそろう
+  // （canvas の measureText や span は、書体によって「*」などの組み方が入力欄と変わり、数 px ずれた）。測る間だけ置いて外す
+  function lineW(t) {
+    if (!mta) {
+      mta = el('textarea', 'tx', { 'aria-hidden': 'true', wrap: 'off', rows: '1' });
+      const s = mta.style;
+      s.visibility = 'hidden';
+      s.padding = '0';
+      s.width = s.height = '0';
+    }
+    mta.style.setProperty('--fs', taFs + 'px');
+    mta.value = t;
+    wrap.append(mta);
+    const w = mta.scrollWidth;
+    mta.remove();
+    return w;
+  }
   function updateGhost() {
     ghostTxt = '';
+    ghostR = 0;
     if (ta && calc) {
       const v = ta.value, p = ta.selectionEnd, a = v.lastIndexOf('\n', p - 1) + 1, b = v.indexOf('\n', p), end = b < 0 ? v.length : b;
       const line = v.slice(a, end), r = calcLine(line);
       if (r) {
         ghostTxt = r;
         ghostEnd = end;
-        if (!mctx) mctx = newCanvas(1, 1).getContext('2d');
-        mctx.font = `600 ${taFs}px ${FONT}`;
         const s = ghostEl.style, row = v.slice(0, a).split('\n').length - 1;
         ghostEl.textContent = r;
+        ghostR = lineW(line + r);
         s.setProperty('--c', taC);
         s.setProperty('--a', taA);
         s.setProperty('--fs', taFs + 'px');
-        s.left = taX + mctx.measureText(line).width + 'px';
+        s.left = taX + lineW(line) + 'px';
         s.top = taCY - taFs * LH / 2 + row * taFs * LH + 'px';
         if (!ghostEl.parentNode) wrap.append(ghostEl);
       }
     }
     if (!ghostTxt) ghostEl.remove();
+    if (ta) fitTa();
   }
   function acceptGhost() {
     if (!ghostTxt) return;
@@ -2120,13 +2139,15 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     // execCommand なら入力欄の元に戻す（Ctrl+Z）で書き込みを取り消せる。使えないブラウザでは setRangeText
     let ok = false;
     try { ok = doc.execCommand('insertText', false, t); } catch (_) { }
-    if (!ok) { ta.setRangeText(t, ghostEnd, ghostEnd, 'end'); fitTa(); updateGhost(); }
+    if (!ok) { ta.setRangeText(t, ghostEnd, ghostEnd, 'end'); updateGhost(); }
   }
-  // 1 行の計算式を計算して、薄く出す文字（「 = 36」、行が = で終わっていれば「36」）を返す。式でなければ ''。
+  // 1 行の計算式を計算して、薄く出す文字（「 = 36」か「=36」、行が = で終わっていれば「36」か「 36」）を返す。式でなければ ''。
   // eval は使わない（CSP で止まるページがあり、安全のためにも）。かけ算・わり算が先、^ は右から、% は百分率
   function calcLine(src) {
     let s = src.normalize('NFKC').replace(/[×✕]/g, '*').replace(/÷/g, '/').replace(/[−–]/g, '-').replace(/(\d),(?=\d{3}(?!\d))/g, '$1');
-    const eq = /=\s*$/.test(s);
+    // 空白は式の書き方に合わせる: 演算子か = の前後に空白があれば空白を入れ、詰めて書いた式なら詰める。
+    // 最後に自分で打った空白には重ねない（= の前に打った空白は、空白を入れる書き方とみなす）
+    const eq = /=\s*$/.test(s), tw = /\s$/.test(s), sp = tw && !eq || /\s[+\-*/^%=]|[+\-*/^=]\s/.test(s.trim());
     if (eq) s = s.replace(/=\s*$/, '');
     // 数字の後ろに演算子が 1 つ以上ある行だけを式とみなす（「12」や「-5」だけでは出さない）
     if (!/^[\d\s+\-*/^%().]+$/.test(s) || !/\d\s*[%)]*\s*[+\-*/^%]/.test(s)) return '';
@@ -2176,7 +2197,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     try { v = expr(); } catch (_) { return ''; }
     if (peek() !== undefined || !isFinite(v)) return '';
     const r = String(+v.toPrecision(12) || 0);
-    return eq ? (/\s$/.test(src) || /[=＝]$/.test(src) ? r : ' ' + r) : ' = ' + r;
+    return eq ? (sp && !tw ? ' ' : '') + r : sp ? (tw ? '= ' : ' = ') + r : '=' + r;
   }
 
   // 入力欄の中身を文字の物として面に置く（書き直しなら物を更新し、空なら消す）。1 手として履歴に積む

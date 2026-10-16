@@ -4,12 +4,12 @@
 
 ## 現在地
 
-- 最終更新: 2026-10-16、T-044 の完了時
-- ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない。HEAD は T-044 のコミット（`git log --grep T-044`）
-- CI: GitHub Actions「Pages」は main へのプッシュごとに test → deploy。T-042 の run（38845532733）まで test・deploy とも成功。T-044 のプッシュの結果は Actions で確かめる
-- 公開: https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）の 2 か所。版は v1.19.1
+- 最終更新: 2026-10-16、T-045 の完了時
+- ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない。HEAD は T-045 のコミット（`git log --grep T-045`）
+- CI: GitHub Actions「Pages」は main へのプッシュごとに test → deploy。T-044 の run（38851652776）まで test・deploy とも成功。T-045 のプッシュの結果は Actions で確かめる
+- 公開: https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）の 2 か所。版は v1.19.2
 - 人の操作待ち: なし。R-004 は C に決まった（インストールページの既定＋サイトごとに覚える）。ユーザーのフィードバック（ideas/touch-text.md）で、ペンを選んでいても文字に触れたい（T-022、済み。設定の入り・切りはインストールページの「デフォルトの設定」＝T-005、済み）、ツールを選んだらページ操作モードを解除（T-021、済み）が来た
-- 次の一手: 塗りつぶしを画面の外まで広げたいかをユーザーに聞いた（T-044 の残課題。今は見えている画面だけ）。見た目（T-040〜T-042）をユーザーが実機で試す。気に入った色・ガラスの組み合わせを既定にするかを決めてもらう。残りの候補は T-018・T-013・T-031・T-020（T-011・T-017 は後回し）
+- 次の一手: 電卓の枠と空白（T-045）をユーザーが試す。塗りつぶしを画面の外まで広げたいかをユーザーに聞いた（T-044 の残課題。今は見えている画面だけ）。見た目（T-040〜T-042）をユーザーが実機で試す。気に入った色・ガラスの組み合わせを既定にするかを決めてもらう。残りの候補は T-018・T-013・T-031・T-020（T-011・T-017 は後回し）
 
 ## 始め方
 
@@ -31,7 +31,7 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
   - 画面に固定（toggleFixed / shiftAll / syncFixed）。shiftAll は面のタイル・履歴の矩形と外接矩形・文字の状態（今と履歴）・cb* をまとめて S でずらす
   - ストローク状態と入力: onDown（finishHandoff → mapNow）→ onMove（inkMove, readPred, drawTail / eraseMove → erasePts / drawShape）→ onUp → endStroke（commitLive → 2 フレーム後に finishHandoff）。abortStroke はパームリジェクションで使う
   - タイル（markBox / markSeg / markCurve / markShape / tileRects / resetTiles）。印は面の座標で Set に付ける
-  - お知らせ（`say(msg, ms, act, fn, xfn, inl)`。fn を渡すとボタン付き、xfn を渡すと × 付き、inl ならボタンを文の続きに置く）、塗りつぶし（floodFill）、選択（settle / showSel / liftSel → liftRaster + beginSel / dropSel / paintSel / selHit / selHover / selDown / selMove / scaleSel / selUp / selAbort / pickSel / nudgeSel。浮かせた画素は selC、選んだ文字の物の組は selT、どちらも入れ物 selIn に入れて transform で拡大縮小。枠は selEl と selB）、文字（物: tlist / tNew / tSnap / tApply / swapText / textHit / paintText（書き出し用）/ eraseText・showErased・takeErased（消しゴム）。入力: textAt / editText / styleTa / fitTa / commitText。電卓: updateGhost / acceptGhost / calcLine（薄い答えは ghostEl）。入力欄は `ta`、書き直し中の物は `taObj`）、書き出し（capture / exportBlob / save / copyImg / pixels）、HUD（D キー）、操作の一覧（HELP / openHelp / closeHelp。? キー）、キーボード（onKey）、設定（applyPrefs / snapPrefs / remember → savePrefs / loadSite / placeBar。DEF ＋ サイトの保存）、表示制御（show / hide / hideHint → endHint / toggle / close → endBye / reopen / onByeKey、destroy）、起動
+  - お知らせ（`say(msg, ms, act, fn, xfn, inl)`。fn を渡すとボタン付き、xfn を渡すと × 付き、inl ならボタンを文の続きに置く）、塗りつぶし（floodFill）、選択（settle / showSel / liftSel → liftRaster + beginSel / dropSel / paintSel / selHit / selHover / selDown / selMove / scaleSel / selUp / selAbort / pickSel / nudgeSel。浮かせた画素は selC、選んだ文字の物の組は selT、どちらも入れ物 selIn に入れて transform で拡大縮小。枠は selEl と selB）、文字（物: tlist / tNew / tSnap / tApply / swapText / textHit / paintText（書き出し用）/ eraseText・showErased・takeErased（消しゴム）。入力: textAt / editText / styleTa / fitTa / commitText。電卓: updateGhost（fitTa も呼ぶ）/ lineW / acceptGhost / calcLine（薄い答えは ghostEl、右端は ghostR）。入力欄は `ta`、書き直し中の物は `taObj`）、書き出し（capture / exportBlob / save / copyImg / pixels）、HUD（D キー）、操作の一覧（HELP / openHelp / closeHelp。? キー）、キーボード（onKey）、設定（applyPrefs / snapPrefs / remember → savePrefs / loadSite / placeBar。DEF ＋ サイトの保存）、表示制御（show / hide / hideHint → endHint / toggle / close → endBye / reopen / onByeKey、destroy）、起動
 - `src/install.html`: インストールページのテンプレート（本文のみ）。並びは T-039 で、見出し（Paint ボタン・試す・目次）→ 入れ方 → 試し書き → デフォルトの設定（id="defaults"、動きはスイッチ）→ 使い方（機能の説明と操作の一覧 %%HELP%%）→ できないこと → 仕組みと計測（仕組み・低遅延機能の表・計測の表）にした。機能の説明は「使い方」に、技術の説明は「仕組みと計測」に分ける。`%%BOOKMARKLET_HREF%%` などを build.mjs が置き換える。「デフォルトの設定」のフォームは、選んだ既定（組み込みの既定との差分）を JSON にして、ボタンの href の `'__PAINT_DEFAULTS__'` を置き換える。フォームの状態はインストールページ自身の localStorage（`paint-defaults`）に残す。組み込みの既定（BUILTIN と PALETTE）は src/paint.js と手で合わせる（テストで一致を確かめている）
 - `build.mjs`: src/paint.js の HELP（`/*HELP*/` の間の JSON）を読んで、インストールページの `%%HELP%%` にショートカットの一覧を書き出す。terser で圧縮し、`dist/paint.min.js`、`dist/bookmarklet.txt`、`docs/index.html` を作る。「このページで試す」用の埋め込み版は、既定の目印を `window.__paintBookmarkletDefaults` を読む式に変える（eval を使わない）。目印が 1 つだけあることも確かめる。インストールページのボタンの href がブックマークレットと一致するかを、書き出す前に確かめる
 - `test/paint.test.mjs`（テスト 56 件）、`test/helpers.mjs`（既定を埋め込んだコードを作る `withDefaults` と直接起動する `runCode`、サーバー〈`/install` はビルドしたインストールページ〉〈`/long` は縦 3000px、`/offset` は html に余白〉・起動・画素の読み取り `readMain` / `screenPixel`・`scrollTo`）、`test/bench.mjs`
@@ -76,7 +76,7 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - 隠したとき（Esc・「−」）は「ブックマークレットで再表示」を 4 秒出し、「再表示」を青い押せる文字にする（T-008。文面はユーザーが決めた。案内のお知らせは「Esc で隠す」と同じ「〜で〜」の形でそろえる）。隠している間に画面の隅へ戻すボタンを置き続ける案と、キーを待ち受けて戻す案は、ページを覆う・ページのショートカットとぶつかるので捨てた。
 - 「−」は絵ごと隠す（Esc と同じ）。T-025 でユーザーの要望どおり「＋」1 つにたたむ形にしたが、使ってみたユーザーが「合っているが、元の方がいい設計だった」としたので T-033 で戻した（「＋」・setMini・その他のメニューの「隠す（絵も）」も外した）。広いツールバーを標準にする案と横幅を広げるボタンは、ユーザーが「だいぶ却下」としたので作っていない。
 - ツールバーはどこを押しても、4px 以上引けば移動（T-026、ユーザーの要望）。動かし始めるまでポインタを奪わない（奪うとクリックの対象がバーになり、ボタンが押せなくなる）。引いて離した後のクリックは `eatClick` の印で 1 回だけ捨て、印は次にバーを押したときに消す（タイマーで外すと、次のクリックが早いとそれまで捨ててしまった）。パネルの中（スライダー）は対象外。
-- 電卓（T-029、ユーザーの idea2）: その他のメニュー（とインストールページ）で入り・切り、既定は切り、サイトごとに覚える。入りのとき、カーソルのある行が計算式なら薄い答え（.gh、入力欄と同じ書体で measureText した行の幅の後ろ）を出し、Tab で書き込む（execCommand の insertText なので入力欄の Ctrl+Z が効く）。Tab は答えがなくても preventDefault する（入力欄からフォーカスを外さない）。計算は calcLine の再帰下降（eval なし）。NFKC で全角を半角にし、× ÷ − を置き換え、桁区切りのカンマを外す。数字の後ろに演算子がある行だけを式とみなす（「12」「-5」では出さない）。日付（2026-10-15）も式として答えが出るが、電卓は既定で切りなので受け入れた。
+- 電卓（T-029、ユーザーの idea2）: その他のメニュー（とインストールページ）で入り・切り、既定は切り、サイトごとに覚える。入りのとき、カーソルのある行が計算式なら薄い答え（.gh、行の幅の後ろ）を出し、Tab で書き込む（execCommand の insertText なので入力欄の Ctrl+Z が効く）。Tab は答えがなくても preventDefault する（入力欄からフォーカスを外さない）。計算は calcLine の再帰下降（eval なし）。NFKC で全角を半角にし、× ÷ − を置き換え、桁区切りのカンマを外す。数字の後ろに演算子がある行だけを式とみなす（「12」「-5」では出さない）。日付（2026-10-15）も式として答えが出るが、電卓は既定で切りなので受け入れた。答えの空白は式に合わせる（T-045、ユーザーの要望。演算子か = の前後に空白があれば「 = 12」、詰めた式なら「=12」、= で終わる行は答えだけ。最後に打った空白には重ねない）。答えが出ている間は、入力欄の点線の枠を答えの右端（ghostR）まで広げる。行の幅は見えない入力欄（mta、測る間だけ wrap に置いて外す）の scrollWidth で測る。canvas の measureText や span は、書体によって「*」の組み方が入力欄と変わって数 px ずれ、Tab の前後で枠が跳ねたため（headless の書体で確認）。
 - ペンの種類（T-028、ユーザーの idea1）: ペン・万年筆・筆・鉛筆。ペンでないときにペンのボタンを押すとペンになるだけで、ペンのときにもう一度押すと種類のパネル（普段の操作を増やさないため）。図形のボタンも同じ動きにそろえた（T-034、ユーザーの要望。それまで図形は 1 回でパネルも開いていた）。インストールページの `pickOnce`（既定は切り）を入れると、ペンも図形も 1 回で道具になってパネルも開く。touchText と同じく DEF だけの設定で、ツールの中には切り替えを置かない。太さは inkMove の点ごとの計算で、万年筆はペン先 −45° に対する線の向きの sin（0.2〜1 倍）、筆は速さ（CSS px/ms）と書き始めからの距離（0.3〜1.25 倍、離し際は 0.6 倍）。鉛筆は色ごとに 1 度だけ作る擬似乱数のかすれの模様（CanvasPattern）。種類は prefs の `pen` としてサイトごとに覚える。図形ボタンは `.shp` で見分ける（ペンのボタンにもパネルの印 `.dd` が付いたため）。
 - 文字の入力欄には見えない余白 TA_PAD（10px）を付け、位置を余白の分だけ外へずらす（T-024、ユーザーの要望）。文字と点線の枠の見た目は変えずに、少し外れた所を押しても入力が続く。fitTa は余白を外して測る（Chrome の textarea の scrollWidth は左の余白だけを含み、右を含まないため）。空のときは中身の大きさが 0 になる（高さも 0）ので、少なくとも 1 行・全角 1 文字分（taFs × LH、taFs）にする（T-035、ユーザーの要望。1 文字目で枠が跳ねない）。
 - 消しゴムは触れた文字の物を丸ごと消す（なぞる間は薄く、離して消す）。当たり判定は線分と外接矩形の Liang–Barsky で、入力ごとの計算に割り当てはない。薄く見せる DOM の更新は tick（毎フレーム 1 回）。
@@ -135,6 +135,11 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 
 ## 完了ログ（新しい順）
 
+### T-045 電卓の薄い答えまで点線の枠で囲み、答えの前後の空白を式の書き方に合わせる — 2026-10-16
+- 変更: 電卓の薄い答えが出ている間は、文字の入力欄の点線の枠が答えの右端まで広がる（Tab で書き込んでも枠の大きさは変わらず、答えが消えると元の幅に戻る）。答えの前後の空白を式の書き方に合わせた（`11+1` → `=12`、`11 + 1` → ` = 12`、`11+1=` → `12`、`11 + 1 =` → ` 12`。どちらとも言えない `11+ 1` は空白を入れる方、最後に自分で打った空白には重ねない）。それまでは式に関係なく「 = 12」だった。答えの位置は、見えない入力欄で行の幅を測るようにした（canvas の measureText では、書体によって「*」の組み方が入力欄と変わり、答えの前に 3px ほどの隙間が出ていた）。README に書いた。版を 1.19.2 にした。ユーザーの要望（チャット、画像付き。認識を確かめてから着手）。
+- 確認: 電卓のテストを新しい出方に合わせ、空白の場合分け 10 通り（全角の空白も）と、枠が答えを囲む・答えが消えると縮む・Tab の前後で枠の幅が同じ、を足した。枠を広げる処理と空白の切り替えを、それぞれ外すとテストが落ちることを確かめた。5 つの書き方の Tab の前後を 2x のスクリーンショットで確かめた。`npm test` 56 件が通過。
+- 残課題: なし。
+
 ### T-044 塗りつぶしの後に元に戻すと、スクロールした先に細い線が残る不具合を直す — 2026-10-16
 - 変更: 塗りつぶしは、線との隙間を埋めるために塗る範囲の縁を 1px 太らせているが、その分が見えている画面の外へ 1px はみ出し、はみ出した所が履歴の範囲（R）に入っていなかった。そのため元に戻してもその 1px が面に残り、スクロールすると元の画面の上下の端の位置に細い線が見えていた。太らせた分を画面の中に収めた。塗りつぶしが見えている画面の範囲だけなのは今まで通り（長いページで重くしないため）。版は T-043 と同じ 1.19.1。ユーザーのバグ報告（チャット）。
 - 確認: テストを 1 件足した（スクロールした所で塗りつぶし → 画面の上下の外は塗られていない → 元に戻すと、どこへスクロールしても何も残らない）。修正を外すとこのテストが落ちることを確かめた。手元のスクリプトで、1x・1.5x・2x、5 か所のスクロール位置で線と塗りつぶしを重ねてから全部元に戻し、面に何も残らないことを確かめた（修正前は 1x で 1,000 px、2x で 2,000 px 残った）。`npm test` 56 件が通過。`npm run bench` で悪化なし。
@@ -180,12 +185,8 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - 確認: ツールバーのテストに、起動直後のお知らせの文の確認を足した。`npm test` 52 件が通過。
 - 残課題: なし。
 
-### T-016 「画面に固定」モード（その他のメニューで切り替える） — 2026-10-15
-- 変更: その他（⋯）のメニューに「画面に固定」を足した。入れると、絵と文字はスクロールしても画面の同じ所に留まり、そのまま描ける。切ると、そのとき見えている位置のままページに付き直す。操作の一覧とインストールページにも書いた。版を 1.15.0 にした。README に書いた。ユーザーの決定（チャット: 作ろう、3 点リーダーの中に入れる）。
-- 確認: テストを 1 件足した（入れてスクロール、固定のまま描く、元に戻す・やり直すの一致、切っても見え方が同じ、切った後はページに付く）。付け直しの処理を外すとテストが落ちることを確かめた。1.5x・2x と、固定中の塗りつぶし・消しゴムを手元のスクリプトで確かめた。メニューの見た目をスクリーンショットで確かめた。`npm test` 52 件が通過。`npm run bench`: 入力 1 件 4.7〜6.9 µs で悪化なし。
-- 残課題: 固定はサイトごとに覚えない（使ってみて欲しくなったら足す）。
-
 ### それより前（1 行に畳んだもの）
+- T-016 「画面に固定」モード（その他のメニュー。入れた時の fx / fy で position: fixed、切ると shiftAll で見えている位置のままページに付け直す）— 2026-10-15
 - T-007 ? キーで操作の一覧を出す（HELP を build.mjs がインストールページにも書き出す）— 2026-10-15
 - T-008 隠したときに「ブックマークレットで再表示」を 4 秒出す（再表示は押せる青い文字。hideHint / endHint）— 2026-10-15
 - T-035 何も書いていない文字の入力欄を、1 行・全角 1 文字分の大きさにする — 2026-10-15

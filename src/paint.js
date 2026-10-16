@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.19.0';
+  const VERSION = '1.19.1';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -74,7 +74,6 @@
   const TA_PAD = 10; // 文字の入力欄の周りの、見えない押せる余白（CSS px）。少し外れた所を押しても入力が続く
 
   const I = {
-    grip: 'M9 6v.01M9 12v.01M9 18v.01M15 6v.01M15 12v.01M15 18v.01',
     pen: 'M4 20l1.2-4.4L16 4.8a2 2 0 0 1 2.9 0l.3.3a2 2 0 0 1 0 2.9L8.4 18.8zM14 7l3 3',
     marker: 'M9.5 10.5L4 16v4h4l5.5-5.5M9.5 10.5l6-6 4 4-6 6zM14 20h6',
     eraser: 'M8 20h12M4.7 14.7l9-9a2 2 0 0 1 2.8 0l2.3 2.3a2 2 0 0 1 0 2.8L11 18.6H8.6zM9 10.3l5 5',
@@ -145,7 +144,7 @@ canvas{position:absolute;left:0;top:0;pointer-events:none}
 .light.glass .bar,.light.glass .pn{background:none;border-color:#0000001f;box-shadow:0 6px 24px #0003,inset 0 1px 0 #ffffff99}
 .light .b:hover,.light .t button:hover{background:#0000000f}.light .b:active,.light .b.open:not(.on){background:#0000001c}
 .light .dot{box-shadow:0 0 0 1px #0000003a}.light .dot.er{box-shadow:inset 0 0 0 1.5px #1d2026}
-.light .mi kbd,.light .grip{color:#7b7f89}.light .mi .sw{background:#00000024}
+.light .mi kbd{color:#7b7f89}.light .mi .sw{background:#00000024}
 .light .c::before{box-shadow:inset 0 0 0 1px #00000026}.light .c.on::before{box-shadow:0 0 0 2px var(--bb,#fbfbfc),0 0 0 4px #1d2026}
 .light .sep{background:#0000001f}.light .r{color:#5c606b}.light .r output{color:#1d2026}
 .light .t button{color:#2f6bff}.light .t.act .tc{color:#5c606b}.light.bye .t::after{background:#2f6bff}
@@ -159,7 +158,7 @@ canvas{position:absolute;left:0;top:0;pointer-events:none}
 .mi .sw::after{content:"";position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 2px #0006;transition:transform .15s}
 .mi[aria-checked=true] .sw{background:#3d7cff}.mi[aria-checked=true] .sw::after{transform:translateX(12px)}
 svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
-.grip{width:16px;cursor:grab;color:#7d808a}.grip:hover{background:none}.grip svg,[aria-label^="その他"] svg{stroke-width:3}
+[aria-label^="その他"] svg{stroke-width:3}
 .c{width:24px}
 .c::before{content:"";width:18px;height:18px;border-radius:50%;background:var(--c);box-shadow:inset 0 0 0 1px #ffffff59}
 .c.on{background:none}
@@ -390,9 +389,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
 
   // ---------- ツールバー ----------
-  const grip = el('div', 'b grip', { title: 'ドラッグで移動（ツールバーのどこを引いても動かせます）' });
-  grip.append(icon(I.grip));
-  bar.append(grip);
 
   // よく使う物だけをバーに並べ、残りはボタンの下に開くパネル（.pn）に入れる。
   // パネルはバーの子なのでバーと一緒に動き、absolute なのでバーの幅には入らない
@@ -1619,8 +1615,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         if (hasDn) { if (m[dr + x] === 1) { if (!dn) { stack.push(x, y + 1); dn = true; } } else dn = false; }
       }
       m.fill(2, row + lx, row + x);
-      // 画素を ImageData に書いて転送する代わりに、スパンを矩形パスにして GPU で 1 回で塗る
-      path.rect(lx - g, y - g, x - lx + 2 * g, 1 + 2 * g);
+      // 画素を ImageData に書いて転送する代わりに、スパンを矩形パスにして GPU で 1 回で塗る。
+      // 膨張分も画面の中に収める（画面の外へ 1px はみ出すと履歴の範囲 R から漏れ、元に戻しても細い線が残る）
+      const rx = max(0, lx - g), ry = max(0, y - g);
+      path.rect(rx, ry, min(W, x + g) - rx, min(H, y + 1 + g) - ry);
       if (lx < fx0) fx0 = lx;
       if (x - 1 > fx1) fx1 = x - 1;
       if (y < fy0) fy0 = y;

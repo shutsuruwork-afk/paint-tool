@@ -450,8 +450,8 @@ test('色と太さのパネル: 色を選んでも開いたまま、描き始め
 test('その他のパネルに全消去・背景・保存が名前付きで並び、画面の端では内側に開く', async () => {
   const { page } = await fresh();
   await drag(page, [[100, 400], [600, 400]]);
-  // ツールバーを右下の隅へ動かす
-  const g = await rectOf(page, '.grip');
+  // ツールバーを右下の隅へ動かす（区切り線の所から引く）
+  const g = await rectOf(page, '.bar > .sep');
   await page.mouse.move(g.x + g.w / 2, g.y + g.h / 2);
   await page.mouse.down();
   await page.mouse.move(995, 695, { steps: 4 });
@@ -1018,7 +1018,7 @@ test('サイトで変えた色・太さ・道具・ツールバーの位置を�
   await page.keyboard.press(']');
   await page.keyboard.press('h');
   await page.keyboard.press('b');
-  const g = await rectOf(page, '.grip');
+  const g = await rectOf(page, '.bar > .sep');
   await page.mouse.move(g.x + g.w / 2, g.y + g.h / 2);
   await page.mouse.down();
   await page.mouse.move(40, 300, { steps: 4 });
@@ -1500,6 +1500,32 @@ test('画面に固定: その他のメニューで入れると、スクロール
   assert.equal(await ink(250, 500), false, 'B の取り消し');
   await page.keyboard.press('Control+Shift+z');
   assert.equal(await checksum(page), s2);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('塗りつぶしは見えている画面の外へはみ出さず、元に戻すとスクロールしても細い線が残らない', async () => {
+  const { page, errors } = await fresh('/long');
+  // 文書の y の範囲 [y0, y1) で色の付いた画素を数える（今のスクロール位置から画面の座標に直して読む）
+  const ink = (y0, y1) => page.evaluate(([y0, y1]) => {
+    const d = window.__paintBookmarklet.pixels(0, y0 - scrollY, 1000, y1 - y0).data;
+    let n = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i]) n++;
+    return n;
+  }, [y0, y1]);
+  await scrollTo(page, 500);
+  await page.keyboard.press('f');
+  await page.mouse.click(500, 400); // 何も描いていない所: 画面いっぱい（文書の y=500〜1200）を塗る
+  assert.ok(await ink(500, 1200) > 600000, '画面の中は塗られる');
+  await scrollTo(page, 900);
+  assert.equal(await ink(1200, 1203), 0, '画面の下端の外は塗らない');
+  await scrollTo(page, 200);
+  assert.equal(await ink(497, 500), 0, '画面の上端の外は塗らない');
+  await page.keyboard.press('Control+z');
+  for (const y of [0, 900]) {
+    await scrollTo(page, y);
+    assert.equal(await ink(y, y + 700), 0, `元に戻した後、スクロール ${y} で何も残らない`);
+  }
   assert.deepEqual(errors, []);
   await page.close();
 });

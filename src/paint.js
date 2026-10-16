@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.26.0';
+  const VERSION = '1.27.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -101,6 +101,7 @@
     pencil: 'M4 20l1.3-4.6L15.5 5.2a2 2 0 0 1 2.8 0l.5.5a2 2 0 0 1 0 2.8L8.6 18.7zM13.5 7.2l3.3 3.3M5.3 15.4l3.3 3.3',
     more: 'M5 12h.01M12 12h.01M19 12h.01',
     close: 'M6 6l12 12M18 6L6 18',
+    rec: 'M12 4a8 8 0 1 0 0 16a8 8 0 1 0 0-16M12 10a2 2 0 1 0 0 4a2 2 0 1 0 0-4',
   };
 
   // ガラスのガウス方式: ぼかしの元を周りへ --gm だけ広げて拾い、見せるのはバーの角丸の形だけ（mask で切る）。
@@ -601,7 +602,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     blBs.forEach((b, i) => b.classList.toggle('on', BLENDS[i] === blend));
   }
   const closeB = btn('閉じる（8 秒間は元に戻せます）', I.close, close);
+  // 入力の録画（開発用。T-070）: 描いた線の入力を録って JSON で書き出す。予測の精度を、人が実際に書いた線で測るため（T-060）
+  let recB = null;
   if (dev) item('見た目（開発用） — ツールバーの色やガラス、蛍光ペンの予測、半透明の線の描き方をその場で変える', '見た目（開発用）', '', I.bg, () => openPanel(lookP, moreB));
+  if (dev) {
+    [recB] = item('入力を録る（開発用） — ペン・蛍光ペンで描いた線の入力（座標・時刻・筆圧・Chrome の予測）を録る。入れると前の録画は消える', '入力を録る（開発用）', '', I.rec, toggleRec, true, true);
+    item('録った入力を書き出す（開発用） — JSON をダウンロード', '録った入力を書き出す', '', I.save, recExport);
+  }
   bar.append(undoB, redoB, sep(), passB, moreB, sep(),
     btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hideHint), closeB,
     shapeP, penP, styleP, moreP, lookP, lci);
@@ -1208,6 +1215,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     sRaw = HAS_RAW && mode !== 3;
     if (sRaw) pad.addEventListener('pointerrawupdate', onMove);
     raf = requestAnimationFrame(tick);
+    if (rec && mode === 1) recStart(e, t);
   }
 
   // pointerrawupdate と pointermove の両方から呼ばれる。タイムスタンプで重複を除くので
@@ -1218,6 +1226,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       if (act === -1 && (sel || (tlist.length && (tool === 'select' || (touchText && TOUCH[tool]))))) selHover(e);
       return;
     }
+    if (recCur) recEv(e);
     const t0 = hud ? now() : 0;
     const list = HAS_CO && e.getCoalescedEvents ? e.getCoalescedEvents() : EMPTY;
     const n = list.length;
@@ -1552,6 +1561,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   let lastTs = 0;
   function tick(ts) {
     raf = requestAnimationFrame(tick);
+    if (recCur) recRow(6, ts, 0, 0, 0, now());
     // 1 フレームの長さを測る（蛍光ペンの予測の長さに使う。120 Hz の画面なら短くなる）
     if (lastTs && ts - lastTs > 4 && ts - lastTs < 40) fi += (ts - lastTs - fi) * 0.1;
     lastTs = ts;
@@ -1573,6 +1583,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function stopStroke() {
     const id = act;
     act = -1;
+    if (recCur) recStop();
     if (sRaw) pad.removeEventListener('pointerrawupdate', onMove);
     cancelAnimationFrame(raf);
     raf = 0; pn = 0;
@@ -1671,6 +1682,69 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     handoff = 0;
     lctx.clearRect(hcx, hcy, hcw, hch);
     liveAlpha();
+  }
+
+  // ---------- 入力の録画（開発用。T-070） ----------
+  // ペン・蛍光ペンで描いている間の入力をそのまま録り、JSON で書き出す（予測の精度を、人が実際に書いた線で測るため。T-060）。
+  // 1 行は [種類, 時刻, x, y, 筆圧, 処理した時刻]。種類は 0 押す / 1 pointermove / 2 pointerrawupdate / 3 離す /
+  // 4 直前の行の中の点（getCoalescedEvents）/ 5 直前の行での Chrome の予測点（getPredictedEvents）/ 6 フレーム（rAF の時刻）。
+  // 座標は CSS px、時刻は ms。録っている間だけは、入力のたびに配列へ書く（足りなければ大きくする）。ふだんは recCur の比較 1 回だけ
+  const RC = 6, REC_MAX = 500000;
+  let rec = false, recA = null, recN = 0, recCur = null, recFull = false;
+  const recS = []; // 線ごとの情報（道具・太さ・入力の種類・行の範囲）
+  function toggleRec() {
+    rec = !rec;
+    recB.setAttribute('aria-checked', rec);
+    if (rec) {
+      if (!recA) recA = new Float64Array(32768 * RC);
+      recN = 0; recS.length = 0; recFull = false;
+      say('入力を録っています（描いたら、その他の「録った入力を書き出す」）');
+    } else say(`録るのをやめました（${recS.length} 本）`);
+  }
+  function recStart(e, t) {
+    if (recN >= REC_MAX) return;
+    recCur = { tool: t, pen: t === 'pen' ? penType : '', size: CFG[t].size, alpha: CFG[t].alpha, type: e.pointerType, at: recN, end: recN };
+    recS.push(recCur);
+    recEv(e);
+  }
+  function recRow(k, t, x, y, p, h) {
+    if (recN >= REC_MAX) { recFull = true; return; }
+    if ((recN + 1) * RC > recA.length) { const a = new Float64Array(recA.length * 2); a.set(recA); recA = a; }
+    const o = recN++ * RC;
+    recA[o] = k; recA[o + 1] = t; recA[o + 2] = x; recA[o + 3] = y; recA[o + 4] = p; recA[o + 5] = h;
+  }
+  function recEv(e) {
+    const ty = e.type, k = ty === 'pointerdown' ? 0 : ty === 'pointerrawupdate' ? 2 : ty === 'pointerup' ? 3 : 1;
+    recRow(k, e.timeStamp, e.clientX, e.clientY, e.pressure, now());
+    if (k === 0) return;
+    const l = HAS_CO && e.getCoalescedEvents ? e.getCoalescedEvents() : EMPTY;
+    for (let i = 0; i < l.length; i++) recRow(4, l[i].timeStamp, l[i].clientX, l[i].clientY, l[i].pressure, 0);
+    const q = e.getPredictedEvents ? e.getPredictedEvents() : EMPTY;
+    for (let i = 0; i < q.length; i++) recRow(5, q[i].timeStamp, q[i].clientX, q[i].clientY, q[i].pressure, 0);
+  }
+  function recStop() {
+    recCur.end = recN;
+    recCur = null;
+    if (recFull) { rec = false; recB.setAttribute('aria-checked', false); say('録れる量がいっぱいになりました。書き出してください'); }
+  }
+  function recExport() {
+    if (!recS.length) { say('録った線がありません（その他の「入力を録る」を入れて描く）'); return; }
+    const rd = (v, k) => Math.round(v * k) / k;
+    const strokes = recS.map(s => {
+      const t0 = recA[s.at * RC + 1], rows = [];
+      for (let i = s.at; i < s.end; i++) {
+        const o = i * RC, h = recA[o + 5];
+        rows.push(recA[o], rd(recA[o + 1] - t0, 1000), rd(recA[o + 2], 100), rd(recA[o + 3], 100), rd(recA[o + 4], 1000), h ? rd(h - t0, 1000) : 0);
+      }
+      return { tool: s.tool, pen: s.pen, size: s.size, alpha: s.alpha, type: s.type, t0: rd(t0, 1000), rows };
+    });
+    const data = {
+      v: 1, app: VERSION, ua: navigator.userAgent, dpr, vw: win.innerWidth, vh: win.innerHeight,
+      desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, inkTrail: !!inkP, mpred, blend,
+      cols: ['kind', 't', 'x', 'y', 'pressure', 'handled'], kinds: ['down', 'move', 'rawupdate', 'up', 'coalesced', 'predicted', 'frame'], strokes,
+    };
+    download(new Blob([JSON.stringify(data)], { type: 'application/json' }), `paint-input-${stamp()}.json`);
+    say(`録った入力を書き出しました（${recS.length} 本）`);
   }
 
   // ---------- タイル ----------
@@ -2516,15 +2590,18 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const d = new Date(), p = n => String(n).padStart(2, '0');
     return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
   }
+  function download(b, name) {
+    const a = el('a', null, { download: name });
+    const url = URL.createObjectURL(b);
+    a.href = url;
+    wrap.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  }
   function save() {
     exportBlob().then(b => {
-      const a = el('a', null, { download: `paint-${stamp()}.png` });
-      const url = URL.createObjectURL(b);
-      a.href = url;
-      wrap.append(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      download(b, `paint-${stamp()}.png`);
       say('PNG をダウンロードします');
     }, () => say('保存できませんでした'));
   }
@@ -2808,7 +2885,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     cancelAnimationFrame(rz);
     while (hist.length) free(hist.pop());
     for (const c of [liveC, predC]) c.width = c.height = 0;
-    rg = rbx = null;
+    rg = rbx = recA = null;
     for (const t of dtiles.values()) t.c.width = t.c.height = 0;
     dtiles.clear();
     for (const t of pool) t.c.width = t.c.height = 0;
@@ -2888,6 +2965,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const stats = () => ({
     width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, selection: sel ? [selX, selY, selW, selH] : null, texts: tlist.length, fixed, history: hist.length, historyPixels: hpix, events: nEv, points: nPts,
     desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, nativePrediction: nativePred, inkTrail: !!inkP,
+    rec: [rec, recS.length, recN],
     prefs: { ...snapPrefs(), bar: [barX, barY], touchText, pickOnce, keepPanels, dev, ...look, mpred, blend },
   });
   win[NS] = { version: VERSION, toggle, show, hide, close, destroy, undo, redo, clear: clearAll, tool: setTool, color: setColor, stats, pixels };

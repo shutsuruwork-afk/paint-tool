@@ -1763,6 +1763,59 @@ test('直線・矢印・楕円と Shift 拘束', async () => {
   await page.close();
 });
 
+test('入力の録画（開発用）: 入れて描くと、線ごとに入力（押す・動く・離す・フレーム）が録られ、JSON で書き出せる。切ると録らない。開発用でなければ出ない', async () => {
+  const { readFileSync } = await import('node:fs');
+  const items = page => shadowEval(page, root => [...root.querySelectorAll('.mi span')].map(s => s.textContent).filter(t => /録/.test(t)));
+  // 開発用でなければメニューに出ない
+  const { page: p0 } = await fresh();
+  assert.deepEqual(await items(p0), []);
+  await p0.close();
+  const { page, errors } = await openPage(browser, server.base + '/');
+  await runCode(page, withDefaults(CODE, { dev: true }));
+  assert.deepEqual(await items(page), ['入力を録る（開発用）', '録った入力を書き出す']);
+  // 何も録っていなければ書き出さない
+  await click(page, '[title^="録った入力を書き出す"]');
+  assert.match(await shadowEval(page, root => root.querySelector('.t').textContent), /録った線がありません/);
+  // 入れて、ペンと蛍光ペンで 1 本ずつ描く（消しゴムは録らない）
+  await click(page, '[title^="入力を録る"]');
+  assert.equal(await shadowEval(page, root => root.querySelector('[title^="入力を録る"]').getAttribute('aria-checked')), 'true');
+  await drag(page, [[100, 300], [300, 320], [500, 300]], 12);
+  await page.keyboard.press('h');
+  await drag(page, [[100, 450], [400, 460]], 8);
+  await page.keyboard.press('e');
+  await drag(page, [[100, 550], [400, 550]], 5);
+  const st = await page.evaluate(() => window.__paintBookmarklet.stats().rec);
+  assert.equal(st[0], true);
+  assert.equal(st[1], 2, 'two ink strokes');
+  const [dl] = await Promise.all([page.waitForEvent('download'), click(page, '[title^="録った入力を書き出す"]')]);
+  assert.match(dl.suggestedFilename(), /^paint-input-\d{8}-\d{6}\.json$/);
+  const data = JSON.parse(readFileSync(await dl.path(), 'utf8'));
+  assert.equal(data.v, 1);
+  assert.deepEqual(data.cols, ['kind', 't', 'x', 'y', 'pressure', 'handled']);
+  assert.equal(typeof data.ua, 'string');
+  assert.equal(data.url, undefined, 'no page URL');
+  assert.deepEqual(data.strokes.map(s => [s.tool, s.type]), [['pen', 'mouse'], ['marker', 'mouse']]);
+  for (const s of data.strokes) {
+    assert.equal(s.rows.length % 6, 0);
+    const rows = [];
+    for (let i = 0; i < s.rows.length; i += 6) rows.push(s.rows.slice(i, i + 6));
+    const kinds = new Set(rows.map(r => r[0]));
+    assert.equal(rows[0][0], 0, 'starts with down');
+    assert.equal(rows[0][1], 0, 'times are relative to the down');
+    assert.ok(kinds.has(1) && kinds.has(3), 'moves and up: ' + [...kinds]);
+    assert.ok(rows.filter(r => r[0] === 1 || r[0] === 2).length >= 5);
+    // 実際の入力の点（予測点は線の先へはみ出してよい）
+    for (const r of rows) if (r[0] < 5) assert.ok(r[2] >= 90 && r[2] <= 510 && r[3] >= 290 && r[3] <= 470, 'coordinates in CSS px: ' + r);
+  }
+  // 切ると、それからの線は録らない（録った分は書き出せる）
+  await click(page, '[title^="入力を録る"]');
+  await page.keyboard.press('p');
+  await drag(page, [[600, 300], [800, 300]], 5);
+  assert.deepEqual((await page.evaluate(() => window.__paintBookmarklet.stats().rec)).slice(0, 2), [false, 2]);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('PNG 保存がダウンロードされる', async () => {
   const { page } = await fresh();
   await drag(page, [[100, 300], [500, 300]], 5);

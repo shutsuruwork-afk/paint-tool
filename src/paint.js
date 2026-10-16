@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.27.0-simple.5';
+  const VERSION = '1.27.0-simple.6';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -433,19 +433,18 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // ペン: ペンでないときに押すとペンになる。ペンのときにもう一度押すと、種類のパネルが開く（pickOnce なら 1 回目から開く）。
   // ページ操作モードのときは、ペンのままでも押せば描画に戻り、パネルも普段と同じに開く（T-057・T-062）
   const penP = pnl();
-  // シンプル版: 選んでいるペンをもう一度押すと消しゴムになる（T-075。種類のパネルは出さない）。
-  // 選んでいる消しゴムをもう一度押すと、選択が外れてページ操作モードになり（T-073）、ペンか消しゴムを押すと描画に戻る。
-  // fullBar なら本家と同じ（ペンは種類のパネル）
+  // シンプル版（T-076）: ペンのボタン 1 つで、押すたびにペンと消しゴムが入れ替わる。印と名前も今の道具に変わる（markPen）。
+  // 種類のパネルは出さない。ページ操作モード（V）のときに押すと、印の道具で描画に戻る。fullBar なら本家と同じ（ペンは種類のパネル）
   const penB = btn(TITLES.pen, I.pen, () => {
-    if (!fullBar) setTool(tool === 'pen' && !pass ? 'eraser' : 'pen');
+    if (!fullBar) setTool(pass ? (tool === 'eraser' ? 'eraser' : 'pen') : tool === 'pen' ? 'eraser' : 'pen');
     else if (tool === 'pen') { if (pass) setTool('pen'); togglePanel(penP, penB); }
     else { setTool('pen'); if (pickOnce) openPanel(penP, penB); }
-  }, 'dd');
+  }, fullBar ? 'dd' : null);
   const penD = penB.querySelector('path');
   toolBtns.pen = penB;
   const penBtns = {};
   penP.append(row(...PENS.map(k => penBtns[k] = btn(PEN_TITLES[k], I[k === 'pen' ? 'pen' : k], () => { setPen(k); closePanel(); }))));
-  for (const t of ['marker', 'eraser']) toolBtns[t] = btn(TITLES[t], I[t], () => { if (!fullBar && t === 'eraser' && tool === t && !pass) togglePass(); else setTool(t); });
+  for (const t of ['marker', 'eraser']) toolBtns[t] = btn(TITLES[t], I[t], () => setTool(t));
   // 図形: 最後に使った図形を表示する。押すとその図形になり、図形のときにもう一度押すと 4 つの図形のパネルが開く（ペンと同じ）
   let lastShape = 'line';
   const shapeP = pnl();
@@ -623,7 +622,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   for (const b of [...moreP.children]) if (fullBar ? b === closeMi : b !== clrMi && b !== closeMi) b.remove();
   if (fullBar) bar.append(toolBtns.select, penB, toolBtns.marker, toolBtns.eraser, shapeB, toolBtns.text, toolBtns.fill,
     el('div', 'sep brk'), styleB, sep(), undoB, redoB, sep(), passB, moreB, sep(), hideB, closeB); // 1 段に収まらないときは .brk で段を分ける（.two .brk。T-064・T-067）
-  else bar.append(penB, toolBtns.eraser, sep(), undoB, sep(), moreB, hideB); // 色と太さのボタンも出さない（T-074。太さは既定のまま、キーの [ ] と数字は効く）
+  else bar.append(penB, sep(), undoB, sep(), moreB, hideB); // 消しゴムはペンのボタンで切り替える（T-076） // 色と太さのボタンも出さない（T-074。太さは既定のまま、キーの [ ] と数字は効く）
   bar.append(shapeP, penP, styleP, moreP, lookP, lci);
 
   // パネルは 1 つだけ開く。描き始め・パネルの外を押す・Esc で閉じる。
@@ -723,6 +722,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   function syncTool(fromSlider) {
     for (const k in toolBtns) toolBtns[k].classList.toggle('on', k === tool && (fullBar || !pass));
+    markPen();
     const shape = SHAPES.includes(tool);
     if (shape && lastShape !== tool) {
       lastShape = tool;
@@ -776,6 +776,16 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     penB.title = PEN_TITLES[penType];
     penB.setAttribute('aria-label', PEN_TITLES[penType]);
     for (const k of PENS) penBtns[k].classList.toggle('on', k === penType);
+    markPen();
+  }
+  // シンプル版（T-076）: ペンのボタンは、消しゴムのときは消しゴムの印と名前にし、ペンか消しゴムのとき（ページ操作でなければ）選んだ見た目にする
+  function markPen() {
+    if (fullBar) return;
+    const er = tool === 'eraser', t = er ? TITLES.eraser : PEN_TITLES[penType];
+    penD.setAttribute('d', I[er ? 'eraser' : penType]);
+    penB.title = t;
+    penB.setAttribute('aria-label', t);
+    penB.classList.toggle('on', (er || tool === 'pen') && !pass);
   }
   // 鉛筆のかすれ: 色ごとに 1 度だけ作る模様（入力のたびには作らない）
   let grainC = '', grainP = null;
@@ -841,8 +851,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     wrap.classList.toggle('pass', pass);
     passB.classList.toggle('on', pass);
     // シンプル版はバーにページ操作のボタンがないので、ページ操作の間は道具のボタンの選択を外して見せる（T-073）
-    if (!fullBar) for (const k in toolBtns) toolBtns[k].classList.toggle('on', k === tool && !pass);
-    say(pass ? (fullBar ? 'ページ操作モード（V で描画に戻る）' : 'ページ操作モード（ペンか消しゴムで描画に戻る）') : '描画モード');
+    if (!fullBar) { for (const k in toolBtns) toolBtns[k].classList.toggle('on', k === tool && !pass); markPen(); }
+    say(pass ? 'ページ操作モード（V で描画に戻る）' : '描画モード');
   }
   // カーソル画像は OS/コンポジタが描くので遅延ゼロ（DOM で追従させるとフレーム遅れが出る）
   function updateCursor() {

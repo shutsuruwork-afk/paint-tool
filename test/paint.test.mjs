@@ -164,12 +164,12 @@ const mouseClick = async (page, sel) => {
 
 // その他のメニュー（全消去の項目の親）に並ぶ項目の名前
 const menuItems = page => shadowEval(page, root => [...[...root.querySelectorAll('.mi')].find(b => b.title.startsWith('全消去')).parentElement.children].map(b => b.querySelector('span').textContent));
-test('シンプル版: ツールバーはペン・消しゴム・元に戻す・その他・隠すだけで、スマホでも 1 段。お知らせは再表示と元に戻すだけ。ほかの道具はキーで使え、その他は全消去と閉じるだけ', async () => {
+test('シンプル版: ツールバーはペン（押すと消しゴムと入れ替わる）・元に戻す・その他・隠すだけで、スマホでも 1 段。お知らせは再表示と元に戻すだけ。ほかの道具はキーで使え、その他は全消去と閉じるだけ', async () => {
   const bar = page => shadowEval(page, root => {
     const bs = [...root.querySelector('.bar').children].filter(e => e.classList.contains('b'));
     return { titles: bs.map(b => b.title.split(/[ （(]/)[0]), tops: [...new Set(bs.map(b => Math.round(b.getBoundingClientRect().top)))], two: root.querySelector('.bar').classList.contains('two') };
   });
-  const want = ['ペン', '消しゴム', '元に戻す', 'その他', '隠す'];
+  const want = ['ペン', '元に戻す', 'その他', '隠す'];
   const { page, errors } = await fresh();
   const b = await bar(page);
   assert.deepEqual(b.titles, want);
@@ -179,31 +179,39 @@ test('シンプル版: ツールバーはペン・消しゴム・元に戻す・
   assert.equal(await toastOn(), false, 'no toast on start');
   // ペンの太さの既定は 6（T-074）
   assert.equal((await page.evaluate(() => window.__paintBookmarklet.stats().prefs.size.pen)), 6);
-  // 選んでいるペンをもう一度押すと消しゴムになる（T-075。種類のパネルは出ない）。選んでいる消しゴムをもう一度押すと、
-  // 選択が外れてページ操作モードになり（T-073）、ペンか消しゴムを押すと描画に戻る
-  const st = page => shadowEval(page, root => ({
-    pass: !!root.querySelector('.pass'), on: [...root.querySelectorAll('.bar > .b.on')].map(b => b.title.split(/[ （(]/)[0]),
-    panel: [...root.querySelectorAll('.pn')].some(p => getComputedStyle(p).display !== 'none'),
-  }));
+  // ペンのボタン 1 つで、押すたびにペンと消しゴムが入れ替わり、印と名前も変わる（T-076。種類のパネルは出ない）。
+  // ページ操作モード（V）では選んでいない見た目になり、押すとその印の道具で描画に戻る
+  const st = page => shadowEval(page, root => {
+    const b = root.querySelector('.bar > .b');
+    return {
+      tool: b.title.split(/[ （(]/)[0], on: b.classList.contains('on'), d: b.querySelector('path').getAttribute('d').slice(0, 8),
+      pass: !!root.querySelector('.pass'), panel: [...root.querySelectorAll('.pn')].some(p => getComputedStyle(p).display !== 'none'),
+    };
+  });
+  const prefTool = () => page.evaluate(() => window.__paintBookmarklet.stats().prefs.tool);
   const onPage = () => page.evaluate(() => document.elementFromPoint(500, 400).tagName !== 'PAINT-BOOKMARKLET');
-  const press = name => mouseClick(page, `.bar > [aria-label^="${name}"]`);
-  assert.deepEqual(await st(page), { pass: false, on: ['ペン'], panel: false });
+  const press = () => mouseClick(page, '.bar > .b');
+  const PEN = { tool: 'ペン', on: true, d: 'M4 20l1.', pass: false, panel: false }, ER = { tool: '消しゴム', on: true, d: 'M8 20h12', pass: false, panel: false };
+  assert.deepEqual(await st(page), PEN);
   assert.equal(await onPage(), false);
-  await press('ペン');
-  assert.deepEqual(await st(page), { pass: false, on: ['消しゴム'], panel: false }, 'pen again -> eraser');
-  await press('ペン');
-  assert.deepEqual(await st(page), { pass: false, on: ['ペン'], panel: false }, 'pen from eraser -> pen');
-  await press('消しゴム');
-  assert.deepEqual(await st(page), { pass: false, on: ['消しゴム'], panel: false });
-  await press('消しゴム');
-  assert.deepEqual(await st(page), { pass: true, on: [], panel: false }, 'eraser again -> page mode');
+  await press();
+  assert.deepEqual(await st(page), ER, 'pen -> eraser');
+  assert.equal(await prefTool(), 'eraser');
+  await press();
+  assert.deepEqual(await st(page), PEN, 'eraser -> pen');
+  assert.equal(await prefTool(), 'pen');
+  // キーで消しゴムにしても印が変わる
+  await page.keyboard.press('e');
+  assert.deepEqual(await st(page), ER);
+  // ページ操作モードでは選んでいない見た目で、押すと消しゴムのまま描画に戻る
+  await page.keyboard.press('v');
+  assert.deepEqual(await st(page), { ...ER, on: false, pass: true });
   assert.equal(await onPage(), true, 'the page gets the clicks');
   assert.equal(await toastOn(), false, 'no toast in page mode');
-  await press('消しゴム');
-  assert.deepEqual(await st(page), { pass: false, on: ['消しゴム'], panel: false });
-  await press('消しゴム');
-  await press('ペン');
-  assert.deepEqual(await st(page), { pass: false, on: ['ペン'], panel: false }, 'pen from page mode -> pen');
+  await press();
+  assert.deepEqual(await st(page), ER);
+  await press();
+  assert.deepEqual(await st(page), PEN);
   await drag(page, [[300, 300], [400, 320]]);
   assert.equal(await page.evaluate(() => window.__paintBookmarklet.stats().history), 1, 'draws again with the pen');
   // ほかの道具もショートカットで選べる

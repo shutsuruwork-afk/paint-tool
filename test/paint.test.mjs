@@ -831,6 +831,29 @@ test('文字の物: 消しゴムでなぞると消え（なぞっている間は
   await page.close();
 });
 
+test('文字の上の移動のカーソルは、スクロールした後も文字の今の位置に出る', async () => {
+  const { page, errors } = await fresh('/long');
+  await page.keyboard.press('t');
+  await page.mouse.click(300, 400);
+  await page.keyboard.type('Hello');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('p');
+  const cursor = () => shadowEval(page, root => root.querySelector('.p').style.cursor);
+  const t0 = await textRect(page);
+  await page.mouse.move(t0.x + 5, t0.y + t0.h / 2);
+  assert.equal(await cursor(), 'move');
+  // 描かずにスクロールすると、文字は画面の上へ 200px 動く
+  await scrollTo(page, 200);
+  const t1 = await textRect(page);
+  assert.ok(near(t1.y, t0.y - 200, 1), JSON.stringify([t0, t1]));
+  await page.mouse.move(t1.x + 5, t1.y + t1.h / 2);
+  assert.equal(await cursor(), 'move', '文字の今の位置');
+  await page.mouse.move(t0.x + 5, t0.y + t0.h / 2);
+  assert.match(await cursor(), /^url\(/, '文字のあった所（今は何もない）');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('ページ操作モードでツールを選ぶ（ボタンでもキーでも）と、描画モードに戻ってすぐ描ける', async () => {
   const { page } = await fresh();
   const passOn = () => shadowEval(page, root => root.querySelector('.w').classList.contains('pass'));

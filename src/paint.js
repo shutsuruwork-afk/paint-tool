@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.19.4';
+  const VERSION = '1.19.5';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -1291,8 +1291,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
 
   function drawShape() {
-    const c = lctx, r = dirty();
-    if (r) c.clearRect(r.x, r.y, r.w, r.h);
+    const c = lctx;
+    if (dirty()) c.clearRect(dX, dY, dW, dH);
     let ax = sx, ay = sy, ex = cx, ey = cy;
     c.beginPath();
     if (sTool === 'line' || sTool === 'arrow') {
@@ -1334,12 +1334,16 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     c.stroke();
   }
 
-  // ストロークの外接矩形（線幅ぶん広げ、整数ピクセルに丸めてクリップ）
+  // ストロークの外接矩形（線幅ぶん広げ、整数ピクセルに丸めてクリップ）を dX, dY, dW, dH に入れる。空なら false。
+  // 図形では入力のたびに呼ぶので、オブジェクトを作らずに変数へ書く
+  let dX = 0, dY = 0, dW = 0, dH = 0;
   function dirty() {
     const m = mW / 2 + 2;
     const ax = max(0, (x0 - m) | 0), ay = max(0, (y0 - m) | 0);
     const ex = min(W, ceil(x1 + m)), ey = min(H, ceil(y1 + m));
-    return ex > ax && ey > ay ? { x: ax, y: ay, w: ex - ax, h: ey - ay } : null;
+    if (ex <= ax || ey <= ay) return false;
+    dX = ax; dY = ay; dW = ex - ax; dH = ey - ay;
+    return true;
   }
 
   function tick(ts) {
@@ -1383,7 +1387,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       commitLive();
     } else if (m === 3) {
       if (shaped) { markShape(); commitLive(); }
-      else { const r = dirty(); if (r) lctx.clearRect(r.x, r.y, r.w, r.h); }
+      else if (dirty()) lctx.clearRect(dX, dY, dW, dH);
     } else if (m === 4) {
       selUp();
     } else if (m === 2) {
@@ -1416,7 +1420,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         d.x.drawImage(tsave[k].c, 0, 0, T, T, x % DT, y % DT, T, T);
       }
     } else {
-      if (r) lctx.clearRect(r.x, r.y, r.w, r.h);
+      if (r) lctx.clearRect(dX, dY, dW, dH);
       clearTail();
     }
     resetTiles();
@@ -1427,13 +1431,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 外接矩形ではなくタイル単位なので、斜めの長い線や広範囲の線でも処理量・メモリは線の面積にほぼ比例する
   function commitLive() {
     let R = tileRects(true);
-    const r = dirty();
-    if (!R.length || !r) { if (r) lctx.clearRect(r.x, r.y, r.w, r.h); return; }
+    if (!dirty()) return;
+    const rx = dX, ry = dY, rw = dW, rh = dH;
+    if (!R.length) { lctx.clearRect(rx, ry, rw, rh); return; }
     // 水平に細長い線などはタイルより外接矩形の方が小さいので、面積の小さい方を使う
     let tp = 0;
     for (let i = 0; i < R.length; i += 6) tp += R[i + 2] * R[i + 3];
-    const bX = floor(r.x * sk + sox), bY = floor(r.y * sk + soy);
-    const bW = ceil((r.x + r.w) * sk + sox) - bX, bH = ceil((r.y + r.h) * sk + soy) - bY;
+    const bX = floor(rx * sk + sox), bY = floor(ry * sk + soy);
+    const bW = ceil((rx + rw) * sk + sox) - bX, bH = ceil((ry + rh) * sk + soy) - bY;
     if (bW * bH < tp) R = rect1(bX, bY, bW, bH);
     sizeSurface();
     const atlas = gather(R, pack(R));
@@ -1450,7 +1455,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     // live は残したままグループを隠し（タイルの更新と同じフレームで切り替わる）、2 フレーム後に中身を消す
     grp.style.opacity = 0;
     grpA = 0;
-    hcx = r.x; hcy = r.y; hcw = r.w; hch = r.h;
+    hcx = rx; hcy = ry; hcw = rw; hch = rh;
     handoff = requestAnimationFrame(() => { handoff = requestAnimationFrame(finishHandoff); });
   }
   function finishHandoff() {
@@ -1844,6 +1849,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   // ポインタの下が枠のつまみ・枠の中・文字なら、それに合ったカーソルにする（それ以外は道具のカーソル）
   function selHover(e) {
+    mapNow(); // 最後に押してからスクロールしているかもしれないので、画面と面の対応を今の位置で求め直す
     const X = e.clientX * sdpr + sox, Y = e.clientY * sdpr + soy, k = sel ? selHit(X, Y) : -2;
     const c = k >= 0 ? HCUR[k] : k === -1 || textHit(X, Y) ? 'move' : toolCur;
     if (c !== hoverCur) { hoverCur = c; pad.style.cursor = c; }

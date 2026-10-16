@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.21.1';
+  const VERSION = '1.22.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -32,7 +32,6 @@
   const PRED_MAX = 16;  // 保持する予測点の上限
   const PRED_MS = 12;   // 予測 API が無い環境で外挿する時間 (ms)
   const PRED_TTL = 40;  // 入力が途絶えてから予測線を消すまでの時間 (ms)
-  const PRED_FAINT = 0.4; // 蛍光ペンの予測を薄く描くときの濃さ（線の濃さに掛ける）
   const FILL_TOL = 48;  // 塗りつぶしの色許容差 (0-255)
   const BYE_MS = 8000;  // 閉じる（×）を取り消せる時間 (ms)
   const PAGE = 'https://shutsuruwork-afk.github.io/paint-tool/'; // インストールページ
@@ -294,10 +293,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     tint: +DEF.tint >= 30 && +DEF.tint <= 95 ? +DEF.tint : 70,
   };
   const dev = DEF.dev === true;
-  // 蛍光ペンの予測（T-052）: 'faint' は予測の部分だけ薄く描く（外れても目立たず、ペン先には付いてくる）、'off' は描かない、'full' はペンと同じ。
-  // 蛍光ペンは太いので、そのまま描くと外れた予測（止めたり曲げたりした瞬間の飛び出し）が目立った。開発用のパネルでも切り替えられる
-  const MPREDS = ['faint', 'off', 'full'];
-  let mpred = MPREDS.includes(DEF.mpred) ? DEF.mpred : 'faint';
+  // 蛍光ペンの予測（T-055）: 'need' は丸い先端で届かない分だけ（1 フレーム後のペン先まで）、曲がりに沿って予測する。
+  // 'off' は描かない、'full' はペンと同じ。蛍光ペンは太いので、そのまま描くと外れた予測（ぴょこぴょこ）が目立った。開発用のパネルでも切り替えられる
+  const MPREDS = ['need', 'off', 'full'];
+  let mpred = MPREDS.includes(DEF.mpred) ? DEF.mpred : 'need';
   function applyLook() {
     const t = look.theme, ws = wrap.style, cl = wrap.classList;
     let lite = t === 'light';
@@ -547,7 +546,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 蛍光ペンの予測を切り替えて見比べる（次に描く線から効く）
   const mpL = el('span');
   mpL.textContent = '蛍光ペンの予測';
-  const mpBs = [['faint', '薄く'], ['off', 'なし'], ['full', 'そのまま']].map(([k, t]) => {
+  const mpBs = [['need', '必要な分だけ'], ['off', 'なし'], ['full', 'そのまま']].map(([k, t]) => {
     const b = btn(`蛍光ペンの予測: ${t}`, null, () => { mpred = k; syncLook(); }, 'sg');
     b.textContent = t;
     return b;
@@ -1010,7 +1009,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   let act = -1, aType = '', mode = 0; // mode: 1 インク / 2 消しゴム / 3 図形 / 4 選択（囲む・移動・拡大縮小）
   let sTool = 'pen', sW = 0, sA = 1, sP = false, sRaw = false, raf = 0;
   let sPen = 0, pf = 1, sDist = 0; // ペンの種類（PENS の番号）と、万年筆・筆の太さの係数、書き始めからの距離
-  let sPd = true, sFa = false; // 予測線を描くか、予測の部分を薄く描くか（蛍光ペンは mpred で決める。T-051・T-052）
+  // 予測線を描くか（蛍光ペンは mpred で決める）、点と点を直線でつなぐか（蛍光ペン。描いた所が後から変わらない）、必要な分だけ予測するか（T-055）
+  let sPd = true, sPoly = false, sNeed = false;
+  let pvx = 0, pvy = 0, om = 0, fi = 16.7; // 直前の区間の速度、向きの変わる速さ（rad/ms）、1 フレームの長さ（ms。tick で測る）
   let bx = 0, by = 0, bw = 0, mx = 0, my = 0, ps = 1, lt = 0, lastPen = -1e9;
   let x0 = 0, y0 = 0, x1 = 0, y1 = 0, mW = 0; // ストロークの外接矩形
   let tx0 = 0, ty0 = 0, tx1 = 0, ty1 = 0; // pred レイヤの汚れ矩形
@@ -1105,7 +1106,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         pf = sPen === 1 ? 0.6 : 1;
         sDist = 0;
         sPd = t === 'pen' || mpred !== 'off';
-        sFa = t === 'marker' && mpred === 'faint';
+        sPoly = t === 'marker';
+        sNeed = sPoly && mpred === 'need';
+        pvx = pvy = om = 0;
         bw = sP ? qw(sW * (0.2 + 0.8 * ps)) : sW;
         if (sPen === 1) bw = qw(bw * (0.2 + 0.8 * pf));
         else if (sPen === 2) bw = qw(bw * 0.35);
@@ -1170,7 +1173,16 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       const t = p.timeStamp || lt, x = p.clientX * dpr, y = p.clientY * dpr;
       if (t < lt || (x === bx && y === by)) continue; // 既に処理済み、または移動なし
       const dt = t - lt;
-      if (dt > 0.5) { vx += ((x - bx) / dt - vx) * 0.5; vy += ((y - by) / dt - vy) * 0.5; }
+      if (dt > 0.5) {
+        const ix = (x - bx) / dt, iy = (y - by) / dt;
+        if (sNeed && (pvx || pvy)) {
+          // 向きの変わる速さ（曲がりに沿って予測するため）。入力の揺れで暴れないように上限を付けてならす
+          const a = max(-0.02, min(0.02, atan2(pvx * iy - pvy * ix, pvx * ix + pvy * iy) / dt));
+          om += (a - om) * 0.5;
+        }
+        pvx = ix; pvy = iy;
+        vx += (ix - vx) * 0.5; vy += (iy - vy) * 0.5;
+      }
       lt = t;
       nPts++;
       let w = sW;
@@ -1194,6 +1206,18 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         }
       }
       if (sP || sPen) w = qw(w);
+      if (sPoly) {
+        // 蛍光ペン: 点と点を直線でつなぐ（丸い角）。中点を結ぶ曲線だと、末尾の直線が次の入力で曲線に確定するときに内側へ引っ込む。
+        // 太い線では直線でも角は見えない。未確定の末尾がないので、pred には予測だけが残る
+        if (bw !== cw) { if (open) c.stroke(); c.lineWidth = cw = bw; c.beginPath(); c.moveTo(bx, by); open = true; }
+        c.lineTo(x, y);
+        markSeg(bx, by, x, y, bw / 2 + 2);
+        mx = bx = x; my = by = y; bw = w;
+        if (x < x0) x0 = x; else if (x > x1) x1 = x;
+        if (y < y0) y0 = y; else if (y > y1) y1 = y;
+        if (w > mW) mW = w;
+        continue;
+      }
       const nx = (bx + x) * 0.5, ny = (by + y) * 0.5;
       if (bw !== cw) {
         if (open) c.stroke();
@@ -1213,6 +1237,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
 
   function readPred(e) {
+    if (sNeed) { needPred(); return; }
     const l = e.getPredictedEvents ? e.getPredictedEvents() : EMPTY;
     let k = 0;
     for (let i = 0; i < l.length && k < PRED_MAX; i++, k++) {
@@ -1231,6 +1256,18 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     pn = k;
   }
 
+  // 蛍光ペンの予測（必要な分だけ）: 丸い先端は点より太さの半分だけ先まで覆っているので、1 フレーム後のペン先に届かない分だけ伸ばす。
+  // ゆっくり〜ふつうの速さでは予測しない（外れた予測がぴょこぴょこ見えるのは、太い線ほど目立つため）。向きは曲がりに沿って回す
+  function needPred() {
+    const sp = hypot(vx, vy), L = min(sp * fi - sW / 2, 40 * dpr);
+    if (L <= 0) { pn = 0; return; }
+    const r = om * (L / sp) / 2, cs = cos(r), sn = sin(r);
+    px[0] = bx + (vx * cs - vy * sn) / sp * L;
+    py[0] = by + (vx * sn + vy * cs) / sp * L;
+    pt[0] = lt + L / sp;
+    pn = 1;
+  }
+
   // 未確定の末尾（最後の中点→最新点）と予測点を pred レイヤに描く。毎回この小さな範囲だけ消して描き直す
   function drawTail() {
     const c = pctx;
@@ -1240,9 +1277,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     c.beginPath();
     c.moveTo(mx, my);
     c.lineTo(bx, by);
-    // 薄く描くとき: 確かな末尾を先に描き、予測の部分だけを薄く重ねる（重なった所は濃い方のまま）
-    const fa = sFa && pn;
-    if (fa) { c.stroke(); c.globalAlpha = PRED_FAINT; c.beginPath(); c.moveTo(bx, by); }
     for (let k = 0; k < pn; k++) {
       if (pt[k] && pt[k] <= lt) continue; // 実入力が追い越した予測点は捨てる
       const x = px[k], y = py[k];
@@ -1251,7 +1285,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       if (y < b0) b0 = y; else if (y > b1) b1 = y;
     }
     c.stroke();
-    if (fa) c.globalAlpha = 1;
     const m = bw / 2 + 2;
     tx0 = max(0, (a0 - m) | 0); ty0 = max(0, (b0 - m) | 0);
     tx1 = ceil(a1 + m); ty1 = ceil(b1 + m);
@@ -1372,8 +1405,12 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     return true;
   }
 
+  let lastTs = 0;
   function tick(ts) {
     raf = requestAnimationFrame(tick);
+    // 1 フレームの長さを測る（蛍光ペンの予測の長さに使う。120 Hz の画面なら短くなる）
+    if (lastTs && ts - lastTs > 4 && ts - lastTs < 40) fi += (ts - lastTs - fi) * 0.1;
+    lastTs = ts;
     // ポインタが止まったら古い予測線を消す（行き過ぎた線が残らないように）
     if (pn && ts - lt > PRED_TTL) { pn = 0; drawTail(); }
     if (tHit !== tShown) showErased();

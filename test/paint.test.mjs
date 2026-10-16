@@ -308,9 +308,9 @@ test('見た目（開発用）: インストールページの開発用を入れ
   await pick('#ffd54f');
   assert.deepEqual(await st(page), { cls: 'light', bar: 'rgb(255, 213, 79)', gb: '8px', color: 'rgb(29, 32, 38)' });
   assert.equal((await prefs(page)).theme, '#ffd54f');
-  // 蛍光ペンの予測を切り替える（既定は薄く）
+  // 蛍光ペンの予測を切り替える（既定は必要な分だけ）
   const mpOn = () => shadowEval(page, root => [...root.querySelectorAll('.pn.on .sg')].filter(b => b.classList.contains('on')).map(b => b.textContent));
-  assert.deepEqual(await mpOn(), ['薄く']);
+  assert.deepEqual(await mpOn(), ['必要な分だけ']);
   await mouseClick(page, '.pn.on [aria-label="蛍光ペンの予測: なし"]');
   assert.deepEqual(await mpOn(), ['なし']);
   assert.equal((await prefs(page)).mpred, 'off');
@@ -1282,46 +1282,75 @@ test('電卓: 入りにすると、文字の行が計算式なら答えが薄く
   await page.close();
 });
 
-test('予測線: ペンは最後の点より先まで伸ばす。蛍光ペンは既定では予測の部分だけ薄く描き、設定で「なし」「そのまま」にもできる', async () => {
-  // 予測は入力の速さで決まるので、間隔を空けた合成のイベントを 1 回の evaluate の中で送り、途中の pred を読む。
-  // 最後の点は x = 400。reach は線の先の x、ahead はペン先の確かな部分（太さの半分 + 2）より先の画素の濃さの最大
-  const measure = page => page.evaluate(() => {
+test('予測線: ペンは最後の点より先まで伸ばす。蛍光ペンは既定では丸い先端で届かない分だけ（ゆっくりなら予測しない）。設定で「なし」「そのまま」にもできる', async () => {
+  // 合成のイベントに timeStamp を与えて速さを決め（step px を 2 ms ごと）、途中の pred を読む。
+  // 最後の点は x = 400。reach は線の先の x
+  const measure = (page, step) => page.evaluate(step => {
     const api = window.__paintBookmarklet, root = document.querySelector('paint-bookmarklet').shadowRoot;
     const pad = root.querySelector('.p'), q = root.querySelector('canvas.q');
-    const ev = (type, x, y, extra) => new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, pointerId: 9, pointerType: 'mouse', isPrimary: true, clientX: x, clientY: y, button: type === 'pointermove' ? -1 : 0, buttons: 1, ...extra });
-    const wait = ms => { const t = performance.now(); while (performance.now() - t < ms); };
+    const ev = (type, x, y, ts, extra) => { const e = new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, pointerId: 9, pointerType: 'mouse', isPrimary: true, clientX: x, clientY: y, button: type === 'pointermove' ? -1 : 0, buttons: 1, ...extra }); Object.defineProperty(e, 'timeStamp', { value: ts }); return e; };
     const out = {};
-    for (const [t, half] of [['pen', 2], ['marker', 12]]) {
+    for (const t of ['pen', 'marker']) {
       api.tool(t);
-      pad.dispatchEvent(ev('pointerdown', 100, 400));
-      for (let x = 110; x <= 400; x += 10) { wait(2); pad.dispatchEvent(ev('pointermove', x, 400)); }
+      const T0 = performance.now() + 1000;
+      pad.dispatchEvent(ev('pointerdown', 400 - 30 * step, 400, T0));
+      for (let i = 1; i <= 30; i++) pad.dispatchEvent(ev('pointermove', 400 - (30 - i) * step, 400, T0 + i * 2));
       const d = q.getContext('2d').getImageData(0, 0, q.width, q.height).data, k = devicePixelRatio;
-      let reach = -1, ahead = 0;
-      for (let i = 3; i < d.length; i += 4) {
-        if (d[i] <= 20) continue;
-        const x = ((i >> 2) % q.width) / k;
-        if (x > reach) reach = x;
-        if (x > 400 + half + 2 && d[i] > ahead) ahead = d[i];
+      let reach = -1;
+      for (let i = 3; i < d.length; i += 4) if (d[i] > 20) { const x = ((i >> 2) % q.width) / k; if (x > reach) reach = x; }
+      out[t] = reach;
+      pad.dispatchEvent(ev('pointerup', 400, 400, T0 + 62, { buttons: 0 }));
+    }
+    return out;
+  }, step);
+  const { page, errors } = await fresh();
+  // 速い（5 px/ms）: ペンも蛍光ペンも先まで伸ばす
+  const fast = await measure(page, 10);
+  assert.equal((await prefs(page)).mpred, 'need');
+  assert.ok(fast.pen > 415 && fast.marker > 425, JSON.stringify(fast));
+  // ゆっくり（0.5 px/ms）: 蛍光ペンは丸い先端で 1 フレーム後のペン先まで届くので予測しない（太さの半分 12px まで）
+  const slow = await measure(page, 1);
+  assert.ok(slow.marker <= 413 && slow.pen > 402, JSON.stringify(slow));
+  // なし: 速くても太さの半分まで。そのまま: ゆっくりでもペンと同じく伸ばす
+  for (const [mpred, ok] of [['off', r => r.f <= 413], ['full', r => r.s > 414 && r.f > 425]]) {
+    await page.evaluate(() => window.__paintBookmarklet.destroy());
+    await runCode(page, withDefaults(CODE, { mpred }));
+    const r = { f: (await measure(page, 10)).marker, s: (await measure(page, 1)).marker };
+    assert.ok(ok(r), mpred + ' ' + JSON.stringify(r));
+  }
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('蛍光ペン: ゆっくり〜ふつうの速さで曲線を描いても、描いている途中に一度見えた所が次の入力で消えない（先端がぴょこぴょこしない）', async () => {
+  const { page, errors } = await fresh();
+  const lost = await page.evaluate(() => {
+    const api = window.__paintBookmarklet, root = document.querySelector('paint-bookmarklet').shadowRoot;
+    const pad = root.querySelector('.p'), lv = root.querySelector('canvas.l'), pr = root.querySelector('canvas.q');
+    const ev = (type, x, y, ts, extra) => { const e = new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, pointerId: 9, pointerType: 'mouse', isPrimary: true, clientX: x, clientY: y, button: type === 'pointermove' ? -1 : 0, buttons: 1, ...extra }); Object.defineProperty(e, 'timeStamp', { value: ts }); return e; };
+    const k = devicePixelRatio, X0 = 300 * k, Y0 = 200 * k, WW = 400 * k, HH = 300 * k;
+    const mask = () => { const a = lv.getContext('2d').getImageData(X0, Y0, WW, HH).data, c = pr.getContext('2d').getImageData(X0, Y0, WW, HH).data; const m = new Uint8Array(WW * HH); for (let i = 0, j = 3; i < m.length; i++, j += 4) m[i] = a[j] > 10 || c[j] > 10 ? 1 : 0; return m; };
+    const out = {};
+    api.tool('marker');
+    // 速さ 150 px/s と 600 px/s で半径 100px の弧。入力は 8 ms ごと（±1.5 ms ぶれる）、座標は整数
+    for (const v of [150, 600]) {
+      api.clear();
+      const T0 = performance.now() + 1000, pts = [];
+      for (let t = 0; t <= 1000; t += 8) { const a = (v * t / 1000) / 100; pts.push([Math.round(500 + 100 * Math.sin(a)), Math.round(350 - 100 * Math.cos(a))]); }
+      pad.dispatchEvent(ev('pointerdown', pts[0][0], pts[0][1], T0));
+      let prev = mask(), n = 0;
+      for (let i = 1; i < pts.length; i++) {
+        pad.dispatchEvent(ev('pointermove', pts[i][0], pts[i][1], T0 + i * 8 + ((i * 7919) % 31) / 10 - 1.5));
+        const m = mask();
+        for (let j = 0; j < m.length; j++) if (prev[j] && !m[j]) n++;
+        prev = m;
       }
-      out[t] = { reach, ahead };
-      pad.dispatchEvent(ev('pointerup', 400, 400, { buttons: 0 }));
+      pad.dispatchEvent(ev('pointerup', pts.at(-1)[0], pts.at(-1)[1], T0 + pts.length * 8, { buttons: 0 }));
+      out[v] = n;
     }
     return out;
   });
-  const { page, errors } = await fresh();
-  const r0 = await measure(page);
-  assert.ok(r0.pen.reach > 415 && r0.pen.ahead > 200, JSON.stringify(r0));
-  // 既定（薄く）: 蛍光ペンもペン先より先まで伸びるが、予測の部分は 4 割の濃さ
-  assert.equal((await prefs(page)).mpred, 'faint');
-  assert.ok(r0.marker.reach > 425 && r0.marker.ahead > 60 && r0.marker.ahead < 130, JSON.stringify(r0));
-  // なし: 太さの半分まで。そのまま: ペンと同じく濃いまま
-  for (const [mpred, ok] of [['off', m => m.reach <= 413], ['full', m => m.reach > 425 && m.ahead > 200]]) {
-    await page.evaluate(() => window.__paintBookmarklet.destroy());
-    await runCode(page, withDefaults(CODE, { mpred }));
-    const r = await measure(page);
-    assert.ok(ok(r.marker), mpred + ' ' + JSON.stringify(r));
-    assert.ok(r.pen.reach > 415, mpred + ' ' + JSON.stringify(r));
-  }
+  assert.deepEqual(lost, { 150: 0, 600: 0 });
   assert.deepEqual(errors, []);
   await page.close();
 });

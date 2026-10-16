@@ -4,19 +4,20 @@
 
 ## 現在地
 
-- 最終更新: 2026-10-16、T-054 の完了時
-- ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない。HEAD は T-054 のコミット（`git log --grep T-054`）
-- CI: GitHub Actions「Pages」は main へのプッシュごとに test → deploy。T-052 の run（38867788127）まで test・deploy とも成功。T-054 のプッシュの結果は Actions で確かめる
-- 公開: https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）の 2 か所。版は v1.21.1
+- 最終更新: 2026-10-16、T-055 の完了時
+- ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない。HEAD は T-055 のコミット（`git log --grep T-055`）
+- CI: GitHub Actions「Pages」は main へのプッシュごとに test → deploy。T-054 の run（38873198220）まで test・deploy とも成功。T-055 のプッシュの結果は Actions で確かめる
+- 公開: https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）の 2 か所。版は v1.22.0
 - 人の操作待ち: なし。R-004 は C に決まった（インストールページの既定＋サイトごとに覚える）。ユーザーのフィードバック（ideas/touch-text.md）で、ペンを選んでいても文字に触れたい（T-022、済み。設定の入り・切りはインストールページの「デフォルトの設定」＝T-005、済み）、ツールを選んだらページ操作モードを解除（T-021、済み）が来た
-- 次の一手: T-055（蛍光ペンの予測が、速く動かすと大幅にはみ出る。ユーザーの報告で、薄く描く T-052 でもまだ悪い）。白いガラスの既定（T-050）も使ってみてもらう。効率と中身の改善は、トレードオフがあれば先にユーザーに確認する（履歴のメモリ上限・全消去の後のタイルの解放・塗りつぶしを画面の外まで広げる、は今のままでよいと回答済み）。残りの候補は T-018・T-013・T-031・T-020（T-011・T-017 は後回し）
+- 次の一手: 蛍光ペンの新しい予測（T-055）をユーザーが実機で試す。濃さ 100% の蛍光ペンと比べて、まとめた要素の opacity の影響（仮説 1）も切り分けてもらう。白いガラスの既定（T-050）も使ってみてもらう。効率と中身の改善は、トレードオフがあれば先にユーザーに確認する（履歴のメモリ上限・全消去の後のタイルの解放・塗りつぶしを画面の外まで広げる、は今のままでよいと回答済み）。残りの候補は T-018・T-013・T-031・T-020（T-011・T-017 は後回し）
 
 ## 始め方
 
 ```sh
 npm install          # terser 5.36.0 と playwright 1.56.1（ブラウザは /opt/pw-browsers にある）
-npm test             # ビルドしてから Playwright のテスト 60 件
+npm test             # ビルドしてから Playwright のテスト 61 件
 npm run bench        # 性能計測（メインスレッドの占有時間）
+npm run pop          # 蛍光ペンの先端の消える画素（ぴょこぴょこ）と、1〜2 フレーム後のペン先との隙間（T-055）
 ```
 
 - ソースを変えたら `npm run build` を流し、`dist/` と `docs/` もコミットする。CI は生成物がソースと一致するかを `git diff --exit-code -- dist docs` で確かめる。
@@ -29,12 +30,12 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
   - 状態、面（mapNow / origin / dtile / forTiles / sizeSurface。画面に固定は fixed / fx / fy）、ツールバー（TITLES、図形ボタン shapeB と lastShape、色と太さ styleB と点 dot、その他 moreB と item()、ペン penB と種類のパネル penP（setPen / syncPen / grain）、パネル shapeP / styleP / moreP と openPanel / closePanel / togglePanel、ドラッグ移動 moveBar / measureBar。バーのどこを押しても 4px 引けば動く）、UI 同期（setTool / syncTool / syncDot / liveAlpha / setColor / syncBg …）、キャンバスのサイズ管理（fit, warm）
   - 履歴（push / swap / pack / gather / grow、undo / redo / clearAll）。gather は面のタイルからアトラスへ、swap はアトラスと面を入れ替える
   - 画面に固定（toggleFixed / shiftAll / syncFixed）。shiftAll は面のタイル・履歴の矩形と外接矩形・文字の状態（今と履歴）・cb* をまとめて S でずらす
-  - ストローク状態と入力: onDown（finishHandoff → mapNow）→ onMove（inkMove, readPred, drawTail / eraseMove → erasePts / drawShape）→ onUp → endStroke（commitLive → 2 フレーム後に finishHandoff）。abortStroke はパームリジェクションで使う
+  - ストローク状態と入力: onDown（finishHandoff → mapNow）→ onMove（inkMove〈蛍光ペンは sPoly で点と点を直線〉, readPred〈蛍光ペンは needPred〉, drawTail / eraseMove → erasePts / drawShape）→ onUp → endStroke（commitLive → 2 フレーム後に finishHandoff）。abortStroke はパームリジェクションで使う
   - タイル（markBox / markSeg / markCurve / markShape / tileRects / resetTiles）。印は面の座標で Set に付ける
   - お知らせ（`say(msg, ms, act, fn, xfn, inl)`。fn を渡すとボタン付き、xfn を渡すと × 付き、inl ならボタンを文の続きに置く）、塗りつぶし（floodFill → maskClear / maskColor → scanFill。画面に何も描いていなければ全体の矩形を 1 つ）、選択（settle / showSel / liftSel → liftRaster + beginSel / dropSel / paintSel / selHit / selHover / selDown / selMove / scaleSel / selUp / selAbort / pickSel / nudgeSel。浮かせた画素は selC、選んだ文字の物の組は selT、どちらも入れ物 selIn に入れて transform で拡大縮小。枠は selEl と selB）、文字（物: tlist / tNew / tSnap / tApply / swapText / textHit / paintText（書き出し用）/ eraseText・showErased・takeErased（消しゴム）。入力: textAt / editText / styleTa / fitTa / commitText。電卓: updateGhost（fitTa も呼ぶ）/ lineW / acceptGhost / calcLine（薄い答えは ghostEl、右端は ghostR）。入力欄は `ta`、書き直し中の物は `taObj`）、書き出し（capture / exportBlob / save / copyImg / pixels）、HUD（D キー）、操作の一覧（HELP / openHelp / closeHelp。? キー）、キーボード（onKey）、設定（applyPrefs / snapPrefs / remember → savePrefs / loadSite / placeBar。DEF ＋ サイトの保存）、表示制御（show / hide / hideHint → endHint / toggle / close → endBye / reopen / onByeKey、destroy）、起動
 - `src/install.html`: インストールページのテンプレート（本文のみ）。並びは T-039 で、見出し（Paint ボタン・試す・目次）→ 入れ方 → 試し書き → デフォルトの設定（id="defaults"、動きはスイッチ）→ 使い方（機能の説明と操作の一覧 %%HELP%%）→ できないこと → 仕組みと計測（仕組み・低遅延機能の表・計測の表）にした。機能の説明は「使い方」に、技術の説明は「仕組みと計測」に分ける。`%%BOOKMARKLET_HREF%%` などを build.mjs が置き換える。「デフォルトの設定」のフォームは、選んだ既定（組み込みの既定との差分）を JSON にして、ボタンの href の `'__PAINT_DEFAULTS__'` を置き換える。フォームの状態はインストールページ自身の localStorage（`paint-defaults`）に、組み込みの既定との差分だけを残す（T-046。それより前に保存した人は全体の形のまま）。組み込みの既定（BUILTIN と PALETTE）は src/paint.js と手で合わせる（テストで一致を確かめている）
 - `build.mjs`: src/paint.js の HELP（`/*HELP*/` の間の JSON）を読んで、インストールページの `%%HELP%%` にショートカットの一覧を書き出す。terser で圧縮し、`dist/paint.min.js`、`dist/bookmarklet.txt`、`docs/index.html` を作る。「このページで試す」用の埋め込み版は、既定の目印を `window.__paintBookmarkletDefaults` を読む式に変える（eval を使わない）。目印が 1 つだけあることも確かめる。インストールページのボタンの href がブックマークレットと一致するかを、書き出す前に確かめる
-- `test/paint.test.mjs`（テスト 60 件）、`test/helpers.mjs`（既定を埋め込んだコードを作る `withDefaults` と直接起動する `runCode`、サーバー〈`/install` はビルドしたインストールページ〉〈`/long` は縦 3000px、`/offset` は html に余白〉・起動・画素の読み取り `readMain` / `screenPixel`・`scrollTo`）、`test/bench.mjs`
+- `test/paint.test.mjs`（テスト 61 件）、`test/helpers.mjs`（既定を埋め込んだコードを作る `withDefaults` と直接起動する `runCode`、サーバー〈`/install` はビルドしたインストールページ〉〈`/long` は縦 3000px、`/offset` は html に余白〉・起動・画素の読み取り `readMain` / `screenPixel`・`scrollTo`）、`test/bench.mjs`、`test/pop.mjs`（npm run pop）
 - `.github/workflows/pages.yml`: main へのプッシュでテストしてから docs/ を Pages に公開。PR ではテストだけ
 - `.claude/`: CLAUDE.md（概要と読み込み）、`rules/`（tasks / handoff / human）、TASKS.md、HANDOFF.md、Stop フック（`hooks/check-handoff.mjs`）
 - `.human/`: ユーザーとの非同期のやりとり。`ideas/`（ユーザーのアイデア、1 件 1 ファイル）、`requests.md`（Claude からの判断・作業のお願い）
@@ -93,7 +94,7 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - 閉じる（×）は確認ダイアログではなく、8 秒の取り消し（お知らせのボタン・Ctrl/⌘+Z・ブックマークレット）にした（T-006）。お知らせの × ですぐ閉じられる（T-027、ユーザーの要望。「取り消しの可能性あり」とのことなので、要らないと言われたら外す）。確認は毎回 1 手増えるが、取り消しなら閉じる人の手間は変わらない。残り時間は CSS のアニメーションのバーで見せる（JS は動かない）。何も描いていなければすぐ閉じる。
 - 塗りつぶしは見えている画面の範囲だけで行う。文書全体を読み戻すと長いページで重いため。隙間を埋める 1px の膨張も画面の中に収める（T-044。はみ出すと R から漏れる）。判定表づくりと走査は小さな関数に分けてある（T-047。floodFill の中に置くと同じループが 2〜3 倍遅かった）。走査を TypedArray の indexOf で行う案は、小さな領域で遅くなるので採らなかった。
 - Delegated Ink Trail は Windows だけで使う。他の OS では API があっても OS が描かない可能性があり、その場合に予測線まで失うため。
-- 蛍光ペンの予測は mpred（DEF、既定は 'faint'）で決める（T-051・T-052、onDown で sPd と sFa を決める）。蛍光ペンは太いので、そのまま描くと外れた予測（止めたり曲げたりした瞬間に先が伸びて戻る）が目立った。T-051 で切ったら「ぬるぬる感がない」とのことで、T-052 で予測の部分だけ PRED_FAINT（0.4）の濃さで重ねる形にした（drawTail で確かな末尾を先に描く）。予測を短くする・減速で弱める案は、曲がるときの飛び出しが残り先へ伸びる分も半分になるので採らなかった。
+- 蛍光ペンの予測は mpred（DEF、既定は 'need'。'off'・'full' も）で決める（T-051・T-052・T-055。onDown で sPd・sPoly・sNeed を決める）。'need' は needPred: 丸い先端が太さの半分だけ先を覆うので、1 フレーム（fi、tick で測る）後のペン先に届かない分（速さ × fi − 太さの半分、上限 40px）だけ、向きを角速度 om で回して予測する。実機の getPredictedEvents は使わない。蛍光ペンの線は点と点を直線でつなぐ（中点の曲線だと、末尾の直線が次の入力で曲線になるときに引っ込む）。経緯: そのまま描くと外れた予測が目立ち（T-051 で切った）、切るとぬるぬる感がなく、薄く描いても効かなかった（T-052）。`npm run pop` で測ると、消える画素のほぼ全部が予測だった。予測を短くする・減速で弱める・曲がりだけ考える案は、消える画素が残るか先へ伸びる分が減るので採らなかった。まとめた要素（.g）の opacity が低遅延の経路に影響するか（ユーザー側の AI の仮説）は未確認。
 - pointerrawupdate のリスナーは描画中だけ登録する（登録しているだけでコストがかかる）。図形は 1 フレームに 1 回で足りるので使わない。
 - 履歴は 128px タイルと外接矩形のうち面積の小さい方で保存する。消しゴムはコピーオンライト。
 - 起動直後に warm() で初回コストを前払いする（T-003 以前の計測で初回の確定が 17ms → 2ms、@2x で 60ms → 4ms）。面のタイルは描いた所に作るので前払いできず、初めて描く場所の確定は数 ms 重い。
@@ -122,6 +123,8 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - シャドウ DOM の CSS のクラス名は短く、`.g`（live のグループ）・`.p`（入力の板）・`.s`・`.t` などが全体に効く。新しい部品に同じ名前を付けると、position:absolute などが当たって崩れる（T-007 で一覧の行に `.g` を使って重なった）。足す前に CSS を grep する。
 - backdrop-filter は、要素の大きさだけを元にぼかす。細長い要素（高さ 40〜60px）では下の文字がほぼくっきり残る（headless の Chromium で確かめた。ツールと関係のない素のページでも同じ）。周りも拾うには、要素を広げて mask で切る（T-041 のガウス方式）。外側で overflow・clip-path を使うと効かない。
 - 画素のループの速さは、ヘッドレスでも実機と同じ（CPU）。測るときは単独で何度も回した値ではなく、本物の操作の初回（冷えた状態）で測る。単独で測った塗りつぶしの走査が速く見えたのは、たまたま囲まれた小さな領域だったため（T-047 で一度取り違えた）。2x の塗りつぶしの合計は、ヘッドレスでは GPU の読み戻しとコピーが大半で、±20 ms ぶれる。
+- `fresh()` は dist/bookmarklet.txt から起動する。前の版でテストが落ちるかを確かめるときは、dist/paint.min.js と bookmarklet.txt の両方を差し替える（paint.min.js だけ替えて、前の版でも通ると一度取り違えた。T-055）。
+- 合成の PointerEvent の timeStamp は、`Object.defineProperty(e, 'timeStamp', { value })` で決められる（予測・速度のテストで、計測にかかる時間で速さが狂わない）。
 - テストで「ページの上にツールがかぶっていない」を見るときは、elementFromPoint が `PAINT-BOOKMARKLET` かどうかで判定する（下にあるのは本文の段落など、場所で変わる）。
 
 ## 検証の方法
@@ -138,6 +141,11 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - Artifact: https://claude.ai/artifact/Aj3XQxn6Q7EUaiHjYAFbve（インストールページ、非公開）。`docs/index.html` の本文だけの版
 
 ## 完了ログ（新しい順）
+
+### T-055 蛍光ペンの先端が「ぴょこぴょこ」するのを直す（必要な分だけ予測し、点と点を直線でつなぐ） — 2026-10-16
+- 変更: 蛍光ペンの先端の「ぴょこぴょこ」を直した。(1) 予測を「必要な分だけ」にした: 丸い先端は点より太さの半分（12px）先まで覆っているので、1 フレーム後のペン先に届かない分（速さ × 1 フレーム − 太さの半分）だけを、曲がりに沿って（向きを角速度で回して）予測する（needPred。蛍光ペンは実機の getPredictedEvents も使わず、自前の速度で決める）。ゆっくり〜ふつうの速さ（約 700 px/s まで）では予測しない。1 フレームの長さは tick で測る（120 Hz の画面なら短くなる）。(2) 蛍光ペンの線を、中点を結ぶ曲線から、点と点を直線でつなぐ形にした（未確定の末尾がなく、描いた所が後から変わらない。太い線なので角は見えない）。薄く描く（T-052）はやめ、開発用の切り替えは「必要な分だけ・なし・そのまま」にした（既定は必要な分だけ）。ペンは今まで通り。先端の消える画素と隙間を測る `npm run pop`（test/pop.mjs）を足した。README とインストールページに書いた。版を 1.22.0 にした。ユーザーの報告（チャット: ゆっくりでも予測がぴょこぴょこ出て、速いとその分もっと出る。薄くするのは効かなかった。動画を見られる AI と相談した仮説 3 つ付き）。
+- 確認: 入力ごとに見えている画素（live ∪ pred）を取り、前に見えていて消えた画素を数える道具で、仮説ごとに分けて測った（合成のイベントに 8 ms 刻みの timeStamp、整数の座標、±1.5 ms のぶれ）。消える画素/入力は、前の版でゆっくり 3.6・ふつう 4.7・速い円 37・速いジグザグ 31。予測なしなら末尾の曲線の引っ込みだけで 0.2〜1（仮説 2 は本当だが小さい）、ほぼ全部が予測（仮説 3）。曲がる予測だけでは円で 35 → 23 と一部。新しい版はゆっくり・ふつう 0、速い円 17・ジグザグ 18、16 ms 後のペン先と線の隙間は 0.6〜2px（予測なしは 12〜13px）。テストを 1 件足した（ゆっくり・ふつうの弧で消える画素が 0。前の版では 446・669 で落ちる）。予測線のテストを、既定（速いと伸ばす・ゆっくりは伸ばさない）・なし・そのままに直した。曲線と直線の蛍光ペンの線を 1x・2x のスクリーンショットで見比べた（同じに見える）。`npm test` 61 件が通過。`npm run bench` で悪化なし。
+- 残課題: 仮説 1（まとめた要素の opacity が低遅延の経路を外す）はヘッドレスでは測れない。ペンと蛍光ペンの描き方の違いは opacity だけなので、蛍光ペンの濃さを 100% にして比べると切り分けられる（ユーザーに試してもらう）。速いときの予測の外れ（17 画素/入力）は残る。
 
 ### T-054 明るい見た目で、選んでいるボタンにマウスを重ねると見えなくなる不具合を直す — 2026-10-16
 - 変更: 明るい見た目で、選んでいるボタン（青い地に白い印）にマウスを重ねたり押したりすると、地が薄い灰色になって白い印が見えなくなっていた。`.light .b:hover`（クラス 2 つ＋:hover）が `.b.on`（クラス 2 つ）より強く、地だけが上書きされていたため（暗い見た目では同じ強さで .b.on が後にあるので起きなかった）。選んでいるボタンは、重ねても押しても少し濃い青（#2f6bea）の地にした（色の丸 .c は除く）。ユーザーは印を黒くする案を出していたが、選んでいることが分かるように青い地のままにした。版は T-053 と同じ 1.21.1。ユーザーの報告（チャット、画像付き）。
@@ -184,12 +192,8 @@ npm run bench        # 性能計測（メインスレッドの占有時間）
 - 確認: 見た目のテスト 2 件の既定の値を 15px に合わせた（組み込みの既定がツールとページで一致することは、インストールページのテストで見ている）。インストールページのテストに、保存が差分だけであること・最初の状態に戻すと空になることを足し、全体を保存する元の処理ではこのテストが落ちることを確かめた。`npm test` 56 件が通過。
 - 残課題: 前にインストールページを開いたことがある人の保存は全体の形なので、古い 20px・72% が残る（既定と同じ値かどうか見分けられないので移し替えない。最初の状態に戻すかスライダーで直す）。
 
-### T-045 電卓の薄い答えまで点線の枠で囲み、答えの前後の空白を式の書き方に合わせる — 2026-10-16
-- 変更: 電卓の薄い答えが出ている間は、文字の入力欄の点線の枠が答えの右端まで広がる（Tab で書き込んでも枠の大きさは変わらず、答えが消えると元の幅に戻る）。答えの前後の空白を式の書き方に合わせた（`11+1` → `=12`、`11 + 1` → ` = 12`、`11+1=` → `12`、`11 + 1 =` → ` 12`。どちらとも言えない `11+ 1` は空白を入れる方、最後に自分で打った空白には重ねない）。それまでは式に関係なく「 = 12」だった。答えの位置は、見えない入力欄で行の幅を測るようにした（canvas の measureText では、書体によって「*」の組み方が入力欄と変わり、答えの前に 3px ほどの隙間が出ていた）。README に書いた。版を 1.19.2 にした。ユーザーの要望（チャット、画像付き。認識を確かめてから着手）。
-- 確認: 電卓のテストを新しい出方に合わせ、空白の場合分け 10 通り（全角の空白も）と、枠が答えを囲む・答えが消えると縮む・Tab の前後で枠の幅が同じ、を足した。枠を広げる処理と空白の切り替えを、それぞれ外すとテストが落ちることを確かめた。5 つの書き方の Tab の前後を 2x のスクリーンショットで確かめた。`npm test` 56 件が通過。
-- 残課題: なし。
-
 ### それより前（1 行に畳んだもの）
+- T-045 電卓の薄い答えまで点線の枠で囲み（ghostR）、答えの前後の空白を式の書き方に合わせた — 2026-10-16
 - T-044 塗りつぶしの 1px の膨張が画面の外へはみ出し、元に戻しても細い線が残っていたのを直した（膨張も画面の中に収める）— 2026-10-16
 - T-043 ツールバーの左端の移動つまみ（6 つの点）を外した — 2026-10-16
 - T-042 開発用に、ツールの中からツールバーの色（とガラス）を変えられるようにした（DEF.dev のときだけ「見た目（開発用）」）— 2026-10-16

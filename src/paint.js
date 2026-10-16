@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.18.0';
+  const VERSION = '1.19.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -125,7 +125,7 @@ canvas{position:absolute;left:0;top:0;pointer-events:none}
 .g,.p{position:absolute;inset:0}
 .p{pointer-events:auto;touch-action:none;cursor:crosshair}
 .pass .p{pointer-events:none}
-.bar{position:absolute;left:0;top:0;cursor:grab;display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:4px;max-width:calc(100% - 16px);box-sizing:border-box;background:#202228;border:1px solid #ffffff1f;border-radius:12px;box-shadow:0 6px 24px #0007;pointer-events:auto;touch-action:none;will-change:transform}
+.bar{position:absolute;left:0;top:0;cursor:grab;display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:4px;max-width:calc(100% - 16px);box-sizing:border-box;background:var(--bb,#202228);border:1px solid #ffffff1f;border-radius:12px;box-shadow:0 6px 24px #0007;pointer-events:auto;touch-action:none;will-change:transform}
 .b{all:unset;box-sizing:border-box;flex:none;width:30px;height:30px;display:grid;place-items:center;border-radius:8px;cursor:pointer;color:inherit}
 .bar.drag,.bar.drag *{cursor:grabbing}
 .b:hover{background:#ffffff1a}.b:active{background:#ffffff2e}
@@ -141,16 +141,16 @@ canvas{position:absolute;left:0;top:0;pointer-events:none}
 .gauss .bar::before{--gr:11px}.gauss .pn::before{--gr:9px}
 .gauss .bar::before,.gauss .pn::before{inset:calc(var(--gm) * -1);padding:var(--gm);border-radius:0;-webkit-mask:${GMASK};mask:${GMASK}}
 .light{color:#1d2026;color-scheme:light;--gc:250 250 252}
-.light .bar,.light .pn,.light .t,.light .hp{background:#fbfbfc;border-color:#0000001a;box-shadow:0 6px 24px #0003}
+.light .bar,.light .pn,.light .t,.light .hp{background:var(--bb,#fbfbfc);border-color:#0000001a;box-shadow:0 6px 24px #0003}
 .light.glass .bar,.light.glass .pn{background:none;border-color:#0000001f;box-shadow:0 6px 24px #0003,inset 0 1px 0 #ffffff99}
 .light .b:hover,.light .t button:hover{background:#0000000f}.light .b:active,.light .b.open:not(.on){background:#0000001c}
 .light .dot{box-shadow:0 0 0 1px #0000003a}.light .dot.er{box-shadow:inset 0 0 0 1.5px #1d2026}
 .light .mi kbd,.light .grip{color:#7b7f89}.light .mi .sw{background:#00000024}
-.light .c::before{box-shadow:inset 0 0 0 1px #00000026}.light .c.on::before{box-shadow:0 0 0 2px #fbfbfc,0 0 0 4px #1d2026}
+.light .c::before{box-shadow:inset 0 0 0 1px #00000026}.light .c.on::before{box-shadow:0 0 0 2px var(--bb,#fbfbfc),0 0 0 4px #1d2026}
 .light .sep{background:#0000001f}.light .r{color:#5c606b}.light .r output{color:#1d2026}
 .light .t button{color:#2f6bff}.light .t.act .tc{color:#5c606b}.light.bye .t::after{background:#2f6bff}
 .light .hp .hh{color:#5c606b}.light .hp h3{color:#000}.light .hp .hg>:nth-child(odd){color:#3a3e47}.light .hp kbd{border-color:#00000033;color:#1d2026}
-.pn{position:absolute;left:0;top:calc(100% + 6px);display:none;flex-direction:column;gap:2px;padding:4px;background:#202228;border:1px solid #ffffff1f;border-radius:10px;box-shadow:0 6px 24px #0007;pointer-events:auto}
+.pn{position:absolute;left:0;top:calc(100% + 6px);display:none;flex-direction:column;gap:2px;padding:4px;background:var(--bb,#202228);border:1px solid #ffffff1f;border-radius:10px;box-shadow:0 6px 24px #0007;pointer-events:auto}
 .pn.on{display:flex}.up .pn{top:auto;bottom:calc(100% + 6px)}
 .row{display:flex;align-items:center;gap:2px}
 .b.mi{width:auto;display:flex;justify-content:flex-start;gap:10px;padding:0 10px 0 6px;white-space:nowrap}
@@ -163,7 +163,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 .c{width:24px}
 .c::before{content:"";width:18px;height:18px;border-radius:50%;background:var(--c);box-shadow:inset 0 0 0 1px #ffffff59}
 .c.on{background:none}
-.c.on::before{box-shadow:0 0 0 2px #202228,0 0 0 4px #fff}
+.c.on::before{box-shadow:0 0 0 2px var(--bb,#202228),0 0 0 4px #fff}
 .cc::before{background:conic-gradient(#f44,#fd4,#4d4,#4dd,#44f,#d4d,#f44)}
 .sep{flex:none;width:1px;height:22px;margin:0 3px;background:#ffffff24}
 .r{display:flex;align-items:center;gap:8px;height:30px;padding:0 6px;color:#a9acb8}
@@ -171,7 +171,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 .r output{min-width:30px;color:#e8e9ee;font-variant-numeric:tabular-nums}
 .r.dis{opacity:.3;pointer-events:none}
 .ci{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;border:0;padding:0}
-.t{position:absolute;left:50%;bottom:28px;transform:translateX(-50%);padding:8px 14px;border-radius:8px;background:#202228;box-shadow:0 4px 16px #0007;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap}
+.t{position:absolute;left:50%;bottom:28px;transform:translateX(-50%);padding:8px 14px;border-radius:8px;background:var(--bb,#202228);box-shadow:0 4px 16px #0007;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap}
 .t.on{opacity:1}
 .t button{all:unset;display:none;margin:-4px -8px -4px 10px;padding:4px 8px;border-radius:6px;color:#8fb3ff;font-weight:600;cursor:pointer}
 .t button:hover{background:#ffffff1a}.t button:focus-visible{outline:2px solid #3d7cff}
@@ -183,7 +183,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 @keyframes bye{to{transform:scaleX(0)}}
 .bye>:not(.t),.hint>:not(.t){display:none}
 .tx{all:unset;position:absolute;box-sizing:content-box;padding:${TA_PAD}px;white-space:pre;overflow:hidden;resize:none;pointer-events:auto;cursor:text;color:var(--c);opacity:var(--a);caret-color:var(--c);font:600 var(--fs)/${LH} ${FONT};outline:1px dashed #3d7cffb0;outline-offset:${5 - TA_PAD}px;-webkit-user-select:text;user-select:text}
-.hp{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);box-sizing:border-box;width:min(680px,calc(100% - 32px));max-height:calc(100% - 32px);overflow:auto;padding:12px 18px 6px;background:#202228;border:1px solid #ffffff1f;border-radius:12px;box-shadow:0 6px 24px #0007;pointer-events:auto;font-size:12.5px;line-height:1.5;-webkit-user-select:text;user-select:text}
+.hp{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);box-sizing:border-box;width:min(680px,calc(100% - 32px));max-height:calc(100% - 32px);overflow:auto;padding:12px 18px 6px;background:var(--bb,#202228);border:1px solid #ffffff1f;border-radius:12px;box-shadow:0 6px 24px #0007;pointer-events:auto;font-size:12.5px;line-height:1.5;-webkit-user-select:text;user-select:text}
 .hp .hh{margin-bottom:8px;color:#a9acb8}.hp .hc{columns:2 270px;column-gap:28px}
 .hp section{break-inside:avoid;padding-bottom:10px}
 .hp h3{all:unset;display:block;margin-bottom:3px;font-weight:600;color:#fff}
@@ -283,18 +283,34 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const pickOnce = DEF.pickOnce === true;
   // 見た目（インストールページの設定）: 明るい（白に黒）と、ガラス風（半透明にして下をぼかす）。
   // ガラスの調整は開発用: ぼかし方（gauss は周りも拾う本物のガウス、plain は backdrop-filter そのまま）・強さ・地の濃さ
-  const light = DEF.theme === 'light', glass = DEF.glass === true;
-  const blurMode = DEF.blurMode === 'plain' ? 'plain' : 'gauss';
-  const blurPx = +DEF.blur >= 0 && +DEF.blur <= 40 ? +DEF.blur : 20, tint = +DEF.tint >= 30 && +DEF.tint <= 95 ? +DEF.tint : 72;
-  if (light) wrap.classList.add('light');
-  if (glass) {
-    wrap.classList.add('glass');
-    if (blurMode === 'gauss') wrap.classList.add('gauss');
-    const ws = wrap.style;
-    ws.setProperty('--gb', blurPx + 'px');
-    ws.setProperty('--gm', blurPx * 2 + 'px');
-    ws.setProperty('--gt', tint / 100);
+  // theme は 'dark'・'light'・'#rrggbb'（好きな色。明るさで文字を黒か白にする）。開発用の見た目のパネル（dev）からも変えられる
+  const look = {
+    theme: DEF.theme === 'light' || /^#[0-9a-f]{6}$/i.test(DEF.theme) ? DEF.theme.toLowerCase() : 'dark',
+    glass: DEF.glass === true,
+    blurMode: DEF.blurMode === 'plain' ? 'plain' : 'gauss',
+    blur: +DEF.blur >= 0 && +DEF.blur <= 40 ? +DEF.blur : 20,
+    tint: +DEF.tint >= 30 && +DEF.tint <= 95 ? +DEF.tint : 72,
+  };
+  const dev = DEF.dev === true;
+  function applyLook() {
+    const t = look.theme, ws = wrap.style, cl = wrap.classList;
+    let lite = t === 'light';
+    if (t[0] === '#') {
+      // 好きな色: 地と、ガラスの地に使う。文字は相対輝度で黒か白にする
+      const n = parseInt(t.slice(1), 16), c = [n >> 16, n >> 8 & 255, n & 255];
+      const L = c.map(v => (v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+      lite = 0.2126 * L[0] + 0.7152 * L[1] + 0.0722 * L[2] > 0.3;
+      ws.setProperty('--bb', t);
+      ws.setProperty('--gc', c.join(' '));
+    } else { ws.removeProperty('--bb'); ws.removeProperty('--gc'); }
+    cl.toggle('light', lite);
+    cl.toggle('glass', look.glass);
+    cl.toggle('gauss', look.glass && look.blurMode === 'gauss');
+    ws.setProperty('--gb', look.blur + 'px');
+    ws.setProperty('--gm', look.blur * 2 + 'px');
+    ws.setProperty('--gt', look.tint / 100);
   }
+  applyLook();
   let dpr = win.devicePixelRatio || 1, W = 0, H = 0, grpA = 1, pendingFit = false, rz = 0, warmT = 0;
   // 履歴タイル: ストロークが触れた T×T タイル（面の座標）だけを記録し、確定・undo・消しゴムの退避をその範囲に限定する。
   // 文書は大きいので、印は配列ではなく Set で持つ。番号は 行 × 65536 + 列
@@ -443,7 +459,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   styleP.append(pal);
   bar.append(ci);
 
-  const range = (label, title, lo, hi, fn) => {
+  const range = (label, title, lo, hi, fn, p = styleP) => {
     const w = el('label', 'r', { title });
     const s = el('span');
     s.textContent = label;
@@ -451,7 +467,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const o = el('output');
     r.addEventListener('input', () => fn(+r.value));
     w.append(s, r, o);
-    styleP.append(w);
+    p.append(w);
     return [w, r, o];
   };
   // 太さは二乗スケール（細い線を細かく調整できる）
@@ -495,11 +511,60 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const [fixB] = item('画面に固定 — スクロールしても絵が画面の同じ所に留まる（動画や地図の上に描くとき）', '画面に固定', '', I.pin, toggleFixed, true, true);
   // デフォルトの変更: インストールページの設定を新しいタブで開く。今のブックマークの既定（DEF）を渡して、フォームに読み込ませる。
   // 設定はこのページに集め、メニューの項目は増やさない
-  item('デフォルトの変更 — インストールページで、起動したときの色・太さ・動きを選ぶ（新しいタブ）', 'デフォルトの変更', '', I.prefs, () =>
-    win.open(PAGE + '#defaults=' + encodeURIComponent(JSON.stringify(DEF)), '_blank', 'noopener'));
+  const openDefaults = d => win.open(PAGE + '#defaults=' + encodeURIComponent(JSON.stringify(d)), '_blank', 'noopener');
+  item('デフォルトの変更 — インストールページで、起動したときの色・太さ・動きを選ぶ（新しいタブ）', 'デフォルトの変更', '', I.prefs, () => openDefaults(DEF));
+  // 見た目（開発用。インストールページの「開発用」を入れたときだけメニューに出す）: ツールバーの色とガラスをその場で変える。
+  // 気に入ったら、その見た目を持ってインストールページを開き、デフォルトにできる
+  const lookP = pnl();
+  const lookSw = (title, label, fn) => {
+    const b = btn(title, null, fn, 'mi');
+    const s = el('span');
+    s.textContent = label;
+    b.setAttribute('role', 'switch');
+    b.append(s, el('i', 'sw'));
+    return b;
+  };
+  const setLook = (k, v) => { look[k] = v; applyLook(); syncLook(); };
+  const lci = el('input', 'ci', { type: 'color', tabindex: '-1', 'aria-hidden': 'true' });
+  lci.addEventListener('input', () => setLook('theme', lci.value));
+  const themeBs = [['dark', '#202228', '暗い'], ['light', '#fbfbfc', '明るい']].map(([k, c, t]) => {
+    const b = btn(`ツールバーの色: ${t}`, null, () => setLook('theme', k), 'c');
+    b.style.setProperty('--c', c);
+    return b;
+  });
+  const lcB = btn('ツールバーの色: 好きな色', null, () => {
+    lci.value = look.theme[0] === '#' ? look.theme : '#3a4a5c';
+    try { lci.showPicker(); } catch (_) { lci.click(); }
+  }, 'c cc');
+  const glassSw = lookSw('ガラス風 — 半透明にして下をぼかす', 'ガラス風', () => setLook('glass', !look.glass));
+  const gaussSw = lookSw('ガウス — 周りも拾ってぼかす（切るとふつうの backdrop-filter）', 'ガウス', () => setLook('blurMode', look.blurMode === 'gauss' ? 'plain' : 'gauss'));
+  lookP.append(row(...themeBs, lcB), glassSw, gaussSw);
+  const [blurW, blurR, blurO] = range('ぼかし', 'ぼかしの強さ', 0, 40, v => setLook('blur', v), lookP);
+  const [tintW, tintR, tintO] = range('地', 'ガラスの地の濃さ', 30, 95, v => setLook('tint', v), lookP);
+  const toDefB = btn('この見た目をデフォルトにする — インストールページを開く（新しいタブ）', I.prefs, () => {
+    closePanel();
+    openDefaults({ ...DEF, theme: look.theme, glass: look.glass, blurMode: look.blurMode, blur: look.blur, tint: look.tint });
+  }, 'mi');
+  const toDefL = el('span');
+  toDefL.textContent = 'この見た目をデフォルトに';
+  toDefB.append(toDefL);
+  lookP.append(toDefB);
+  function syncLook() {
+    const t = look.theme;
+    themeBs[0].classList.toggle('on', t === 'dark');
+    themeBs[1].classList.toggle('on', t === 'light');
+    lcB.classList.toggle('on', t[0] === '#');
+    if (t[0] === '#') lcB.style.setProperty('--c', t); else lcB.style.removeProperty('--c');
+    glassSw.setAttribute('aria-checked', look.glass);
+    gaussSw.setAttribute('aria-checked', look.blurMode === 'gauss');
+    for (const w of [gaussSw, blurW, tintW]) w.classList.toggle('dis', !look.glass);
+    blurR.value = look.blur; blurO.value = look.blur + 'px';
+    tintR.value = look.tint; tintO.value = look.tint + '%';
+  }
+  if (dev) item('見た目（開発用） — ツールバーの色やガラスをその場で変える', '見た目（開発用）', '', I.bg, () => openPanel(lookP, moreB));
   bar.append(undoB, redoB, sep(), passB, moreB, sep(),
     btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hideHint), btn('閉じる（8 秒間は元に戻せます）', I.close, close),
-    shapeP, penP, styleP, moreP);
+    shapeP, penP, styleP, moreP, lookP, lci);
 
   // パネルは 1 つだけ開く。描き始め・パネルの外を押す・Esc で閉じる。
   // 開いていなければ pointerdown ごとの仕事は比較 1 回だけ（入力のホットパスには触れない）
@@ -2544,12 +2609,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const stats = () => ({
     width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, selection: sel ? [selX, selY, selW, selH] : null, texts: tlist.length, fixed, history: hist.length, historyPixels: hpix, events: nEv, points: nPts,
     desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, nativePrediction: nativePred, inkTrail: !!inkP,
-    prefs: { ...snapPrefs(), bar: [barX, barY], touchText, pickOnce, glass, theme: light ? 'light' : 'dark', blurMode, blur: blurPx, tint },
+    prefs: { ...snapPrefs(), bar: [barX, barY], touchText, pickOnce, dev, ...look },
   });
   win[NS] = { version: VERSION, toggle, show, hide, close, destroy, undo, redo, clear: clearAll, tool: setTool, color: setColor, stats, pixels };
   setColor(color);
   syncPen();
   syncFixed();
+  syncLook();
   syncCalc();
   syncTool(false);
   syncHist();

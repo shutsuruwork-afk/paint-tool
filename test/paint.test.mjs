@@ -271,6 +271,53 @@ test('見た目: 明るい（白に黒）とガラス風（既定はガウス）
   await ip.close();
 });
 
+test('見た目（開発用）: インストールページの開発用を入れるとメニューに出て、ツールバーの色（暗い・明るい・好きな色）とガラスをその場で変えられ、その見た目をデフォルトにできる', async () => {
+  const st = page => shadowEval(page, root => {
+    const w = root.querySelector('.w');
+    return { cls: ['light', 'glass', 'gauss'].filter(c => w.classList.contains(c)).join(' '), bar: getComputedStyle(root.querySelector('.bar')).backgroundColor, gb: w.style.getPropertyValue('--gb'), color: getComputedStyle(w).color };
+  });
+  const hasItem = page => shadowEval(page, root => !!root.querySelector('[aria-label^="見た目"]'));
+  // 開発用を入れていなければ、メニューに出ない
+  const { page, errors } = await fresh();
+  assert.equal(await hasItem(page), false);
+  await page.evaluate(() => window.__paintBookmarklet.destroy());
+  await runCode(page, withDefaults(CODE, { dev: true }));
+  assert.equal(await hasItem(page), true);
+  await mouseClick(page, '[aria-label^="その他"]');
+  await mouseClick(page, '.pn.on [aria-label^="見た目"]');
+  assert.equal(await openPanels(page), 1);
+  // 明るい → ガラス風（ガウス）→ ぼかしを 8px
+  await mouseClick(page, '.pn.on [aria-label="ツールバーの色: 明るい"]');
+  assert.deepEqual(await st(page), { cls: 'light', bar: 'rgb(251, 251, 252)', gb: '20px', color: 'rgb(29, 32, 38)' });
+  await mouseClick(page, '.pn.on [aria-label^="ガラス風"]');
+  assert.equal((await st(page)).cls, 'light glass gauss');
+  await shadowEval(page, root => { const r = [...root.querySelectorAll('.pn.on .r input')][0]; r.value = 8; r.dispatchEvent(new Event('input')); });
+  assert.equal((await st(page)).gb, '8px');
+  // 好きな色: 濃い色なら白い文字、明るい色なら黒い文字
+  const pick = c => shadowEval(page, (root, c) => { const i = root.querySelectorAll('.bar > input.ci')[1]; i.value = c; i.dispatchEvent(new Event('input')); }, c);
+  await mouseClick(page, '.pn.on [aria-label^="ガラス風"]');
+  await pick('#123456');
+  assert.deepEqual(await st(page), { cls: '', bar: 'rgb(18, 52, 86)', gb: '8px', color: 'rgb(232, 233, 238)' });
+  await pick('#ffd54f');
+  assert.deepEqual(await st(page), { cls: 'light', bar: 'rgb(255, 213, 79)', gb: '8px', color: 'rgb(29, 32, 38)' });
+  assert.equal((await prefs(page)).theme, '#ffd54f');
+  // この見た目をデフォルトに: 見た目を持ってインストールページを開く
+  await page.evaluate(() => { window.__opened = []; window.open = (...a) => { window.__opened.push(a); return null; }; });
+  await mouseClick(page, '.pn.on [aria-label^="この見た目をデフォルトに"]');
+  const [url] = (await page.evaluate(() => window.__opened))[0];
+  const d = JSON.parse(decodeURIComponent(url.slice(url.indexOf('#defaults=') + 10)));
+  assert.deepEqual([d.dev, d.theme, d.glass, d.blur], [true, '#ffd54f', false, 8]);
+  const { page: ip, errors: ie } = await openPage(browser, server.base + '/install' + url.slice(url.indexOf('#')));
+  assert.equal(await ip.isChecked('#p-theme input[value="custom"]'), true);
+  assert.equal(await ip.inputValue('#p-tcolor'), '#ffd54f');
+  assert.equal(await ip.inputValue('#p-blur'), '8');
+  assert.equal(await ip.isChecked('#p-dev'), true);
+  assert.deepEqual(ie, []);
+  await ip.close();
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('ペンと図形の選択肢: 既定はどちらも、選んでいないときは押すとその道具になるだけで、もう一度押すと出る。インストールページで 1 回押しにできる', async () => {
   const { page, errors } = await fresh();
   const check = async (once) => {
@@ -887,6 +934,7 @@ test('インストールページで選んだ設定入りのブックマーク�
   assert.equal(p0.blurMode, await page.evaluate(() => document.querySelector('#p-mode input:checked').value));
   assert.equal(String(p0.blur), await page.inputValue('#p-blur'));
   assert.equal(String(p0.tint), await page.inputValue('#p-tint'));
+  assert.equal(p0.dev, await page.isChecked('#p-dev'));
   await page.evaluate(() => window.__paintBookmarklet.destroy());
   // 選ぶと、ボタンの中身が変わる
   await page.click('[aria-label="色 7"]');

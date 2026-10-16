@@ -237,6 +237,7 @@ section > .sub + .sub { margin-top: 20px; }
 .choices { display: flex; flex-wrap: wrap; gap: 8px 18px; }
 .choices label, .check { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
 .choices input, .check input { accent-color: var(--red); width: 18px; height: 18px; margin: 0; flex: none; }
+.choices input[type=color] { width: 40px; height: 26px; padding: 0 2px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); cursor: pointer; }
 .check { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 /* 入り・切りはスイッチの形にする（チェックボックスのまま見た目だけ。ツールのメニューのスイッチと同じ形） */
 .check input[role=switch] { order: 2; appearance: none; -webkit-appearance: none; position: relative; width: 42px; height: 24px; margin: 0.15em 0 0; border-radius: 12px; background: var(--line); cursor: pointer; transition: background .15s; }
@@ -252,7 +253,7 @@ section > .sub + .sub { margin-top: 20px; }
 
 <main class="page">
   <header>
-    <p class="eyebrow">Bookmarklet · v1.18.0 · %%SIZE%%（gzip %%GZIP%%）</p>
+    <p class="eyebrow">Bookmarklet · v1.19.0 · %%SIZE%%（gzip %%GZIP%%）</p>
     <h1>ペイント<br>ブックマークレット</h1>
     <p class="lead">開いているページの上に、<span class="mark">そのまま描ける<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d="M18 40C8 22 52 6 108 7s92 13 84 30-62 20-112 17S4 38 30 16" vector-effect="non-scaling-stroke"/></svg></span>ペイントツールです。ブックマークを押すだけで起動し、拡張機能もアカウントも要りません。入力から線が画面に出るまでの遅延を減らす仕組みを、ブラウザが対応している限りすべて使います。</p>
     <div class="actions">
@@ -324,6 +325,7 @@ section > .sub + .sub { margin-top: 20px; }
         <div class="choices" id="p-theme" role="radiogroup" aria-label="ツールバーの色">
           <label><input type="radio" name="theme" value="dark">暗い（黒地に白）</label>
           <label><input type="radio" name="theme" value="light">明るい（白地に黒）</label>
+          <label><input type="radio" name="theme" value="custom">好きな色 <input type="color" id="p-tcolor" value="#3a4a5c" aria-label="ツールバーの好きな色"></label>
         </div>
         <label class="check"><span class="ct"><b>ガラス風のツールバー</b><small>ツールバーとパネルを半透明にして、下のページをぼかして見せます。「このページで試す」ですぐに見比べられます。</small></span><input type="checkbox" role="switch" id="p-glass"></label>
         <div class="gdev" id="p-gdev">
@@ -343,6 +345,10 @@ section > .sub + .sub { margin-top: 20px; }
         <label class="check"><span class="ct"><b>文字に触れる</b><small>ペンなどを選んでいても、文字を押すと選んで動かせ、もう一度押すと書き直せます。切ると、文字の上からでもペンで描けます。</small></span><input type="checkbox" role="switch" id="p-touch"></label>
         <label class="check"><span class="ct"><b>ペンと図形の選択肢を 1 回で出す</b><small>入りにすると、ペンや図形のボタンを 1 回押すだけで種類（ペンの種類・4 つの図形）を選べます。切ると、選んでいるボタンをもう一度押したときに出ます。</small></span><input type="checkbox" role="switch" id="p-once"></label>
         <label class="check"><span class="ct"><b>電卓</b><small>文字に計算式（12×3 など）を書くと、答えを薄く出して Tab で書き込めます。ツールの「その他」でも切り替えられます。</small></span><input type="checkbox" role="switch" id="p-calc"></label>
+      </fieldset>
+      <fieldset>
+        <legend>開発用</legend>
+        <label class="check"><span class="ct"><b>見た目の調整をツールの中に出す</b><small>その他（⋯）に「見た目（開発用）」が出て、ツールバーの色（暗い・明るい・好きな色）とガラスをその場で変えられます。気に入ったら「この見た目をデフォルトに」で、このページに持ってこられます。</small></span><input type="checkbox" role="switch" id="p-dev"></label>
       </fieldset>
       <div class="prefs-foot">
         <button type="button" id="p-reset" class="btn">最初の状態に戻す</button>
@@ -462,7 +468,7 @@ function runPaint() {%%INLINE_CODE%%}
   // ---- デフォルトの設定: 選んだ既定をブックマークレットのコードに埋め込む ----
   // 組み込みの既定（src/paint.js の PALETTE と CFG に合わせる。テストで一致を確かめている）
   const PALETTE = ['#111111', '#ffffff', '#e53935', '#fb8c00', '#fdd835', '#43a047', '#1e88e5', '#8e24aa'];
-  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 4, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: false, pickOnce: false, glass: false, theme: 'dark', blurMode: 'gauss', blur: 20, tint: 72 };
+  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 4, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: false, pickOnce: false, glass: false, theme: 'dark', blurMode: 'gauss', blur: 20, tint: 72, dev: false };
   const BASE = bm.getAttribute('href'); // 既定の入っていないブックマークレット
   const KEY = 'paint-defaults';
   const $ = id => document.getElementById(id);
@@ -504,7 +510,8 @@ function runPaint() {%%INLINE_CODE%%}
       if (typeof v.calc === 'boolean') d.calc = v.calc;
       if (typeof v.pickOnce === 'boolean') d.pickOnce = v.pickOnce;
       if (typeof v.glass === 'boolean') d.glass = v.glass;
-      if (v.theme === 'light' || v.theme === 'dark') d.theme = v.theme;
+      if (v.theme === 'light' || v.theme === 'dark' || /^#[0-9a-f]{6}$/i.test(v.theme)) d.theme = v.theme.toLowerCase();
+      if (typeof v.dev === 'boolean') d.dev = v.dev;
       if (v.blurMode === 'gauss' || v.blurMode === 'plain') d.blurMode = v.blurMode;
       if (+v.blur >= 0 && +v.blur <= 40) d.blur = +v.blur;
       if (+v.tint >= 30 && +v.tint <= 95) d.tint = +v.tint;
@@ -521,7 +528,7 @@ function runPaint() {%%INLINE_CODE%%}
     if (c.touchText !== BUILTIN.touchText) o.touchText = c.touchText;
     if (c.calc !== BUILTIN.calc) o.calc = c.calc;
     if (c.pickOnce !== BUILTIN.pickOnce) o.pickOnce = c.pickOnce;
-    for (const k of ['glass', 'theme', 'blurMode', 'blur', 'tint']) if (c[k] !== BUILTIN[k]) o[k] = c[k];
+    for (const k of ['glass', 'theme', 'blurMode', 'blur', 'tint', 'dev']) if (c[k] !== BUILTIN[k]) o[k] = c[k];
     return o;
   }
   const enc = s => s.replace(/[%#\s"]/g, ch => encodeURIComponent(ch));
@@ -539,7 +546,9 @@ function runPaint() {%%INLINE_CODE%%}
     $('p-calc').checked = cur.calc;
     $('p-once').checked = cur.pickOnce;
     $('p-glass').checked = cur.glass;
-    for (const r of document.querySelectorAll('#p-theme input')) r.checked = r.value === cur.theme;
+    for (const r of document.querySelectorAll('#p-theme input[type=radio]')) r.checked = r.value === (cur.theme[0] === '#' ? 'custom' : cur.theme);
+    if (cur.theme[0] === '#') $('p-tcolor').value = cur.theme;
+    $('p-dev').checked = cur.dev;
     for (const r of document.querySelectorAll('#p-mode input')) r.checked = r.value === cur.blurMode;
     for (const k of ['blur', 'tint']) { const r = $('p-' + k); r.value = cur[k]; r.nextElementSibling.value = k === 'tint' ? cur[k] + '%' : cur[k] + 'px'; }
     $('p-gdev').classList.toggle('off', !cur.glass);
@@ -560,7 +569,9 @@ function runPaint() {%%INLINE_CODE%%}
   $('p-calc').addEventListener('change', e => { cur.calc = e.target.checked; update(); });
   $('p-once').addEventListener('change', e => { cur.pickOnce = e.target.checked; update(); });
   $('p-glass').addEventListener('change', e => { cur.glass = e.target.checked; update(); });
-  $('p-theme').addEventListener('change', e => { cur.theme = e.target.value; update(); });
+  $('p-theme').addEventListener('change', e => { if (e.target.name === 'theme') { cur.theme = e.target.value === 'custom' ? $('p-tcolor').value : e.target.value; update(); } });
+  $('p-tcolor').addEventListener('input', e => { cur.theme = e.target.value.toLowerCase(); update(); });
+  $('p-dev').addEventListener('change', e => { cur.dev = e.target.checked; update(); });
   $('p-mode').addEventListener('change', e => { cur.blurMode = e.target.value; update(); });
   for (const k of ['blur', 'tint']) $('p-' + k).addEventListener('input', e => { cur[k] = +e.target.value; update(); });
   $('p-reset').addEventListener('click', () => { cur = JSON.parse(JSON.stringify(BUILTIN)); update(); });

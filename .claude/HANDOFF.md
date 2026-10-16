@@ -4,11 +4,11 @@
 
 ## 現在地
 
-- 最終更新: 2026-10-16、T-079 の完了時
-- **このブランチ（`research/simple`）は研究用のフォーク**: 本家（main、v1.27.0 の T-070 まで）から分けた「シンプル版」。開いたときに見える UI を少なくする（T-071〜T-078）。段階をチェックポイントとして残す（T-078。CP1 はブランチ `research/simple-cp1`〈0ed4b63。手元のタグ cp1 はプロキシがタグのプッシュを拒むので GitHub にはない〉、CP2 が今の既定）。コードは必要以上に削らない（ユーザーの方針）。main には取り込まず、Pages にも出ない（Pages は main だけ）。T-071〜T-079 の番号はこのブランチで使った（main で次のタスクを作るときは T-080 から）
+- 最終更新: 2026-10-16、T-080 の完了時
+- **このブランチ（`research/simple`）は研究用のフォーク**: 本家（main、v1.27.0 の T-070 まで）から分けた「シンプル版」。開いたときに見える UI を少なくする（T-071〜T-078）。段階をチェックポイントとして残す。CP2 と同じ画面の最小構成のコード `src/paint-min.js` もある（T-080）（T-078。CP1 はブランチ `research/simple-cp1`〈0ed4b63。手元のタグ cp1 はプロキシがタグのプッシュを拒むので GitHub にはない〉、CP2 が今の既定）。コードは必要以上に削らない（ユーザーの方針）。main には取り込まず、Pages にも出ない（Pages は main だけ）。T-071〜T-080 の番号はこのブランチで使った（main で次のタスクを作るときは T-081 から）
 - ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない。HEAD は T-070 のコミット（`git log --grep T-070`）
 - CI: GitHub Actions「Pages」は main へのプッシュごとに test → deploy。T-069 の run（38903117452）まで test・deploy とも成功。T-070 のプッシュの結果は Actions で確かめる
-- 公開: 本家は https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）。シンプル版（このブランチ）は Pages に出ず、Artifact https://claude.ai/artifact/QwgKqQ53neYRYvs6RwZDUi （非公開、版 v1.28.0-simple.9）だけ。更新は `node build.mjs --page <scratchpad>/paint-simple.html` で作って公開
+- 公開: 本家は https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）。シンプル版（このブランチ）は Pages に出ず、Artifact https://claude.ai/artifact/QwgKqQ53neYRYvs6RwZDUi （非公開、版 v1.28.0-simple.10。最小構成は 1.28.0-simple.10-min）だけ。更新は `node build.mjs --page <scratchpad>/paint-simple.html` で作って公開
 - 人の操作待ち: R-006（実際に書いた線の入力を録って JSON を送ってもらう。T-060 がこれ待ち）。R-004 は C に決まった（インストールページの既定＋サイトごとに覚える）
 - 次の一手: R-006 の録画が届いたら T-060 を進める（`npm run predict -- <file>` で、予測なし・Chrome の予測・直線の外挿の、8〜33 ms 先のペン先とのずれを比べる。そこへ新しい予測〈曲がりや加速を考える、Kalman など〉を足して比べ、良い物を本体に取り込む）。録る機能は T-070 で作った（開発用の「入力を録る」「録った入力を書き出す」）。白いガラスの既定（T-050・T-069）も使ってみてもらう。効率と中身の改善は、トレードオフがあれば先にユーザーに確認する（履歴のメモリ上限・全消去の後のタイルの解放・塗りつぶしを画面の外まで広げる、は今のままでよいと回答済み）。残りの候補は T-018・T-013・T-031・T-020（T-011・T-017 は後回し）
 
@@ -16,7 +16,7 @@
 
 ```sh
 npm install          # terser 5.36.0 と playwright 1.56.1（ブラウザは /opt/pw-browsers にある）
-npm test             # ビルドしてから Playwright のテスト 31 件（シンプル版に絞った。T-074）
+npm test             # ビルドしてから Playwright のテスト 39 件（本体 31 件〈シンプル版に絞った。T-074〉＋最小構成 8 件〈test/min.test.mjs。T-080〉）
 npm run bench        # 性能計測（メインスレッドの占有時間）
 npm run pop          # 蛍光ペンの先端の消える画素（ぴょこぴょこ）と、1〜2 フレーム後のペン先との隙間（T-055）
 npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、何 ms か先のペン先と各予測のずれを比べる（T-060）
@@ -36,8 +36,9 @@ npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、何 m
   - 入力の録画（開発用。toggleRec / recStart / recEv / recRow / recStop / recExport。onDown〈ペン・蛍光ペンのとき〉・onMove の先頭・tick・stopStroke から呼ぶ。行は [種類, 時刻, x, y, 筆圧, 処理した時刻] を Float64Array に。書き出しは download で JSON。T-070）
   - タイル（markBox / markSeg / markCurve / markShape / tileRects / resetTiles）。印は面の座標で Set に付ける
   - お知らせ（`say(msg, ms, act, fn, xfn, inl)`。fn を渡すとボタン付き、xfn を渡すと × 付き、inl ならボタンを文の続きに置く）、塗りつぶし（floodFill → maskClear / maskColor → scanFill。画面に何も描いていなければ全体の矩形を 1 つ）、選択（settle / showSel / liftSel → liftRaster + beginSel / dropSel / paintSel / selHit / selHover / selDown / selMove / scaleSel / selUp / selAbort / pickSel / nudgeSel。浮かせた画素は selC、選んだ文字の物の組は selT、どちらも入れ物 selIn に入れて transform で拡大縮小。枠は selEl と selB）、文字（物: tlist / tNew / tSnap / tApply / swapText / textHit / paintText（書き出し用）/ eraseText・showErased・takeErased（消しゴム）。入力: textAt / editText / styleTa / fitTa / commitText。電卓: updateGhost（fitTa も呼ぶ）/ lineW / acceptGhost / calcLine（薄い答えは ghostEl、右端は ghostR）。入力欄は `ta`、書き直し中の物は `taObj`）、書き出し（capture / exportBlob / save / copyImg / pixels）、HUD（D キー）、操作の一覧（HELP / openHelp / closeHelp。? キー）、キーボード（onKey）、設定（applyPrefs / snapPrefs / remember → savePrefs / loadSite / placeBar。DEF ＋ サイトの保存）、表示制御（show / hide / hideHint → endHint / toggle / close → endBye / reopen / onByeKey、destroy）、起動
+- `src/paint-min.js`（T-080）: 最小構成。チェックポイント 2 の画面にある機能だけ（ペン ⇄ 消しゴム・文字〈電卓はいつも入り、文字の道具で押すと書き直し〉・元に戻す・その他〈全消去・閉じる・8 色〉・隠す・ツールバーを引いて動かす・2 本指スクロール）。低遅延の仕組み（desynchronized・coalesced・rawupdate・予測・Ink Trail・受け渡し）、面のタイル、履歴、消しゴムのコピーオンライト、パームリジェクション、筆圧は本体と同じ。外した物: キー（文字の入力欄の Esc・Tab・Ctrl+Enter だけ）、右クリック・ペンの消しゴム側、やり直す、選択・蛍光ペン・図形・塗りつぶし・半透明・ペンの種類・画面に固定・背景・保存・コピー・スポイト・ページ操作・操作の一覧・HUD・録画・見た目の切り替え（白いガラスに固定）・DEF とサイトの記憶。API は version / toggle / show / hide / close / destroy / undo / clear / tool / color / stats / pixels（pixels は線だけで文字は含まない）。本体の変更を最小構成にも入れるかは、その都度決める（自動ではそろわない）
 - `src/install.html`: インストールページのテンプレート（本文のみ）。並びは T-039 で、見出し（Paint ボタン・試す・目次）→ 入れ方 → 試し書き → デフォルトの設定（id="defaults"、動きはスイッチ）→ 使い方（機能の説明と操作の一覧 %%HELP%%）→ できないこと → 仕組みと計測（仕組み・低遅延機能の表・計測の表）にした。機能の説明は「使い方」に、技術の説明は「仕組みと計測」に分ける。`%%BOOKMARKLET_HREF%%` などを build.mjs が置き換える。「デフォルトの設定」のフォームは、選んだ既定（組み込みの既定との差分）を JSON にして、ボタンの href の `'__PAINT_DEFAULTS__'` を置き換える。フォームの状態はインストールページ自身の localStorage（`paint-defaults`）に、組み込みの既定との差分だけを残す（T-046。それより前に保存した人は全体の形のまま）。組み込みの既定（BUILTIN と PALETTE）は src/paint.js と手で合わせる（テストで一致を確かめている）
-- `build.mjs`: src/paint.js の HELP（`/*HELP*/` の間の JSON）を読んで、インストールページの `%%HELP%%` にショートカットの一覧を書き出す。terser で圧縮し、`dist/paint.min.js`、`dist/bookmarklet.txt`、`docs/index.html` を作る。「このページで試す」用の埋め込み版は、既定の目印を `window.__paintBookmarkletDefaults` を読む式に変える（eval を使わない）。目印が 1 つだけあることも確かめる。インストールページのボタンの href がブックマークレットと一致するかを、書き出す前に確かめる
+- `build.mjs`: src/paint-min.js も同じ terser の設定で圧縮し、`dist/paint-min.min.js`・`dist/bookmarklet-min.txt` を作る。インストールページには、隠したリンク `#bm-min`（%%MIN_HREF%%）と `runPaintMin`（%%INLINE_MIN%%）で入れる（href の検査は本体か最小構成のどちらかと一致すること）。src/paint.js の HELP（`/*HELP*/` の間の JSON）を読んで、インストールページの `%%HELP%%` にショートカットの一覧を書き出す。terser で圧縮し、`dist/paint.min.js`、`dist/bookmarklet.txt`、`docs/index.html` を作る。「このページで試す」用の埋め込み版は、既定の目印を `window.__paintBookmarkletDefaults` を読む式に変える（eval を使わない）。目印が 1 つだけあることも確かめる。インストールページのボタンの href がブックマークレットと一致するかを、書き出す前に確かめる
 - `test/paint.test.mjs`（テスト 31 件。このブランチで絞った）、`test/helpers.mjs`（既定を埋め込んだコードを作る `withDefaults` と直接起動する `runCode`、サーバー〈`/install` はビルドしたインストールページ〉〈`/long` は縦 3000px、`/offset` は html に余白〉・起動・画素の読み取り `readMain` / `screenPixel`・`scrollTo`）、`test/bench.mjs`、`test/pop.mjs`（npm run pop）、`test/predict.mjs`（npm run predict。録った入力を読んで、線ごとの点とフレームの間隔・処理の遅れと、H ms 先のペン先と予測なし・Chrome・直線のずれを出す。analyze を export している）
 - `.github/workflows/pages.yml`: main へのプッシュでテストしてから docs/ を Pages に公開。PR ではテストだけ
 - `.claude/`: CLAUDE.md（概要と読み込み）、`rules/`（tasks / handoff / human）、TASKS.md、HANDOFF.md、Stop フック（`hooks/check-handoff.mjs`）
@@ -66,7 +67,7 @@ npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、何 m
 
 ## 決定事項と理由
 
-- チェックポイント（T-078、ユーザー: これをチェックポイント 1 にしよう。チェックポイントごとに比較できるように登録ページを調整して）: 段階ごとの違いは DEF.cp（1 か 2。既定は最新の 2）で切り替える 1 つのコードにした（版ごとに別のブックマークレットを作る案より、インストールページと試すが簡単なため。CP1 のコードの形そのものはブランチ `research/simple-cp1` に残した）。`cp` は fullBar のとき 0。インストールページは見出しの下のラジオで選び、Paint ボタンの名前が「Paint CP1」「Paint CP2」（fullBar なら「Paint 本家」）に変わる（ブックマークの名前になるので並べて入れられる）。「このページで試す」は、動いているツールと cp が違えば destroy してから起動し直す。CP2（ユーザーの指定）: バーはペン（消しゴムと入れ替わる）・文字・元に戻す・その他・隠す。電卓はいつも入り（applyPrefs の後で calc = true。インストールページの電卓のスイッチは入りで押せない）。その他は全消去・閉じる・色（PALETTE の 8 色を 1 列。mcBtns。選ぶとメニューを閉じ、消しゴムならペンに戻す。T-079 で閉じるの後へ）。新しいチェックポイントを足すときは、cp の値と CP_DESC（インストールページ）を足し、前のチェックポイントの形を変えない
+- チェックポイント（T-078、ユーザー: これをチェックポイント 1 にしよう。チェックポイントごとに比較できるように登録ページを調整して）: 段階ごとの違いは DEF.cp（1 か 2。既定は最新の 2）で切り替える 1 つのコードにした（版ごとに別のブックマークレットを作る案より、インストールページと試すが簡単なため。CP1 のコードの形そのものはブランチ `research/simple-cp1` に残した）。`cp` は fullBar のとき 0。インストールページは見出しの下のラジオで選び、Paint ボタンの名前が「Paint CP1」「Paint CP2」（fullBar なら「Paint 本家」）に変わる（ブックマークの名前になるので並べて入れられる）。「このページで試す」は、動いているツールと cp が違えば destroy してから起動し直す。インストールページの選択には「2（最小構成のコード）」（cur.cp = 'min'）もあり、選ぶとボタンが `#bm-min` の href と「Paint CP2 最小」になる（既定の設定は受け取らない）。「このページで試す」は version の末尾 -min で本体と見分けて起動し直す。CP2（ユーザーの指定）: バーはペン（消しゴムと入れ替わる）・文字・元に戻す・その他・隠す。電卓はいつも入り（applyPrefs の後で calc = true。インストールページの電卓のスイッチは入りで押せない）。その他は全消去・閉じる・色（PALETTE の 8 色を 1 列。mcBtns。選ぶとメニューを閉じ、消しゴムならペンに戻す。T-079 で閉じるの後へ）。新しいチェックポイントを足すときは、cp の値と CP_DESC（インストールページ）を足し、前のチェックポイントの形を変えない
 - シンプル版（T-071、research/simple。ユーザー: 開いた時に見る UI をシンプルに。コードは必要以上に削らなくてよい）: ツールバーにはペン・元に戻す・その他（⋯）・隠す（−）だけを並べる（色と太さのボタンは T-074、消しゴムのボタンは T-076 で外した。ペンの太さの既定は 6。本家は 4）。お知らせは押せるボタンの付いた物（隠した後の「再表示」と閉じた後の「元に戻す」）だけを出す（T-074。say() の先頭で fn のない物を捨てる）。スマホでは 2 本指でスクロールする（T-074。twoDown / twoMove / twoUp を pad の onDown などより先に登録し、タッチが 2 本になったら描き始めた線を abortStroke で捨てて、2 本の中点の動きで scrollBy。2 本とも離すまで描かない。scroll / wheel のリスナーは今も登録しない）。ほかのボタン（選択・蛍光ペン・図形・文字・塗りつぶし・やり直す・ページ操作）も作るがバーには入れない（ショートカットは今まで通り効く）。その他のメニューは全消去と閉じる（×）だけ（T-072、ユーザーが画像で示した。開発用を入れていても同じ）。ほかの項目（背景・保存・コピー・電卓・画面に固定・デフォルトの変更・開発用）も item() で作ってから moreP から外す（キーは効く）。インストールページの開発用「ツールバーにすべてのボタンを出す（本家と同じ）」（DEF.fullBar、既定は切り）で本家のバーとメニューに戻せる（見比べるため。入力の録画など開発用の項目もこのときだけ出る）。ペンのボタン 1 つで、押すたびにペンと消しゴムが入れ替わる。印（penD）と名前も今の道具に変える（markPen。syncTool・togglePass・syncPen から呼ぶ。E キーで消しゴムにしても変わる）（T-076、ユーザーの要望: ペン一ボタンでマークごと切り替わる感じ。経緯は T-073 で 2 回押しをページ操作にし、T-075 でペン → 消しゴムにしたが、意図は 1 つのボタンでの切り替えだった）。ページ操作モードはない（T-077、ユーザー: いらない。V キーも fullBar のときだけ効く。操作の一覧の V の行は 3 つ目を 'full' にして、ツールでは fullBar のときだけ出し、build.mjs はインストールページに出さない）。種類のパネルは出さない（パネルの印 .dd も付けない）ので、シンプル版ではペンの種類を選べない。すべてのボタンやメニューを使う既存のテストは fullBar で起動する（freshFull）。何を残すか（予測線など）は「後で、すぐに決めることではない」とユーザーが言ったので、今は UI だけ
 
 - 絵はページに貼り付ける（T-003、ideas/scroll-follow.md の方式 B）。確定した絵はページ座標の canvas タイル（面）に描き、スクロールはブラウザの合成に任せる。ページ全体の大きさのキャンバス 1 枚（方式 A）は長いページでメモリと上限に当たり、スクロールのたびに JS で動かす方式（C）は絵が 1 フレーム以上遅れるので捨てた。
@@ -111,6 +112,8 @@ npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、何 m
 
 ## 落とし穴
 
+- terser 5.36（build.mjs の設定、mangle の toplevel）は、src/paint-min.js の onDown で `const x = …, y = …` を文字の分岐（return する）より前に置くと、その宣言を落として「x is not defined」になった（圧縮前・mangle なしでは動く）。x, y は分岐の後で求める形にした。最小構成のテストは圧縮後のコード（dist）で動かすので、こういう壊れ方は `npm test` で分かる
+
 - テストは 1 件ごとに別のブラウザのコンテキストなので、ツールが書く localStorage はテストの間で漏れない（`browser.newPage()` が新しいコンテキストを作る）。
 - build.mjs のテンプレートの置き換えは、置き換え後の文字列を必ず関数で渡す。`replaceAll(目印, 文字列)` だと、コードの中の `$&` などが特殊な記号として解釈される。圧縮で変数名が `$` になった T-010（v1.5.0）から T-022（v1.7.0）まで、インストールページのボタンの中身が壊れていた（T-023 で修正）。テストは dist/bookmarklet.txt を使っていたので気づかなかった。今はビルドとテストの両方で、ボタンの href を確かめている。
 - 合成した PointerEvent の timeStamp は生成時刻になる。pointerdown より前に作った move は重複として捨てられる（ベンチで一度これにハマった）。
@@ -150,6 +153,11 @@ npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、何 m
 - Artifact: https://claude.ai/artifact/Aj3XQxn6Q7EUaiHjYAFbve（インストールページ、非公開）。`docs/index.html` の本文だけの版
 
 ## 完了ログ（新しい順）
+
+### T-080 画面にある機能だけの、最小構成のコードを作る（research/simple ブランチ） — 2026-10-16
+- 変更: チェックポイント 2 の画面にある機能だけを残した `src/paint-min.js` を足した（本体は変えていない）。ソース 3072 行 → 1459 行、ブックマークレット 81.8 KB → 32.3 KB（gzip 30.9 → 12.6 KB）。build.mjs が `dist/paint-min.min.js`・`dist/bookmarklet-min.txt` も作り、インストールページのチェックポイントの選択に「2（最小構成のコード）」を足した（ボタンは「Paint CP2 最小」）。README に書いた。版は本体 1.28.0-simple.10、最小構成 1.28.0-simple.10-min。ユーザーの要望（チャット: ユーアイにある機能以外を除いた、最小構成のコードにしてみて）。別のファイルにしたのは Claude の判断（チェックポイント 1・2 と本家との比較を残すため）。キーのショートカット・右クリックの消しゴム・やり直す・設定の記憶も「画面にない」として外した。
+- 確認: `test/min.test.mjs` を足した（8 件。サイズが本体の半分未満・バーの並び・キーが効かない、描いて元に戻すの画素一致・ペン ⇄ 消しゴムの印・消しゴムの元に戻す、文字の電卓・書き直し・消しゴム・元に戻す、その他の 3 項目・色・全消去と空振りしない、隠すと再表示・閉じると元に戻す・× ですぐ・描いていなければすぐ、スクロール追従・scroll / wheel リスナーなし・2 本指、厳格な CSP、インストールページの選択と試す）。`npm test` 39 件が通過。手元のスクリプトで、ペンの入力 1 件の処理時間は本体と同じくらい（どちらも 8〜13 µs、ヘッドレスのぶれの中）、起動は約 25 ms → 約 11 ms だった。スマホの幅のメニューのスクリーンショットで、CP2 と同じ見た目を確かめた。
+- 残課題: 本体を直したときに最小構成へ入れるかは、その都度決める。実機では未確認。
 
 ### T-079 チェックポイント 2: その他の閉じると色の順番を入れ替える（research/simple ブランチ） — 2026-10-16
 - 変更: チェックポイント 2 のその他を、全消去・閉じる・色の順にした（それまでは色が全消去と閉じるの間）。インストールページと README の説明も直した。版は 1.28.0-simple.9。ユーザーの要望（チャット: 閉じると色変更を入れ替えて）。
@@ -196,12 +204,8 @@ npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、何 m
 - 確認: テストを 1 件足した（並びが 6 個・1 段、S キーで選択、その他の閉じるで閉じる、360px のタッチでも 1 段）。すべてのボタンを使う既存の 11 件は fullBar で起動するようにした。`npm test` 68 件が通過。PC と 360px のスクリーンショットで確かめた。
 - 残課題: 何の機能を残すか・削るか（予測線など）は後で決める。キーのない端末では、隠した道具（選択・文字など）は使えない。
 
-### T-070 開発用に、描いた線の入力を録って書き出せるようにする（T-060 の 1 段目） — 2026-10-16
-- 変更: 開発用を入れたとき、その他に「入力を録る（開発用）」（スイッチ）と「録った入力を書き出す」を出した。録っている間は、ペン・蛍光ペンで描いた線ごとに、押す・pointermove・pointerrawupdate・離すと、その中の点（getCoalescedEvents）・Chrome の予測点（getPredictedEvents）・フレーム（rAF）の時刻を、座標・時刻・筆圧・処理した時刻と一緒に録る。書き出しは JSON のダウンロード（版・UA・dpr・画面の大きさ・使える低遅延の機能。ページの URL は入れない）。録った JSON を読む `npm run predict`（test/predict.mjs）を足した。PNG 保存のダウンロードは download() にまとめた。インストールページの開発用のスイッチを「開発用の項目をツールの中に出す」にし、説明に録画を足した。README に書いた。版を 1.27.0 にした。ユーザーの決定（チャット: 録る機能から始めて）。
-- 確認: テストを 1 件足した（開発用でないとメニューに出ない・何も録っていなければ書き出さない・入れてペンと蛍光ペンで描くと 2 本〈消しゴムは録らない〉・JSON の線と行〈押すで始まり、時刻は押した時刻から、座標は CSS px、URL なし〉・切るとそれからの線は録らない）。ヘッドレスで 3 本録って `npm run predict` で読めることを確かめた（Playwright のマウスでも Chrome の予測点が入り、予測の先は約 16 ms。16 ms 先のずれは平均で、予測なし 11.4px・Chrome 1.7px・直線 3.6px）。`npm test` 67 件が通過。
-- 残課題: ユーザーに実機で録ってもらう（R-006）。実機の Safari などでのダウンロードの動きは未確認。
-
 ### それより前（1 行に畳んだもの）
+- T-070 開発用に、描いた線の入力を録って書き出せるようにした（npm run predict で読む。R-006 で実機の録画を待っている）— 2026-10-16
 - T-069 ガラスの既定を、地の濃さ 80%・彩度 200% にした — 2026-10-16
 - T-068 ツールバーを引いて動かしても、色と太さのパネルは閉じない（keepPanels でほかも）— 2026-10-16
 - T-067 2 段のとき、色と太さのボタンを下の段に移した — 2026-10-16

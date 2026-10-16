@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.21.0';
+  const VERSION = '1.21.1';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -115,7 +115,7 @@
 .s{position:absolute;inset:0}.s.bg1{background:#fff}.s.bg2{background:#1d1f23}
 .sel{position:absolute;z-index:2;pointer-events:none}
 .sel b{position:absolute;outline:1px solid #3d7cff}
-.sel.mq b{outline-style:dashed;background:#3d7cff14}.sel.mq .si,.sel.mq i,.sel.only i:nth-of-type(2n){display:none}
+.sel.only i:nth-of-type(2n){display:none}
 .si{position:absolute;left:0;top:0;transform-origin:0 0}
 .gh{position:absolute;white-space:pre;pointer-events:none;color:var(--c);opacity:calc(var(--a) * .45);font:600 var(--fs)/${LH} ${FONT}}
 .to{position:absolute;z-index:1;white-space:pre;pointer-events:none;color:var(--c);opacity:var(--a);font:600 var(--fs)/${LH} ${FONT}}
@@ -145,6 +145,7 @@ canvas{position:absolute;left:0;top:0;pointer-events:none}
 .light .bar,.light .pn,.light .t,.light .hp{background:var(--bb,#fbfbfc);border-color:#0000001a;box-shadow:0 6px 24px #0003}
 .light.glass .bar,.light.glass .pn{background:none;border-color:#0000001f;box-shadow:0 6px 24px #0003,inset 0 1px 0 #ffffff99}
 .light .b:hover,.light .t button:hover{background:#0000000f}.light .b:active,.light .b.open:not(.on){background:#0000001c}
+.b.on:not(.c):hover,.light .b.on:not(.c):hover,.light .b.on:not(.c):active{background:#2f6bea}
 .light .dot{box-shadow:0 0 0 1px #0000003a}.light .dot.er{box-shadow:inset 0 0 0 1.5px #1d2026}
 .light .mi kbd{color:#7b7f89}.light .mi .sw{background:#00000024}
 .light .c::before{box-shadow:inset 0 0 0 1px #00000026}.light .c.on::before{box-shadow:0 0 0 2px var(--bb,#fbfbfc),0 0 0 4px #1d2026}
@@ -1724,18 +1725,38 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     dropSel();
   }
   // 枠が中身から外へ出る量（S）。囲んでいる途中は出さない
-  const padX = mq => mq ? 0 : max(3 * sdpr, (SEL_MIN * sdpr - selW) / 2);
-  const padY = mq => mq ? 0 : max(3 * sdpr, (SEL_MIN * sdpr - selH) / 2);
-  function showSel(mq) {
-    const st = selEl.style, bs = selB.style, px = -padX(mq) / sdpr + 'px', py = -padY(mq) / sdpr + 'px';
-    selEl.classList.toggle('mq', mq);
+  const padX = () => max(3 * sdpr, (SEL_MIN * sdpr - selW) / 2);
+  const padY = () => max(3 * sdpr, (SEL_MIN * sdpr - selH) / 2);
+  // 囲んでいる間の枠: 描いている途中の線と同じ live（低遅延の canvas）に描く。DOM の枠より 1 フレームほど早く画面に出るので、
+  // 押してすぐ、少し動かしただけでも出す（クリックか囲むかは、離したときに 3px で決める）。入力ごとに呼ぶので割り当てをしない
+  let bdX = 0, bdY = 0, bdW = 0, bdH = 0;
+  const BAND_DASH = [0, 0], NO_DASH = [];
+  function drawBand() {
+    const c = lctx, lw = max(1, round(dpr));
+    if (bdW) c.clearRect(bdX, bdY, bdW, bdH);
+    const x0 = round((selX - sox) / sk), y0 = round((selY - soy) / sk);
+    const w = max(lw, round((selX + selW - sox) / sk) - x0), h = max(lw, round((selY + selH - soy) / sk) - y0);
+    c.globalCompositeOperation = 'source-over';
+    c.globalAlpha = 1;
+    c.fillStyle = '#3d7cff14';
+    c.fillRect(x0, y0, w, h);
+    BAND_DASH[0] = BAND_DASH[1] = 3 * lw;
+    c.setLineDash(BAND_DASH);
+    c.lineWidth = lw;
+    c.strokeStyle = '#3d7cff';
+    c.strokeRect(x0 + lw / 2, y0 + lw / 2, w - lw, h - lw);
+    c.setLineDash(NO_DASH);
+    bdX = x0 - 1; bdY = y0 - 1; bdW = w + 2; bdH = h + 2;
+  }
+  function showSel() {
+    const st = selEl.style, bs = selB.style, px = -padX() / sdpr + 'px', py = -padY() / sdpr + 'px';
     st.left = selX / sdpr + 'px';
     st.top = selY / sdpr + 'px';
     st.width = selW / sdpr + 'px';
     st.height = selH / sdpr + 'px';
     bs.left = bs.right = px;
     bs.top = bs.bottom = py;
-    if (!mq) selIn.style.transform = `scale(${selW / bW0},${selH / bH0})`;
+    selIn.style.transform = `scale(${selW / bW0},${selH / bH0})`;
     if (!selEl.parentNode) sbox.append(selEl);
   }
   // S の矩形の中の描いた物を浮かせる。withTexts なら、矩形に収まる文字の物も一緒に選ぶ。何もなければ false
@@ -1799,7 +1820,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     selEl.classList.toggle('only', !srcW);
     selX = bX0; selY = bY0; selW = bW0; selH = bH0;
     sel = true;
-    showSel(false);
+    showSel();
     if (!selHint) { selHint = true; say('ドラッグで移動 ・ 角で拡大縮小 ・ Delete で削除 ・ Esc で確定', 3000); }
     return true;
   }
@@ -1863,7 +1884,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   // 枠のどこか: 0〜7 つまみ / -1 枠の中 / -2 外。枠の内側はつまみより移動を優先する（小さい枠は全部つまみ）
   function selHit(X, Y) {
-    const r = 8 * sdpr, px = padX(false), py = padY(false);
+    const r = 8 * sdpr, px = padX(), py = padY();
     const fx = selX - px, fy = selY - py, fw = selW + 2 * px, fh = selH + 2 * py;
     if (X > fx + r && X < fx + fw - r && Y > fy + r && Y < fy + fh - r) return -1;
     for (let i = 0; i < 16; i += 2) {
@@ -1899,14 +1920,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const X = e.clientX * sdpr + sox, Y = e.clientY * sdpr + soy;
     if (sDrag === 1) {
       selX = min(dragX, X); selY = min(dragY, Y); selW = abs(X - dragX); selH = abs(Y - dragY);
-      if (selW > 3 * sdpr || selH > 3 * sdpr) showSel(true);
+      drawBand();
     } else if (sDrag === 2) {
       selX = max(0, begX + X - dragX);
       selY = max(0, begY + Y - dragY);
-      showSel(false);
+      showSel();
     } else if (sDrag === 3) {
       scaleSel(X, Y, e.shiftKey);
-      showSel(false);
+      showSel();
     }
   }
   // つまみの反対側を固定し、押した所からの移動量だけ伸び縮みさせる。角は縦横比を保つ（free なら保たない）。
@@ -1929,7 +1950,11 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   function selUp() {
     if (sDrag === 1) {
-      selEl.remove();
+      // live の枠は、選択の枠（DOM）が画面に出る 2 フレーム後に消す（確定の受け渡しと同じ。消してから出るまでの 1 フレームに何も見えなくならないように）
+      if (bdW) {
+        hcx = bdX; hcy = bdY; hcw = bdW; hch = bdH; bdW = 0;
+        handoff = requestAnimationFrame(() => { handoff = requestAnimationFrame(finishHandoff); });
+      }
       if (selW > 3 * sdpr || selH > 3 * sdpr) {
         const x = floor(selX), y = floor(selY);
         liftSel(x, y, ceil(selX + selW) - x, ceil(selY + selH) - y, true);
@@ -1945,8 +1970,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     sDrag = 0;
   }
   function selAbort() {
-    if (sDrag === 1) selEl.remove();
-    else { selX = begX; selY = begY; selW = begW; selH = begH; showSel(false); }
+    if (sDrag === 1) { if (bdW) lctx.clearRect(bdX, bdY, bdW, bdH); bdW = 0; }
+    else { selX = begX; selY = begY; selW = begW; selH = begH; showSel(); }
     sDrag = 0;
   }
   // クリック: その場所に描いた画素がある手のうち、外接矩形がいちばん小さい物を選ぶ
@@ -1973,7 +1998,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     else if (k === 'ArrowRight') selX += d;
     else if (k === 'ArrowUp') selY = max(0, selY - d);
     else selY += d;
-    showSel(false);
+    showSel();
   }
 
   // ---------- 文字（入力中は本物の textarea を重ねるので IME がそのまま使える） ----------

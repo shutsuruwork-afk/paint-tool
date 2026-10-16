@@ -332,6 +332,24 @@ test('見た目（開発用）: インストールページの開発用を入れ
   await page.close();
 });
 
+test('選んでいるボタンは、マウスを重ねても押しても青い地のまま（明るい見た目でも白い印が見える）', async () => {
+  for (const d of [{}, { theme: 'dark', glass: false }]) {
+    const { page, errors } = await fresh();
+    if (d.theme) { await page.evaluate(() => window.__paintBookmarklet.destroy()); await runCode(page, withDefaults(CODE, d)); }
+    await page.keyboard.press('s');
+    const st = () => shadowEval(page, root => { const s = getComputedStyle(root.querySelector('.bar [aria-label^="選択"]')); return [s.backgroundColor, s.color]; });
+    assert.deepEqual(await st(), ['rgb(61, 124, 255)', 'rgb(255, 255, 255)'], JSON.stringify(d));
+    const r = await rectOf(page, '.bar [aria-label^="選択"]');
+    await page.mouse.move(r.x + r.w / 2, r.y + r.h / 2);
+    assert.deepEqual(await st(), ['rgb(47, 107, 234)', 'rgb(255, 255, 255)'], '重ねる ' + JSON.stringify(d));
+    await page.mouse.down();
+    assert.deepEqual(await st(), ['rgb(47, 107, 234)', 'rgb(255, 255, 255)'], '押す ' + JSON.stringify(d));
+    await page.mouse.up();
+    assert.deepEqual(errors, []);
+    await page.close();
+  }
+});
+
 test('ペンと図形の選択肢: 既定はどちらも、選んでいないときは押すとその道具になるだけで、もう一度押すと出る。インストールページで 1 回押しにできる', async () => {
   const { page, errors } = await fresh();
   const check = async (once) => {
@@ -620,6 +638,38 @@ const textRect = (page, i = 0) => page.evaluate(i => {
   const r = e.getBoundingClientRect();
   return { x: r.x, y: r.y, w: r.width, h: r.height };
 }, i);
+
+test('選択: 押して 1px 動かしただけで囲む枠が出る（描いている途中の線と同じ live に描く）。離すと選択の枠になり、live の枠は消える', async () => {
+  const { page, errors } = await fresh();
+  await drag(page, [[200, 300], [400, 340]], 8);
+  await page.keyboard.press('s');
+  // 1 フレームに 1 回の入力で、1px 動かしたところから広げていく
+  const r = await page.evaluate(async () => {
+    const root = document.querySelector('paint-bookmarklet').shadowRoot, pad = root.querySelector('.p'), live = root.querySelector('canvas.l');
+    const frame = () => new Promise(r => requestAnimationFrame(r));
+    const ev = (type, x, y, extra) => new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, pointerId: 9, pointerType: 'mouse', isPrimary: true, clientX: x, clientY: y, button: type === 'pointermove' ? -1 : 0, buttons: 1, ...extra });
+    const ink = () => { const d = live.getContext('2d').getImageData(0, 0, live.width, live.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; };
+    const dom = () => { const e = document.querySelector('paint-bookmarklet-surface').shadowRoot.querySelector('.sel'); return !!(e && e.isConnected); };
+    pad.dispatchEvent(ev('pointerdown', 180, 280));
+    await frame();
+    pad.dispatchEvent(ev('pointermove', 181, 281));
+    const first = { ink: ink(), dom: dom() };
+    for (let i = 1; i <= 20; i++) { await frame(); pad.dispatchEvent(ev('pointermove', 181 + i * 12, 281 + i * 4)); }
+    const big = ink();
+    pad.dispatchEvent(ev('pointerup', 421, 361, { buttons: 0 }));
+    const up = dom();
+    for (let i = 0; i < 4; i++) await frame();
+    return { first, big, up, later: ink() };
+  });
+  assert.ok(r.first.ink > 0 && !r.first.dom, JSON.stringify(r));
+  assert.ok(r.big > r.first.ink * 10, JSON.stringify(r));
+  assert.equal(r.up, true, '離すと選択の枠');
+  assert.equal(r.later, 0, 'live の枠は消える');
+  const sb = await selBox(page);
+  assert.ok(sb && near(sb.x, 200, 4) && near(sb.r, 400, 4), JSON.stringify(sb));
+  assert.deepEqual(errors, []);
+  await page.close();
+});
 
 test('選択: 囲むと中身に詰めた枠で選ばれ、移動して確定・元に戻す・やり直すが画素単位で効く', async () => {
   const { page, errors } = await fresh();

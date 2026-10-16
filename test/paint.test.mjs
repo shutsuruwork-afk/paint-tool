@@ -179,26 +179,31 @@ test('シンプル版: ツールバーはペン・消しゴム・元に戻す・
   assert.equal(await toastOn(), false, 'no toast on start');
   // ペンの太さの既定は 6（T-074）
   assert.equal((await page.evaluate(() => window.__paintBookmarklet.stats().prefs.size.pen)), 6);
-  // 選んでいるペン・消しゴムをもう一度押すと、選択が外れてページ操作モードになる（種類のパネルは出ない）。もう一度押すと描画に戻る（T-073）
+  // 選んでいるペンをもう一度押すと消しゴムになる（T-075。種類のパネルは出ない）。選んでいる消しゴムをもう一度押すと、
+  // 選択が外れてページ操作モードになり（T-073）、ペンか消しゴムを押すと描画に戻る
   const st = page => shadowEval(page, root => ({
     pass: !!root.querySelector('.pass'), on: [...root.querySelectorAll('.bar > .b.on')].map(b => b.title.split(/[ （(]/)[0]),
     panel: [...root.querySelectorAll('.pn')].some(p => getComputedStyle(p).display !== 'none'),
   }));
   const onPage = () => page.evaluate(() => document.elementFromPoint(500, 400).tagName !== 'PAINT-BOOKMARKLET');
+  const press = name => mouseClick(page, `.bar > [aria-label^="${name}"]`);
   assert.deepEqual(await st(page), { pass: false, on: ['ペン'], panel: false });
   assert.equal(await onPage(), false);
-  await mouseClick(page, '.bar > [aria-label^="ペン"]');
-  assert.deepEqual(await st(page), { pass: true, on: [], panel: false });
+  await press('ペン');
+  assert.deepEqual(await st(page), { pass: false, on: ['消しゴム'], panel: false }, 'pen again -> eraser');
+  await press('ペン');
+  assert.deepEqual(await st(page), { pass: false, on: ['ペン'], panel: false }, 'pen from eraser -> pen');
+  await press('消しゴム');
+  assert.deepEqual(await st(page), { pass: false, on: ['消しゴム'], panel: false });
+  await press('消しゴム');
+  assert.deepEqual(await st(page), { pass: true, on: [], panel: false }, 'eraser again -> page mode');
   assert.equal(await onPage(), true, 'the page gets the clicks');
   assert.equal(await toastOn(), false, 'no toast in page mode');
-  await mouseClick(page, '.bar > [aria-label^="ペン"]');
-  assert.deepEqual(await st(page), { pass: false, on: ['ペン'], panel: false });
-  await mouseClick(page, '.bar > [aria-label^="消しゴム"]');
+  await press('消しゴム');
   assert.deepEqual(await st(page), { pass: false, on: ['消しゴム'], panel: false });
-  await mouseClick(page, '.bar > [aria-label^="消しゴム"]');
-  assert.deepEqual(await st(page), { pass: true, on: [], panel: false });
-  await mouseClick(page, '.bar > [aria-label^="ペン"]');
-  assert.deepEqual(await st(page), { pass: false, on: ['ペン'], panel: false });
+  await press('消しゴム');
+  await press('ペン');
+  assert.deepEqual(await st(page), { pass: false, on: ['ペン'], panel: false }, 'pen from page mode -> pen');
   await drag(page, [[300, 300], [400, 320]]);
   assert.equal(await page.evaluate(() => window.__paintBookmarklet.stats().history), 1, 'draws again with the pen');
   // ほかの道具もショートカットで選べる

@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.27.0-simple.4';
+  const VERSION = '1.27.0-simple.5';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -433,10 +433,11 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // ペン: ペンでないときに押すとペンになる。ペンのときにもう一度押すと、種類のパネルが開く（pickOnce なら 1 回目から開く）。
   // ページ操作モードのときは、ペンのままでも押せば描画に戻り、パネルも普段と同じに開く（T-057・T-062）
   const penP = pnl();
-  // シンプル版（T-073）: 選んでいるペン・消しゴムをもう一度押すと、選択が外れてページ操作モードになる（種類のパネルは出さない）。
-  // ページ操作モードで押すと、その道具で描画に戻る。fullBar なら本家と同じ（ペンは種類のパネル）
+  // シンプル版: 選んでいるペンをもう一度押すと消しゴムになる（T-075。種類のパネルは出さない）。
+  // 選んでいる消しゴムをもう一度押すと、選択が外れてページ操作モードになり（T-073）、ペンか消しゴムを押すと描画に戻る。
+  // fullBar なら本家と同じ（ペンは種類のパネル）
   const penB = btn(TITLES.pen, I.pen, () => {
-    if (!fullBar) { if (tool === 'pen' && !pass) togglePass(); else setTool('pen'); }
+    if (!fullBar) setTool(tool === 'pen' && !pass ? 'eraser' : 'pen');
     else if (tool === 'pen') { if (pass) setTool('pen'); togglePanel(penP, penB); }
     else { setTool('pen'); if (pickOnce) openPanel(penP, penB); }
   }, 'dd');

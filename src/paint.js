@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.27.0-simple.3';
+  const VERSION = '1.27.0-simple.4';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -41,7 +41,7 @@
   const BGS = ['', '#ffffff', '#1d1f23'];
   const BG_NAMES = ['透明', '白', '黒'];
   const CFG = {
-    pen: { size: 4, alpha: 1 },
+    pen: { size: 6, alpha: 1 }, // シンプル版は 6（T-074。本家は 4）
     marker: { size: 24, alpha: 0.35 },
     eraser: { size: 32, alpha: 1 },
     line: { size: 4, alpha: 1 },
@@ -622,7 +622,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   for (const b of [...moreP.children]) if (fullBar ? b === closeMi : b !== clrMi && b !== closeMi) b.remove();
   if (fullBar) bar.append(toolBtns.select, penB, toolBtns.marker, toolBtns.eraser, shapeB, toolBtns.text, toolBtns.fill,
     el('div', 'sep brk'), styleB, sep(), undoB, redoB, sep(), passB, moreB, sep(), hideB, closeB); // 1 段に収まらないときは .brk で段を分ける（.two .brk。T-064・T-067）
-  else bar.append(penB, toolBtns.eraser, styleB, sep(), undoB, sep(), moreB, hideB);
+  else bar.append(penB, toolBtns.eraser, sep(), undoB, sep(), moreB, hideB); // 色と太さのボタンも出さない（T-074。太さは既定のまま、キーの [ ] と数字は効く）
   bar.append(shapeP, penP, styleP, moreP, lookP, lci);
 
   // パネルは 1 つだけ開く。描き始め・パネルの外を押す・Esc で閉じる。
@@ -859,6 +859,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // fn を渡すと、押せるボタン（act）付きで ms だけ出す（閉じるの取り消しに使う）。xfn を渡すと × のボタンも付く。
   // inl ならボタンを文の続きとして間を空けずに置く（「ブックマークレットで再表示」の「再表示」）
   function say(msg, ms = 1800, act, fn, xfn, inl) {
+    // シンプル版は、押せるボタンの付いたお知らせ（隠した後の「再表示」と閉じた後の「元に戻す」）だけを出す（T-074）
+    if (!fullBar && !fn) return;
     toastM.textContent = msg;
     toastB.textContent = act || '';
     toastFn = fn || null;
@@ -1133,6 +1135,48 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     c.strokeStyle = c.fillStyle = color;
     c.lineCap = 'round';
     c.lineJoin = 'round';
+  }
+
+  // 2 本指でスクロール（シンプル版。T-074）: タッチが 2 本になったら、1 本目で描き始めていた線は捨てて、2 本の中点の動きでページをスクロールする。
+  // 2 本とも離すまでは描かない。pad の onDown / onMove / onUp より先に呼び、スクロールの間はそれらに渡さない。
+  // 1 本のときの仕事は、ポインタの番号の比較と座標の代入だけ
+  let tI0 = -1, tX0 = 0, tY0 = 0, tI1 = -1, tX1 = 0, tY1 = 0, scr = 0, scrX = 0, scrY = 0; // scr: 1 = スクロール中、2 = 片方を離した（残りを離すまで描かない）
+  function twoDown(e) {
+    if (fullBar || e.pointerType !== 'touch') return;
+    const id = e.pointerId;
+    if (e.isPrimary) { tI0 = tI1 = -1; scr = 0; } // 新しいタッチの始まり（離したことを取りこぼしていても数え直す）
+    if (tI0 === -1) { tI0 = id; tX0 = e.clientX; tY0 = e.clientY; }
+    else if (tI1 === -1) { tI1 = id; tX1 = e.clientX; tY1 = e.clientY; }
+    else return;
+    if (tI0 === -1 || tI1 === -1) { if (!scr) return; }
+    else if (act === -1 || aType === 'touch') {
+      if (act !== -1) abortStroke();
+      scr = 1; scrX = (tX0 + tX1) / 2; scrY = (tY0 + tY1) / 2;
+      for (const i of [tI0, tI1]) try { pad.setPointerCapture(i); } catch (_) { }
+    } else return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }
+  function twoMove(e) {
+    const id = e.pointerId;
+    if (id === tI0) { tX0 = e.clientX; tY0 = e.clientY; }
+    else if (id === tI1) { tX1 = e.clientX; tY1 = e.clientY; }
+    else return;
+    if (!scr) return;
+    e.stopImmediatePropagation();
+    if (scr !== 1) return;
+    const mx = (tX0 + tX1) / 2, my = (tY0 + tY1) / 2;
+    win.scrollBy(scrX - mx, scrY - my);
+    scrX = mx; scrY = my;
+  }
+  function twoUp(e) {
+    const id = e.pointerId;
+    if (id === tI0) tI0 = -1;
+    else if (id === tI1) tI1 = -1;
+    else return;
+    if (!scr) return;
+    e.stopImmediatePropagation();
+    scr = tI0 === -1 && tI1 === -1 ? 0 : 2;
   }
 
   function onDown(e) {
@@ -2777,6 +2821,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
 
   // ---------- イベント登録 ----------
+  pad.addEventListener('pointerdown', twoDown); // 2 本指のスクロール（T-074）。onDown などより先に登録する
+  pad.addEventListener('pointermove', twoMove);
+  pad.addEventListener('pointerup', twoUp);
+  pad.addEventListener('pointercancel', twoUp);
   pad.addEventListener('pointerdown', onDown);
   pad.addEventListener('pointermove', onMove);
   pad.addEventListener('pointerup', onUp);

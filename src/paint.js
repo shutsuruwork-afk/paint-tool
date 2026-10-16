@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.20.1';
+  const VERSION = '1.21.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -32,6 +32,7 @@
   const PRED_MAX = 16;  // 保持する予測点の上限
   const PRED_MS = 12;   // 予測 API が無い環境で外挿する時間 (ms)
   const PRED_TTL = 40;  // 入力が途絶えてから予測線を消すまでの時間 (ms)
+  const PRED_FAINT = 0.4; // 蛍光ペンの予測を薄く描くときの濃さ（線の濃さに掛ける）
   const FILL_TOL = 48;  // 塗りつぶしの色許容差 (0-255)
   const BYE_MS = 8000;  // 閉じる（×）を取り消せる時間 (ms)
   const PAGE = 'https://shutsuruwork-afk.github.io/paint-tool/'; // インストールページ
@@ -129,6 +130,7 @@ canvas{position:absolute;left:0;top:0;pointer-events:none}
 .bar.drag,.bar.drag *{cursor:grabbing}
 .b:hover{background:#ffffff1a}.b:active{background:#ffffff2e}
 .b.on{background:#3d7cff;color:#fff}
+.b.sg{width:auto;padding:0 9px;font:inherit}
 .b:disabled{opacity:.3;cursor:default;background:none}
 .b:focus-visible{outline:2px solid #3d7cff;outline-offset:-2px}
 .b.open:not(.on){background:#ffffff2e}
@@ -291,6 +293,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     tint: +DEF.tint >= 30 && +DEF.tint <= 95 ? +DEF.tint : 70,
   };
   const dev = DEF.dev === true;
+  // 蛍光ペンの予測（T-052）: 'faint' は予測の部分だけ薄く描く（外れても目立たず、ペン先には付いてくる）、'off' は描かない、'full' はペンと同じ。
+  // 蛍光ペンは太いので、そのまま描くと外れた予測（止めたり曲げたりした瞬間の飛び出し）が目立った。開発用のパネルでも切り替えられる
+  const MPREDS = ['faint', 'off', 'full'];
+  let mpred = MPREDS.includes(DEF.mpred) ? DEF.mpred : 'faint';
   function applyLook() {
     const t = look.theme, ws = wrap.style, cl = wrap.classList;
     let lite = t === 'light';
@@ -537,9 +543,20 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   lookP.append(row(...themeBs, lcB), glassSw, gaussSw);
   const [blurW, blurR, blurO] = range('ぼかし', 'ぼかしの強さ', 0, 40, v => setLook('blur', v), lookP);
   const [tintW, tintR, tintO] = range('地', 'ガラスの地の濃さ', 30, 95, v => setLook('tint', v), lookP);
+  // 蛍光ペンの予測を切り替えて見比べる（次に描く線から効く）
+  const mpL = el('span');
+  mpL.textContent = '蛍光ペンの予測';
+  const mpBs = [['faint', '薄く'], ['off', 'なし'], ['full', 'そのまま']].map(([k, t]) => {
+    const b = btn(`蛍光ペンの予測: ${t}`, null, () => { mpred = k; syncLook(); }, 'sg');
+    b.textContent = t;
+    return b;
+  });
+  const mpR = el('div', 'r');
+  mpR.append(mpL);
+  lookP.append(mpR, row(...mpBs));
   const toDefB = btn('この見た目をデフォルトにする — インストールページを開く（新しいタブ）', I.prefs, () => {
     closePanel();
-    openDefaults({ ...DEF, theme: look.theme, glass: look.glass, blurMode: look.blurMode, blur: look.blur, tint: look.tint });
+    openDefaults({ ...DEF, theme: look.theme, glass: look.glass, blurMode: look.blurMode, blur: look.blur, tint: look.tint, mpred });
   }, 'mi');
   const toDefL = el('span');
   toDefL.textContent = 'この見た目をデフォルトに';
@@ -556,8 +573,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     for (const w of [gaussSw, blurW, tintW]) w.classList.toggle('dis', !look.glass);
     blurR.value = look.blur; blurO.value = look.blur + 'px';
     tintR.value = look.tint; tintO.value = look.tint + '%';
+    mpBs.forEach((b, i) => b.classList.toggle('on', MPREDS[i] === mpred));
   }
-  if (dev) item('見た目（開発用） — ツールバーの色やガラスをその場で変える', '見た目（開発用）', '', I.bg, () => openPanel(lookP, moreB));
+  if (dev) item('見た目（開発用） — ツールバーの色やガラス、蛍光ペンの予測をその場で変える', '見た目（開発用）', '', I.bg, () => openPanel(lookP, moreB));
   bar.append(undoB, redoB, sep(), passB, moreB, sep(),
     btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hideHint), btn('閉じる（8 秒間は元に戻せます）', I.close, close),
     shapeP, penP, styleP, moreP, lookP, lci);
@@ -991,7 +1009,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   let act = -1, aType = '', mode = 0; // mode: 1 インク / 2 消しゴム / 3 図形 / 4 選択（囲む・移動・拡大縮小）
   let sTool = 'pen', sW = 0, sA = 1, sP = false, sRaw = false, raf = 0;
   let sPen = 0, pf = 1, sDist = 0; // ペンの種類（PENS の番号）と、万年筆・筆の太さの係数、書き始めからの距離
-  let sPd = true; // 予測線を描くか。蛍光ペンは太いので、外れた予測（止めたり曲げたりした瞬間の先端の飛び出し）が目立つため描かない（T-051）
+  let sPd = true, sFa = false; // 予測線を描くか、予測の部分を薄く描くか（蛍光ペンは mpred で決める。T-051・T-052）
   let bx = 0, by = 0, bw = 0, mx = 0, my = 0, ps = 1, lt = 0, lastPen = -1e9;
   let x0 = 0, y0 = 0, x1 = 0, y1 = 0, mW = 0; // ストロークの外接矩形
   let tx0 = 0, ty0 = 0, tx1 = 0, ty1 = 0; // pred レイヤの汚れ矩形
@@ -1085,7 +1103,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         sPen = t === 'pen' ? PENS.indexOf(penType) : 0;
         pf = sPen === 1 ? 0.6 : 1;
         sDist = 0;
-        sPd = t === 'pen';
+        sPd = t === 'pen' || mpred !== 'off';
+        sFa = t === 'marker' && mpred === 'faint';
         bw = sP ? qw(sW * (0.2 + 0.8 * ps)) : sW;
         if (sPen === 1) bw = qw(bw * (0.2 + 0.8 * pf));
         else if (sPen === 2) bw = qw(bw * 0.35);
@@ -1220,6 +1239,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     c.beginPath();
     c.moveTo(mx, my);
     c.lineTo(bx, by);
+    // 薄く描くとき: 確かな末尾を先に描き、予測の部分だけを薄く重ねる（重なった所は濃い方のまま）
+    const fa = sFa && pn;
+    if (fa) { c.stroke(); c.globalAlpha = PRED_FAINT; c.beginPath(); c.moveTo(bx, by); }
     for (let k = 0; k < pn; k++) {
       if (pt[k] && pt[k] <= lt) continue; // 実入力が追い越した予測点は捨てる
       const x = px[k], y = py[k];
@@ -1228,6 +1250,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       if (y < b0) b0 = y; else if (y > b1) b1 = y;
     }
     c.stroke();
+    if (fa) c.globalAlpha = 1;
     const m = bw / 2 + 2;
     tx0 = max(0, (a0 - m) | 0); ty0 = max(0, (b0 - m) | 0);
     tx1 = ceil(a1 + m); ty1 = ceil(b1 + m);
@@ -2658,7 +2681,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const stats = () => ({
     width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, selection: sel ? [selX, selY, selW, selH] : null, texts: tlist.length, fixed, history: hist.length, historyPixels: hpix, events: nEv, points: nPts,
     desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, nativePrediction: nativePred, inkTrail: !!inkP,
-    prefs: { ...snapPrefs(), bar: [barX, barY], touchText, pickOnce, dev, ...look },
+    prefs: { ...snapPrefs(), bar: [barX, barY], touchText, pickOnce, dev, ...look, mpred },
   });
   win[NS] = { version: VERSION, toggle, show, hide, close, destroy, undo, redo, clear: clearAll, tool: setTool, color: setColor, stats, pixels };
   setColor(color);

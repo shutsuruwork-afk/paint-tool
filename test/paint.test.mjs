@@ -308,16 +308,23 @@ test('見た目（開発用）: インストールページの開発用を入れ
   await pick('#ffd54f');
   assert.deepEqual(await st(page), { cls: 'light', bar: 'rgb(255, 213, 79)', gb: '8px', color: 'rgb(29, 32, 38)' });
   assert.equal((await prefs(page)).theme, '#ffd54f');
+  // 蛍光ペンの予測を切り替える（既定は薄く）
+  const mpOn = () => shadowEval(page, root => [...root.querySelectorAll('.pn.on .sg')].filter(b => b.classList.contains('on')).map(b => b.textContent));
+  assert.deepEqual(await mpOn(), ['薄く']);
+  await mouseClick(page, '.pn.on [aria-label="蛍光ペンの予測: なし"]');
+  assert.deepEqual(await mpOn(), ['なし']);
+  assert.equal((await prefs(page)).mpred, 'off');
   // この見た目をデフォルトに: 見た目を持ってインストールページを開く
   await page.evaluate(() => { window.__opened = []; window.open = (...a) => { window.__opened.push(a); return null; }; });
   await mouseClick(page, '.pn.on [aria-label^="この見た目をデフォルトに"]');
   const [url] = (await page.evaluate(() => window.__opened))[0];
   const d = JSON.parse(decodeURIComponent(url.slice(url.indexOf('#defaults=') + 10)));
-  assert.deepEqual([d.dev, d.theme, d.glass, d.blur], [true, '#ffd54f', false, 8]);
+  assert.deepEqual([d.dev, d.theme, d.glass, d.blur, d.mpred], [true, '#ffd54f', false, 8, 'off']);
   const { page: ip, errors: ie } = await openPage(browser, server.base + '/install' + url.slice(url.indexOf('#')));
   assert.equal(await ip.isChecked('#p-theme input[value="custom"]'), true);
   assert.equal(await ip.inputValue('#p-tcolor'), '#ffd54f');
   assert.equal(await ip.inputValue('#p-blur'), '8');
+  assert.equal(await ip.isChecked('#p-mpred input[value="off"]'), true);
   assert.equal(await ip.isChecked('#p-dev'), true);
   assert.deepEqual(ie, []);
   await ip.close();
@@ -965,6 +972,7 @@ test('インストールページで選んだ設定入りのブックマーク�
   assert.equal(String(p0.blur), await page.inputValue('#p-blur'));
   assert.equal(String(p0.tint), await page.inputValue('#p-tint'));
   assert.equal(p0.dev, await page.isChecked('#p-dev'));
+  assert.equal(p0.mpred, await page.evaluate(() => document.querySelector('#p-mpred input:checked').value));
   await page.evaluate(() => window.__paintBookmarklet.destroy());
   // 選ぶと、ボタンの中身が変わる
   await page.click('[aria-label="色 7"]');
@@ -1224,33 +1232,46 @@ test('電卓: 入りにすると、文字の行が計算式なら答えが薄く
   await page.close();
 });
 
-test('予測線: ペンは最後の点より先まで伸ばし、蛍光ペンは伸ばさない（太い線では外れた予測が目立つため）', async () => {
-  const { page, errors } = await fresh();
-  // 予測は入力の速さで決まるので、間隔を空けた合成のイベントを 1 回の evaluate の中で送り、途中の pred を読む
-  const reach = await page.evaluate(() => {
+test('予測線: ペンは最後の点より先まで伸ばす。蛍光ペンは既定では予測の部分だけ薄く描き、設定で「なし」「そのまま」にもできる', async () => {
+  // 予測は入力の速さで決まるので、間隔を空けた合成のイベントを 1 回の evaluate の中で送り、途中の pred を読む。
+  // 最後の点は x = 400。reach は線の先の x、ahead はペン先の確かな部分（太さの半分 + 2）より先の画素の濃さの最大
+  const measure = page => page.evaluate(() => {
     const api = window.__paintBookmarklet, root = document.querySelector('paint-bookmarklet').shadowRoot;
     const pad = root.querySelector('.p'), q = root.querySelector('canvas.q');
     const ev = (type, x, y, extra) => new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, pointerId: 9, pointerType: 'mouse', isPrimary: true, clientX: x, clientY: y, button: type === 'pointermove' ? -1 : 0, buttons: 1, ...extra });
     const wait = ms => { const t = performance.now(); while (performance.now() - t < ms); };
-    const right = () => {
-      const d = q.getContext('2d').getImageData(0, 0, q.width, q.height).data;
-      let m = -1;
-      for (let i = 3; i < d.length; i += 4) if (d[i] > 20 && ((i >> 2) % q.width) > m) m = (i >> 2) % q.width;
-      return m / devicePixelRatio;
-    };
     const out = {};
-    for (const t of ['pen', 'marker']) {
+    for (const [t, half] of [['pen', 2], ['marker', 12]]) {
       api.tool(t);
       pad.dispatchEvent(ev('pointerdown', 100, 400));
       for (let x = 110; x <= 400; x += 10) { wait(2); pad.dispatchEvent(ev('pointermove', x, 400)); }
-      out[t] = right();
+      const d = q.getContext('2d').getImageData(0, 0, q.width, q.height).data, k = devicePixelRatio;
+      let reach = -1, ahead = 0;
+      for (let i = 3; i < d.length; i += 4) {
+        if (d[i] <= 20) continue;
+        const x = ((i >> 2) % q.width) / k;
+        if (x > reach) reach = x;
+        if (x > 400 + half + 2 && d[i] > ahead) ahead = d[i];
+      }
+      out[t] = { reach, ahead };
       pad.dispatchEvent(ev('pointerup', 400, 400, { buttons: 0 }));
     }
     return out;
   });
-  // 最後の点は x = 400。ペン（太さ 4）は予測の分だけ先まで、蛍光ペン（太さ 24）は太さの半分まで
-  assert.ok(reach.pen > 415, JSON.stringify(reach));
-  assert.ok(reach.marker <= 413, JSON.stringify(reach));
+  const { page, errors } = await fresh();
+  const r0 = await measure(page);
+  assert.ok(r0.pen.reach > 415 && r0.pen.ahead > 200, JSON.stringify(r0));
+  // 既定（薄く）: 蛍光ペンもペン先より先まで伸びるが、予測の部分は 4 割の濃さ
+  assert.equal((await prefs(page)).mpred, 'faint');
+  assert.ok(r0.marker.reach > 425 && r0.marker.ahead > 60 && r0.marker.ahead < 130, JSON.stringify(r0));
+  // なし: 太さの半分まで。そのまま: ペンと同じく濃いまま
+  for (const [mpred, ok] of [['off', m => m.reach <= 413], ['full', m => m.reach > 425 && m.ahead > 200]]) {
+    await page.evaluate(() => window.__paintBookmarklet.destroy());
+    await runCode(page, withDefaults(CODE, { mpred }));
+    const r = await measure(page);
+    assert.ok(ok(r.marker), mpred + ' ' + JSON.stringify(r));
+    assert.ok(r.pen.reach > 415, mpred + ' ' + JSON.stringify(r));
+  }
   assert.deepEqual(errors, []);
   await page.close();
 });

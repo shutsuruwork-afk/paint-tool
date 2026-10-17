@@ -716,8 +716,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     openP = openB = null;
   }
   function togglePanel(p, b) { openP === p ? closePanel() : openPanel(p, b); }
-  // 色と太さ・開発用の見た目のパネル（keepPanels ならすべて）は、ツールバーを押しただけでは閉じない（引いて動かす間は開いたまま、引かずに離したら閉じる。T-066・T-068）
-  const keepP = p => p === styleP || p === lookP || keepPanels;
+  // 色と太さ・開発用の見た目のパネル（keepPanels ならすべて）は、ツールバーを押しただけでは閉じない（引いて動かす間は開いたまま、引かずに離したら閉じる。T-066・T-068）。
+  // Simple のその他も同じ（色を選ぶ場所なので、色と太さのパネルと同じ扱い。T-094）
+  const keepP = p => p === styleP || p === lookP || keepPanels || (cp2 && p === moreP);
   wrap.addEventListener('pointerdown', e => {
     if (openP && !openP.contains(e.target) && !openB.contains(e.target) && !(keepP(openP) && bar.contains(e.target))) closePanel();
   }, true);

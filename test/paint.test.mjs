@@ -2015,6 +2015,37 @@ test('Simple のペンはいつも太さ 5・濃さ 100%。本家の太さと濃
   await page.close();
 });
 
+test('Simple のその他（⋯）は、開いたままツールバーを引いて動かしても閉じず一緒に動く。引かずに押せば閉じる（T-094）', async () => {
+  const { page, errors } = await openPage(browser, server.base + '/');
+  await runCode(page, withDefaults(CODE, { ui: 'cp2' }));
+  const info = () => shadowEval(page, root => {
+    const p = root.querySelector('.pn.on'), r = p && p.getBoundingClientRect(), b = root.querySelector('.bar').getBoundingClientRect();
+    return { open: root.querySelectorAll('.pn.on').length, px: r && Math.round(r.left - b.left), bx: Math.round(b.left), by: Math.round(b.top) };
+  });
+  const center = sel => shadowEval(page, (root, sel) => { const r = root.querySelector(sel).getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }, sel);
+  await mouseClick(page, '.bar > [aria-label^="その他"]');
+  const a = await info();
+  assert.equal(a.open, 1);
+  // ペンのボタンの上から引いて動かす: 開いたまま一緒に動き、ペンのボタンは押されない（消しゴムにならない）
+  const [x, y] = await center('.bar > [aria-label^="ペン"]');
+  await drag(page, [[x, y], [x + 120, y + 80]], 8);
+  const b = await info();
+  assert.equal(b.open, 1, 'still open while moving');
+  assert.ok(b.bx === a.bx + 120 && b.by === a.by + 80 && b.px === a.px, JSON.stringify([a, b]));
+  assert.equal((await prefs(page)).tool, 'pen');
+  // 開いたまま色も選べる（選ぶとメニューは閉じる）
+  await mouseClick(page, '.pn.on [title="色 7"]');
+  assert.equal((await prefs(page)).color, '#1e88e5');
+  assert.equal((await info()).open, 0);
+  // 引かずにツールバーを押したら閉じる（押したボタンは効く）
+  await mouseClick(page, '.bar > [aria-label^="その他"]');
+  await mouseClick(page, '.bar > [aria-label^="文字"]');
+  assert.equal((await info()).open, 0);
+  assert.equal((await prefs(page)).tool, 'text');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('文字を入力中に、その上にパネルを開くと、パネルが手前に出る（入力欄の枠・文字・薄い答えはツールバーとパネルの下。T-092）', async () => {
   const { page, errors } = await openPage(browser, server.base + '/');
   await runCode(page, withDefaults(CODE, { ui: 'cp2' }));

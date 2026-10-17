@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.29.2';
+  const VERSION = '1.29.3';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -296,6 +296,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 最初の版はインストールページ（DEF.ui）で選び、切り替えるとサイトごとに覚える
   const UIS = ['main', 'cp2'], CP2_TOOLS = ['pen', 'eraser', 'text'];
   let cp2 = false;
+  // Simple のペンの太さはいつも 5（T-091。本家の太さには影響されない）。Simple の間は本家の太さを mainPen に預かる（0 = 預かっていない）。
+  // Simple の中でキー（[ ]）で変えた太さは覚えない。サイトに覚えるのは本家の太さだけ（snapPrefs）
+  const SIMPLE_PEN = 5;
+  let mainPen = 0;
+  function swapPen(on) {
+    if (on && !mainPen) { mainPen = CFG.pen.size; CFG.pen.size = SIMPLE_PEN; }
+    else if (!on && mainPen) { CFG.pen.size = mainPen; mainPen = 0; }
+  }
   // 見た目（インストールページの設定）: 明るい（白に黒）と、ガラス風（半透明にして下をぼかす）。既定は白いガラス（T-050、ユーザーが決めた）。
   // ガラスの調整は開発用: ぼかし方（gauss は周りも拾う本物のガウス、plain は backdrop-filter そのまま）・強さ・地の濃さ
   // theme は 'dark'・'light'・'#rrggbb'（好きな色。明るさで文字を黒か白にする）。開発用の見た目のパネル（dev）からも変えられる
@@ -673,6 +681,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     // CP2 のバーにない道具（選択・蛍光ペン・図形・塗りつぶし）のままなら、ペンにする（どのボタンも選ばれていない見た目にしない。T-089）
     if (on && !CP2_TOOLS.includes(tool)) setTool('pen');
     cp2 = on;
+    swapPen(on);
     layout();
     layBar();
     measureBar();
@@ -3104,7 +3113,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   function snapPrefs() {
     const size = {}, alpha = {};
-    for (const k of PREF_T) { size[k] = CFG[k].size; alpha[k] = CFG[k].alpha; }
+    for (const k of PREF_T) { size[k] = k === 'pen' && mainPen ? mainPen : CFG[k].size; alpha[k] = CFG[k].alpha; }
     return { color, tool, pen: penType, calc, ui: UIS[+cp2], size, alpha };
   }
   function remember() {
@@ -3146,6 +3155,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   base = snapPrefs();
   const site = loadSite();
   applyPrefs(site);
+  swapPen(cp2);
   barMoved = !!(site && Array.isArray(site.bar));
 
   // ---------- 起動 ----------

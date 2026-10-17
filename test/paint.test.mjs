@@ -1967,6 +1967,45 @@ test('Simple（Preview。CP2）: 開発用のときだけその他に出て、�
   await ip.close();
 });
 
+test('Simple のペンはいつも太さ 5。本家の太さ（インストールページ・サイトの記憶）に影響されず、Simple で変えた太さは覚えない（T-091）', async () => {
+  const { page, errors } = await openPage(browser, server.base + '/');
+  await runCode(page, withDefaults(CODE, { dev: true, size: { pen: 12 } }));
+  // 横線を引いて、真ん中の列で濃い画素を数える（線の太さ）
+  const line = async y => {
+    await drag(page, [[150, y], [450, y]], 10);
+    return page.evaluate(y => { const d = window.__paintBookmarklet.pixels(300, y - 20, 1, 40).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 127) n++; return n; }, y);
+  };
+  const near = (n, w) => Math.abs(n - w) <= 1;
+  let n = await line(200);
+  assert.ok(near(n, 12), 'main pen ' + n);
+  await click(page, '[title^="Simple"]');
+  n = await line(260);
+  assert.ok(near(n, 5), 'simple pen ' + n);
+  assert.equal((await prefs(page)).size.pen, 12, 'the main size is kept');
+  // Simple の中で ] を押して太くしても、覚えるのは本家の太さだけ
+  await page.keyboard.press(']');
+  await page.keyboard.press(']');
+  n = await line(320);
+  assert.ok(n > 6, 'bigger in simple ' + n);
+  await page.waitForTimeout(500);
+  assert.equal(JSON.parse(await lsGet(page)).size, undefined);
+  // 本家に戻すと 12
+  await click(page, '[title^="本家に戻す"]');
+  n = await line(380);
+  assert.ok(near(n, 12), 'main pen again ' + n);
+  // Simple を覚えたサイトで開き直しても、ペンは 5（Simple で変えた太さは残らない）
+  await click(page, '[title^="Simple"]');
+  await page.waitForTimeout(500);
+  await page.evaluate(() => window.__paintBookmarklet.destroy());
+  await runCode(page, withDefaults(CODE, { dev: true, size: { pen: 12 } }));
+  assert.equal((await prefs(page)).ui, 'cp2');
+  n = await line(440);
+  assert.ok(near(n, 5), 'simple pen after reopening ' + n);
+  assert.equal((await prefs(page)).size.pen, 12);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('Simple（CP2）のスマホ: 2 本指で動かすとページがスクロールし、1 本目で描き始めた線は残らない。1 本指では今まで通り描ける。本家では 2 本指でもスクロールしない（T-088）', async () => {
   const page = await browser.newPage({ viewport: { width: 390, height: 700 }, isMobile: true, hasTouch: true });
   const errors = [];

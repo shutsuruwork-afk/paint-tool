@@ -2293,6 +2293,44 @@ test('2 本指のスクロールは、置いた位置＋指の動きを目標に
   await page.close();
 });
 
+test('描いている途中に 2 本目の指を置くと、それまでの線は残してスクロールになる（スクロールの動きでは描かない）。置いてすぐの 2 本目なら線は残さない（T-109）', async () => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 700 }, isMobile: true, hasTouch: true });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(server.base + '/long');
+  await runCode(page, CODE);
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], id) => ({ x, y, id })) });
+  const hist = () => page.evaluate(() => window.__paintBookmarklet.stats().history);
+  // 1 本指で 300 ms ほど右へ 120px 描いてから、2 本目を置いて 2 本とも上へ 200px
+  await touch('touchStart', [[100, 500]]);
+  for (let i = 1; i <= 12; i++) { await touch('touchMove', [[100 + i * 10, 500]]); await page.waitForTimeout(25); }
+  await touch('touchStart', [[220, 500], [300, 500]]);
+  for (let i = 1; i <= 10; i++) { await touch('touchMove', [[220, 500 - i * 20], [300, 500 - i * 20]]); await page.waitForTimeout(16); }
+  await page.waitForTimeout(150);
+  await touch('touchEnd', [[220, 300]]);
+  // 片方を離しても、残りの指では描かない
+  for (let i = 1; i <= 5; i++) await touch('touchMove', [[220 + i * 10, 300]]);
+  await touch('touchEnd', []);
+  await page.waitForTimeout(150);
+  assert.equal(await page.evaluate(() => scrollY), 200);
+  assert.equal(await hist(), 1, 'the line drawn before the scroll is kept');
+  assert.ok((await readMain(page, 160, 300))[3] > 200, 'the kept line moved with the page');
+  assert.equal((await readMain(page, 160, 500))[3], 0, 'the scroll itself did not draw');
+  // 置いてすぐ 2 本目が来たら、線は残さない
+  await touch('touchStart', [[100, 450]]);
+  await touch('touchMove', [[106, 450]]);
+  await touch('touchStart', [[106, 450], [200, 450]]);
+  for (let i = 1; i <= 5; i++) await touch('touchMove', [[106, 450 - i * 20], [200, 450 - i * 20]]);
+  await page.waitForTimeout(150);
+  await touch('touchEnd', [[106, 350]]);
+  await touch('touchEnd', []);
+  await page.waitForTimeout(150);
+  assert.equal(await hist(), 1);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('2 本指のスクロールの慣性: 動かしたまま離すと滑って止まる。止まってから離すと滑らない。滑っている間に押すと止まり、その指では描かない（T-106）', async () => {
   const page = await browser.newPage({ viewport: { width: 390, height: 700 }, isMobile: true, hasTouch: true });
   const errors = [];

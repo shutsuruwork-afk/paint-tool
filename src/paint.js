@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.31.2';
+  const VERSION = '1.32.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -1234,6 +1234,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 2 本とも離すまでは描かない。pad に capture で登録し（起動時に一度）、onDown / onMove / onUp より先に呼ばれて、スクロールの間はそれらに渡さない。
   // タッチの塗りつぶしと文字は離したときに行う（tapId）ので、2 本指になったら取り消すだけでよい。1 本のときの仕事は、ポインタの番号の比較と座標の代入だけ
   let tI0 = -1, tX0 = 0, tY0 = 0, tI1 = -1, tX1 = 0, tY1 = 0, scr = 0, scrX = 0, scrY = 0; // scr: 1 = スクロール中、2 = 片方を離した（残りを離すまで描かない）
+  const KEEP_MS = 150, KEEP_PX = 16; // これ以上描いてから 2 本目が来たら、線を残す（T-109）
+  let sDown = 0; // 線を押した時刻
   // スクロールの目標は「置いたときのスクロール位置（sbX, sbY）＋ 置いたときの中点（scrX, scrY）からの指の動き」で、1 フレームに 1 回だけ scrollTo する（T-108）。
   // 前の中点からの差を指の動きのたびに scrollBy すると、指 1 本の動きで中点は半分しか動かず端数が出て、iOS が整数に丸めるので 1px と 2px が交互に進んで震え、
   // 指とページも少しずつずれた。behavior: 'instant' で、ページの scroll-behavior: smooth を効かせない。端で止まったら目標を今の位置に合わせ直す（戻すとすぐ動く）
@@ -1305,7 +1307,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (flung && !scr && tI1 === -1) scr = 2; // 滑っているのを止めた指は、離すまで描かない
     if (tI0 === -1 || tI1 === -1) { if (!scr) return; }
     else if (act === -1 || aType === 'touch') {
-      if (act !== -1) abortStroke();
+      // 描いていた線（押してから KEEP_MS 以上・大きさ KEEP_PX 以上）は確定して残し、スクロールに移る。置いてすぐの指はスクロールのつもりなので消す（T-109）
+      if (act !== -1) mode === 1 && e.timeStamp - sDown >= KEEP_MS && max(x1 - x0, y1 - y0) >= KEEP_PX * dpr ? endStroke() : abortStroke();
       tapId = -1;
       scr = 1; scrX = (tX0 + tX1) / 2; scrY = (tY0 + tY1) / 2; sbX = win.scrollX; sbY = win.scrollY;
       kN = 0; kPush(e.timeStamp, scrX, scrY);
@@ -1385,7 +1388,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     act = e.pointerId; aType = type; sTool = t;
     const c = CFG[t];
     sW = c.size * dpr; sA = c.alpha; mW = sW;
-    lt = e.timeStamp; pn = 0; vx = vy = 0;
+    lt = sDown = e.timeStamp; pn = 0; vx = vy = 0;
     bx = mx = sx = cx = x0 = x1 = x;
     by = my = sy = cy = y0 = y1 = y;
     try { pad.setPointerCapture(act); } catch (_) { }

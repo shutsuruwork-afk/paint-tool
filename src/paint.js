@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.29.9';
+  const VERSION = '1.29.10';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -695,9 +695,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     measureBar();
     if (barMoved) moveBar(barX, barY); else placeBar();
     updateGhost();
-    remember();
-    if (on) say('Simple Preview にしました', 4000, '本家に戻す', () => setUi(false));
-    else say('本家に戻しました');
+    remember(); // お知らせは出さない（バーが丸ごと変わるので見れば分かる。T-103）
+    if (on && !toastFn) { clearTimeout(toastT); unsay(); } // 本家で出ていたボタンのないお知らせ（起動の「Esc で隠す」など）も消す
   }
 
   // パネルは 1 つだけ開く。描き始め・パネルの外を押す・Esc で閉じる。

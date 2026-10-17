@@ -1905,7 +1905,7 @@ test('Simple Preview（CP2）: 開発用でなくてもその他の最後に出�
   assert.equal((await menu(page)).at(-1), 'Simple Preview');
   await drag(page, [[100, 300], [400, 320]], 10);
   const sum = await checksum(page);
-  // 切り替える: 絵と履歴はそのまま。お知らせには「本家に戻す」が付く。CP2 にない道具（塗りつぶし）を選んでいたらペンになる（T-089）
+  // 切り替える: 絵と履歴はそのまま。お知らせは出さない（T-103）。CP2 にない道具（塗りつぶし）を選んでいたらペンになる（T-089）
   await mouseClick(page, '.bar > [aria-label^="塗りつぶし"]');
   await click(page, '[title^="Simple"]');
   assert.deepEqual(await bar(page), ['ペン*', '文字', '元に戻す', 'その他', '閉じる']);
@@ -1913,7 +1913,7 @@ test('Simple Preview（CP2）: 開発用でなくてもその他の最後に出�
   assert.equal((await prefs(page)).ui, 'cp2');
   assert.equal(await checksum(page), sum);
   assert.equal((await page.evaluate(() => window.__paintBookmarklet.stats())).history, 1);
-  assert.equal(await toast(page), 'Simple Preview にしました本家に戻す');
+  assert.equal(await toast(page), ''); // 切り替えのお知らせは出さない（T-103）
   // ペンのボタンを押すたびに消しゴムと入れ替わる
   await mouseClick(page, '.bar > [aria-label^="ペン"]');
   assert.deepEqual(await bar(page), ['消しゴム*', '文字', '元に戻す', 'その他', '閉じる']);
@@ -1942,7 +1942,7 @@ test('Simple Preview（CP2）: 開発用でなくてもその他の最後に出�
   await page.keyboard.press('?');
   assert.ok(!(await shadowEval(page, root => root.querySelector('.hp').textContent)).includes('ページ操作モード'));
   await page.keyboard.press('Escape');
-  // 閉じる（× の見た目）と Esc は、お知らせを出さずに隠す。ブックマークレットで絵もそのまま戻る（切り替えのお知らせが消えてから確かめる）
+  // 閉じる（× の見た目）と Esc は、お知らせを出さずに隠す。ブックマークレットで絵もそのまま戻る（本家で出ていた起動のお知らせが消えてから確かめる）
   await page.waitForFunction(() => !document.querySelector('paint-bookmarklet').shadowRoot.querySelector('.t').classList.contains('on'), null, { timeout: 6000 });
   await mouseClick(page, '.bar > [aria-label^="閉じる"]');
   assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('paint-bookmarklet')).display), 'none');
@@ -1963,7 +1963,7 @@ test('Simple Preview（CP2）: 開発用でなくてもその他の最後に出�
   // 本家に戻す: 本家の表示とメニューに戻り、覚えた分も消える
   await click(page, '[title^="本家に戻す"]');
   assert.deepEqual(await bar(page), MAIN);
-  assert.equal(await toast(page), '本家に戻しました');
+  assert.equal(await toast(page), '');
   assert.equal((await menu(page)).at(-1), 'Simple Preview');
   // CP2 にもある道具（消しゴム・文字）は、切り替えてもそのまま
   for (const [key, want] of [['e', '消しゴム*'], ['t', 'ペン']]) {

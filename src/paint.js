@@ -1935,6 +1935,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     }
     resetTiles();
     mode = 0;
+    if (pendingFit) fit(); // 描いている間に後回しにした合わせ直し（endStroke と同じ。流さないと、広がった所に描いた次の線が確定で消えた。T-124）
   }
 
   // live のうち触れたタイルの範囲だけを面に合成し、その範囲の元の絵を履歴に積む。

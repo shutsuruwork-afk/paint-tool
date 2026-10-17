@@ -2480,6 +2480,37 @@ test('2 本指でスクロールしている間に 3 本目の指（iPad の手�
   await page.close();
 });
 
+test('描いている途中に画面が広がり、その線が 2 本指で取り消されても、すぐにキャンバスを合わせ直す（広がった所に描いた次の線が消えない。T-124）', async () => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 700 }, hasTouch: true });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(server.base + '/long');
+  await runCode(page, CODE);
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y, id]) => ({ x, y, id })) });
+  const width = () => page.evaluate(() => window.__paintBookmarklet.stats().width);
+  assert.equal(await width(), 390);
+  await touch('touchStart', [[150, 500, 0]]);
+  await touch('touchMove', [[153, 500, 0]]);
+  await page.setViewportSize({ width: 800, height: 700 }); // 回転などで広がる（描いている途中なので合わせ直しは後回し）
+  await page.waitForTimeout(100);
+  await touch('touchStart', [[153, 500, 0], [250, 500, 1]]); // すぐ 2 本目 → 線は取り消し
+  for (let i = 1; i <= 5; i++) await touch('touchMove', [[153, 500 - i * 10, 0], [250, 500 - i * 10, 1]]);
+  await page.waitForTimeout(150);
+  await touch('touchEnd', [[153, 450, 0]]);
+  await touch('touchEnd', []);
+  await page.waitForTimeout(100);
+  assert.equal(await width(), 800, 'refit right after the abort');
+  // 広がった所に描いた線が残る
+  await touch('touchStart', [[600, 300, 0]]);
+  for (let i = 1; i <= 8; i++) await touch('touchMove', [[600 + i * 20, 300, 0]]);
+  await touch('touchEnd', []);
+  await page.waitForTimeout(150);
+  assert.ok((await alphaStats(page, 590, 290, 180, 20)).count > 300, 'the line in the widened area is kept');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('2 本指のスクロールの慣性: 動かしたまま離すと滑って止まる。止まってから離すと滑らない。滑っている間に押すと止まり、その指では描かない（T-106）', async () => {
   const page = await browser.newPage({ viewport: { width: 390, height: 700 }, isMobile: true, hasTouch: true });
   const errors = [];

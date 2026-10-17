@@ -418,26 +418,30 @@ test('見た目（開発用）: インストールページの開発用を入れ
   assert.equal((await prefs(page)).theme, '#ffd54f');
   // 蛍光ペンの予測を切り替える（既定はそのまま）
   const mpOn = () => shadowEval(page, root => [...root.querySelectorAll('.pn.on .sg')].filter(b => b.classList.contains('on')).map(b => b.textContent));
-  assert.deepEqual(await mpOn(), ['そのまま', 'キャンバスの中で']);
+  assert.deepEqual(await mpOn(), ['曲がりに沿う', 'そのまま', 'キャンバスの中で']);
   await mouseClick(page, '.pn.on [aria-label="蛍光ペンの予測: なし"]');
-  assert.deepEqual(await mpOn(), ['なし', 'キャンバスの中で']);
+  assert.deepEqual(await mpOn(), ['曲がりに沿う', 'なし', 'キャンバスの中で']);
+  // 予測の方法をブラウザ（前の方式）に
+  await mouseClick(page, '.pn.on [aria-label="予測の方法: ブラウザ"]');
+  assert.equal((await prefs(page)).ppred, 'chrome');
   assert.equal((await prefs(page)).mpred, 'off');
   // 半透明の線の描き方を前の方式（まとめて）にすると、蛍光ペンを選んだ時点でまとめた要素に濃さがかかる
   await mouseClick(page, '.pn.on [aria-label="半透明の線の描き方: まとめて"]');
-  assert.deepEqual(await mpOn(), ['なし', 'まとめて']);
+  assert.deepEqual(await mpOn(), ['ブラウザ', 'なし', 'まとめて']);
   assert.equal((await prefs(page)).blend, 'group');
   // この見た目をデフォルトに: 見た目を持ってインストールページを開く
   await page.evaluate(() => { window.__opened = []; window.open = (...a) => { window.__opened.push(a); return null; }; });
   await mouseClick(page, '.pn.on [aria-label^="この見た目をデフォルトに"]');
   const [url] = (await page.evaluate(() => window.__opened))[0];
   const d = JSON.parse(decodeURIComponent(url.slice(url.indexOf('#defaults=') + 10)));
-  assert.deepEqual([d.dev, d.theme, d.glass, d.blur, d.sat, d.mpred, d.blend], [true, '#ffd54f', false, 8, 250, 'off', 'group']);
+  assert.deepEqual([d.dev, d.theme, d.glass, d.blur, d.sat, d.ppred, d.mpred, d.blend], [true, '#ffd54f', false, 8, 250, 'chrome', 'off', 'group']);
   const { page: ip, errors: ie } = await openPage(browser, server.base + '/install' + url.slice(url.indexOf('#')));
   assert.equal(await ip.isChecked('#p-theme input[value="custom"]'), true);
   assert.equal(await ip.inputValue('#p-tcolor'), '#ffd54f');
   assert.equal(await ip.inputValue('#p-blur'), '8');
   assert.equal(await ip.inputValue('#p-sat'), '250');
   assert.equal(await ip.isChecked('#p-mpred input[value="off"]'), true);
+  assert.equal(await ip.isChecked('#p-ppred input[value="chrome"]'), true);
   assert.equal(await ip.isChecked('#p-blend input[value="group"]'), true);
   assert.equal(await ip.isChecked('#p-dev'), true);
   assert.deepEqual(ie, []);
@@ -1226,6 +1230,7 @@ test('インストールページで選んだ設定入りのブックマーク�
   assert.equal(String(p0.sat), await page.inputValue('#p-sat'));
   assert.equal(p0.dev, await page.isChecked('#p-dev'));
   assert.equal(p0.mpred, await page.evaluate(() => document.querySelector('#p-mpred input:checked').value));
+  assert.equal(p0.ppred, await page.evaluate(() => document.querySelector('#p-ppred input:checked').value));
   assert.equal(p0.blend, await page.evaluate(() => document.querySelector('#p-blend input:checked').value));
   await page.evaluate(() => window.__paintBookmarklet.destroy());
   // 選ぶと、ボタンの中身が変わる
@@ -1520,6 +1525,44 @@ test('予測線: ペンも蛍光ペンも最後の点より先まで伸ばす。
     const r = { f: (await measure(page, 10)).marker, s: (await measure(page, 1)).marker };
     assert.ok(ok(r), mpred + ' ' + JSON.stringify(r));
   }
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('予測（曲がりに沿う）: 円を描いている途中の予測は、接線ではなく円の内側へ曲がる。止まると予測が縮む', async () => {
+  const { page, errors } = await fresh();
+  const r = await page.evaluate(() => {
+    const root = document.querySelector('paint-bookmarklet').shadowRoot, pad = root.querySelector('.p'), q = root.querySelector('canvas.q');
+    const ev = (type, x, y, ts) => { const e = new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, pointerId: 9, pointerType: 'mouse', isPrimary: true, clientX: x, clientY: y, button: type === 'pointermove' ? -1 : 0, buttons: 1 }); Object.defineProperty(e, 'timeStamp', { value: ts }); return e; };
+    // 中心 (500, 450)・半径 200 の円を、4 ms ごとに 4 px/ms で左回りに進む（座標は小数のまま）
+    const C = [500, 450], R = 200, T0 = performance.now() + 1000;
+    let a = Math.PI, i = 0;
+    const p = () => [C[0] + R * Math.cos(a), C[1] - R * Math.sin(a)];
+    pad.dispatchEvent(ev('pointerdown', ...p(), T0));
+    for (i = 1; i <= 20; i++) { a -= 0.08; pad.dispatchEvent(ev('pointermove', ...p(), T0 + i * 4)); }
+    // 予測の先（最後の点から接線の方向に 15px より先のインク）が、接線から円の中心の側へどれだけずれているか
+    const [lx, ly] = p(), tx = Math.sin(a), ty = Math.cos(a), nx = C[0] - lx, ny = C[1] - ly, nl = Math.hypot(nx, ny);
+    const look = () => {
+      const d = q.getContext('2d').getImageData(0, 0, q.width, q.height).data;
+      let reach = 0, off = 0, n = 0;
+      for (let y = 0; y < q.height; y++) for (let x = 0; x < q.width; x++) {
+        if (d[(y * q.width + x) * 4 + 3] < 100) continue;
+        const along = (x - lx) * tx + (y - ly) * ty;
+        reach = Math.max(reach, along); // 前へ届いた所（末尾の半区間は後ろ側なので入らない）
+        if (along > 15) { off += ((x - lx) * nx + (y - ly) * ny) / nl; n++; }
+      }
+      return { reach: Math.round(reach), inward: n ? off / n : 0, n };
+    };
+    const moving = look();
+    // その場で 40 ms 止まる（同じ座標の入力が続く）
+    for (let k = 1; k <= 10; k++) pad.dispatchEvent(ev('pointermove', lx, ly, T0 + i * 4 + k * 4));
+    const stopped = look();
+    pad.dispatchEvent(ev('pointerup', lx, ly, T0 + i * 4 + 50));
+    return { moving, stopped };
+  });
+  assert.ok(r.moving.reach > 25 && r.moving.n > 10, 'predicts ahead ' + JSON.stringify(r));
+  assert.ok(r.moving.inward > 1, 'curves inward along the circle ' + JSON.stringify(r));
+  assert.ok(r.stopped.reach <= 4, 'shrinks when stopped ' + JSON.stringify(r));
   assert.deepEqual(errors, []);
   await page.close();
 });

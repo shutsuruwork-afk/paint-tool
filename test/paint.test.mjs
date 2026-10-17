@@ -2290,6 +2290,65 @@ test('2 本指のスクロールの慣性: 動かしたまま離すと滑って�
   await page.close();
 });
 
+test('iPhone・iPad では、描く面とツールバーの touchmove を止める（ページ自身のスクロールが同時に動いて震えないように）。ボタンのタップ・パネルのスライダー・2 本指のスクロールはそのまま。ほかでは止めない（T-107）', async () => {
+  const IOS = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+  const open = async ua => {
+    const page = await browser.newPage({ viewport: { width: 390, height: 700 }, isMobile: true, hasTouch: true, ...(ua ? { userAgent: ua } : {}) });
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.goto(server.base + '/long');
+    await runCode(page, CODE);
+    // 最後の touchmove を覚えておき、配り終えた後に止められたかを見る
+    await page.evaluate(() => addEventListener('touchmove', e => { window.__tm = e; }, { capture: true, passive: true }));
+    await page.waitForTimeout(200);
+    const cdp = await page.context().newCDPSession(page);
+    const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], id) => ({ x, y, id })) });
+    const moved = async (x, y) => {
+      await page.evaluate(() => { window.__tm = null; });
+      await touch('touchStart', [[x, y]]);
+      for (let i = 1; i <= 5; i++) { await touch('touchMove', [[x + i * 8, y + i * 4]]); await page.waitForTimeout(20); }
+      const p = await page.evaluate(() => window.__tm && window.__tm.defaultPrevented);
+      await touch('touchEnd', []);
+      await page.waitForTimeout(50);
+      return p;
+    };
+    const center = sel => shadowEval(page, (root, sel) => { const r = root.querySelector(sel).getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }, sel);
+    return { page, errors, touch, moved, center };
+  };
+  const P = await open(IOS);
+  assert.equal(await P.moved(150, 400), true, 'touchmove on the drawing surface is prevented');
+  assert.equal(await P.page.evaluate(() => window.__paintBookmarklet.stats().history), 1, 'the line is drawn');
+  const [bx, by] = await P.center('.bar > [aria-label^="消しゴム"]');
+  assert.equal(await P.moved(bx, by), true, 'touchmove on the toolbar is prevented');
+  // タップでボタンが押せる
+  const [tx, ty] = await P.center('.bar > [aria-label^="文字"]');
+  await P.touch('touchStart', [[tx, ty]]);
+  await P.touch('touchEnd', []);
+  await P.page.waitForTimeout(50);
+  assert.equal((await prefs(P.page)).tool, 'text');
+  // パネルのスライダーは止めない
+  await mouseClick(P.page, '.bar > [aria-label^="色・太さ・濃さ"]');
+  const [sx, sy] = await P.center('.pn.on input[type="range"]');
+  assert.equal(await P.moved(sx, sy), false, 'sliders in a panel keep their touch behaviour');
+  // 2 本指のスクロールはそのまま
+  await P.page.keyboard.press('Escape');
+  await P.touch('touchStart', [[150, 600]]);
+  await P.touch('touchStart', [[150, 600], [250, 600]]);
+  for (let i = 1; i <= 10; i++) await P.touch('touchMove', [[150, 600 - i * 20], [250, 600 - i * 20]]);
+  await P.page.waitForTimeout(150);
+  await P.touch('touchEnd', [[150, 400]]);
+  await P.touch('touchEnd', []);
+  await P.page.waitForTimeout(100);
+  assert.equal(await P.page.evaluate(() => scrollY), 200);
+  assert.deepEqual(P.errors, []);
+  await P.page.close();
+  // iPhone・iPad でなければ止めない（touch-action だけ）
+  const C = await open();
+  assert.equal(await C.moved(150, 400), false);
+  assert.deepEqual(C.errors, []);
+  await C.page.close();
+});
+
 test('LINE の中のブラウザでは、ツールを使う間ページをいちばん上から 1px 下げておく（下へなぞると LINE がブラウザを小さくするのを避ける）。LINE でなければ今まで通り（T-105）', async () => {
   const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Safari Line/15.19.0';
   const open = async ua => {

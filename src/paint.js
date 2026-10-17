@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.31.0';
+  const VERSION = '1.31.1';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -3034,6 +3034,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 
   // ---------- イベント登録 ----------
   for (const [t, f] of TWO) pad.addEventListener(t, f, true); // 2 本指のスクロール（onDown などより先に呼ぶ）
+  // iPhone・iPad（WebKit）では、touch-action: none でもページ自身のスクロールが同時に動くことがあった（LINE の中のブラウザで、2 本指・ツールバー・描く線が震えた。T-107）。
+  // 描く面とツールバーの touchmove を止めると、WebKit は Web ビューのなぞる操作（スクロール・拡大）を待たせてから取り消す。タップ（click）は touchend で決まるので押せる。
+  // パネルの中（スライダー）は止めない。ほかのブラウザ（Chrome など）では足さない（touch-action で足り、入力の経路を変えないため）
+  if (/iP(hone|ad|od)/.test(navigator.userAgent) || (/Mac/.test(PLAT) && navigator.maxTouchPoints > 1)) {
+    pad.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+    bar.addEventListener('touchmove', e => { if (!e.target.closest('.pn')) e.preventDefault(); }, { passive: false });
+  }
   pad.addEventListener('pointerdown', onDown);
   pad.addEventListener('pointermove', onMove);
   pad.addEventListener('pointerup', onUp);

@@ -3157,6 +3157,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function close() {
     if (byeT) return;
     if (hintT) endHint();
+    // 打っている途中の文字や描いている途中の線も描いた物。確定してから描いた物があるかを見る（先に見ると、すぐに破棄して文字が戻せなかった。T-126）
+    if (act !== -1) endStroke();
+    settle();
     if (!hist.length) { destroy(); return; }
     hide();
     wrap.classList.add('bye');

@@ -163,6 +163,21 @@ const mouseClick = async (page, sel) => {
   await page.mouse.click(r.x + r.w / 2, r.y + r.h / 2);
 };
 
+test('文字を打っている途中（確定する前）に × で閉じても、すぐには破棄せず取り消し待ちになり、Ctrl+Z で文字も戻る（T-126）', async () => {
+  const { page, errors } = await fresh();
+  await page.keyboard.press('t');
+  await page.mouse.click(200, 300);
+  await page.keyboard.type('Memo');
+  await mouseClick(page, '[title^="閉じる"]');
+  assert.ok(await page.evaluate(() => !!window.__paintBookmarklet), 'not destroyed at once');
+  assert.ok(await shadowEval(page, root => root.querySelector('.w').classList.contains('bye')), 'waiting for undo');
+  await page.keyboard.press('Control+z');
+  assert.equal(await page.evaluate(() => window.__paintBookmarklet.stats().texts), 1);
+  assert.equal(await page.evaluate(() => document.querySelector('paint-bookmarklet-surface').shadowRoot.querySelector('.to').textContent), 'Memo');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('スマホ（1 段に収まらない幅）では、ツールバーを道具の段・色と元に戻す以降の段の 2 段に整える。広げると 1 段に戻る', async () => {
   const rows = page => shadowEval(page, root => {
     const bar = root.querySelector('.bar'), b = bar.getBoundingClientRect();

@@ -4,19 +4,19 @@
 
 ## 現在地
 
-- 最終更新: 2026-10-17、T-124 の完了時（`fix/bugs` ブランチ）
+- 最終更新: 2026-10-17、T-126 の完了時（`fix/bugs` ブランチ）
 - ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない。HEAD は T-110 のコミット（`git log --grep T-110`）。不具合の修正（T-120〜。ユーザーの依頼「バグ調査。性能の調査〈T-111、別のセッション〉の邪魔をしないように」）は `fix/bugs` で行い、main にはまだ取り込んでいない（版も上げていない。取り込むときに性能の変更とそろえて上げる）
 - CI: GitHub Actions「Pages」は main へのプッシュごとに test → deploy。T-109 の run（39042677325）まで test・deploy とも成功。T-110 のプッシュの結果は Actions で確かめる
 - 公開: https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）の 2 か所。版は v1.32.1
 - 人の操作待ち: R-011（iPhone の LINE の中のブラウザで、2 本指のスクロールが滑らかになったか〈T-108〉を確かめてもらう。ツールバーとペンは T-107 で直ったと回答済み）。R-007 は、重くなったのが勝手に始まったダウンロードのときの出来事で再現できない、との回答で閉じた。R-004 は C に決まった（インストールページの既定＋サイトごとに覚える）
-- 次の一手（`fix/bugs`）: コードを読んで見つけた不具合（T-120〜T-124）は直した。T-125（iPhone で長いページの全消去を元に戻せないおそれ）をユーザーに相談する。終わったら、性能の変更が main に入った後で取り込む。タスクの番号は T-120 から使っている（性能側は T-112 から）
+- 次の一手（`fix/bugs`）: コードを読んで見つけた不具合（T-120〜T-124・T-126）は直した。ランダムな操作を続けて確かめる（scratchpad の fuzz.mjs。リポジトリには入れていない）。T-125（iPhone で長いページの全消去を元に戻せないおそれ）をユーザーに相談する。終わったら、性能の変更が main に入った後で取り込む。タスクの番号は T-120 から使っている（性能側は T-112 から）
 - 次の一手: Simple Preview（T-101 で開発用から出した。ペンボタンの地の色〈T-100〉はユーザーが「とてもお洒落」と気に入った）の使い心地を聞く。R-011 の答えが来たら、震えが残る動きを調べる。直っていたら T-105 の 1px 下げるのが要るかを見直す（Simple のことは `.claude/HANDOFF-simple.md` にまとめた。Simple を触るときは先に読む）。ユーザーに実機で、開発用の「予測の方法: 曲がりに沿う／ブラウザ」を見比べてもらう（特に蛍光ペンと濃さ 35% のペン。Windows の不透明のペンは Ink Trail なので予測を使わない）。ペンタブ・指などの録画が届いたら `npm run predict` で比べる（T-086）。効率と中身の改善は、トレードオフがあれば先にユーザーに確認する（履歴のメモリ上限・全消去の後のタイルの解放・塗りつぶしを画面の外まで広げる、は今のままでよいと回答済み）。残りの候補は T-086・T-084（全消去を消す物がないときに薄くする。research/simple の T-085 で試した。実機で試してもらってから）・T-018・T-013・T-031・T-020（T-011・T-017 は後回し）。タスクの番号: T-071〜T-083・T-085 は research/simple ブランチで使ったので、次は T-111 から
 
 ## 始め方
 
 ```sh
 npm install          # terser 5.36.0 と playwright 1.56.1（ブラウザは /opt/pw-browsers にある）
-npm test             # ビルドしてから Playwright のテスト 87 件
+npm test             # ビルドしてから Playwright のテスト 88 件
 npm run bench        # 性能計測（メインスレッドの占有時間）
 npm run pop          # 蛍光ペンの先端の消える画素（ぴょこぴょこ）と、1〜2 フレーム後のペン先との隙間（T-055）
 npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、予測の方法ごとの 1 フレーム後のペン先とのずれ・はみ出し・消える長さを比べる（T-060）。負荷の様子（フレームの間隔・届くまでの遅れ・予測線の点滅）も出す（T-087）
@@ -39,7 +39,7 @@ npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、予�
   - お知らせ（`say(msg, ms, act, fn, xfn, inl)`。fn を渡すとボタン付き、xfn を渡すと × 付き、inl ならボタンを文の続きに置く）、塗りつぶし（floodFill → maskClear / maskColor → scanFill。画面に何も描いていなければ全体の矩形を 1 つ）、選択（settle / showSel / liftSel → liftRaster + beginSel / dropSel / paintSel / selHit / selHover / selDown / selMove / scaleSel / selUp / selAbort / pickSel / nudgeSel。浮かせた画素は selC、選んだ文字の物の組は selT、どちらも入れ物 selIn に入れて transform で拡大縮小。枠は selEl と selB）、文字（物: tlist / tNew / tSnap / tApply / swapText / textHit / paintText（書き出し用）/ eraseText・showErased・takeErased（消しゴム）。入力: textAt / editText / styleTa / fitTa / commitText。電卓: updateGhost（fitTa も呼ぶ）/ lineW / acceptGhost / calcLine（薄い答えは ghostEl、右端は ghostR）。入力欄は `ta`、書き直し中の物は `taObj`）、書き出し（capture / exportBlob / save / copyImg / pixels）、HUD（D キー）、操作の一覧（HELP / openHelp / closeHelp。? キー）、キーボード（onKey）、設定（applyPrefs / snapPrefs / remember → savePrefs / loadSite / placeBar。DEF ＋ サイトの保存）、表示制御（show / hide / hideHint → endHint / toggle / close → endBye / reopen / onByeKey、destroy）、起動
 - `src/install.html`: インストールページのテンプレート（本文のみ）。並びは T-039 で、見出し（Paint ボタン・試す・目次）→ 入れ方 → 試し書き → デフォルトの設定（id="defaults"、動きはスイッチ）→ 使い方（機能の説明と操作の一覧 %%HELP%%）→ できないこと → 仕組みと計測（仕組み・低遅延機能の表・計測の表）にした。機能の説明は「使い方」に、技術の説明は「仕組みと計測」に分ける。`%%BOOKMARKLET_HREF%%` などを build.mjs が置き換える。「デフォルトの設定」のフォームは、選んだ既定（組み込みの既定との差分）を JSON にして、ボタンの href の `'__PAINT_DEFAULTS__'` を置き換える。フォームの状態はインストールページ自身の localStorage（`paint-defaults`）に、組み込みの既定との差分だけを残す（T-046。それより前に保存した人は全体の形のまま）。組み込みの既定（BUILTIN と PALETTE）は src/paint.js と手で合わせる（テストで一致を確かめている）
 - `build.mjs`: src/paint.js の HELP（`/*HELP*/` の間の JSON）を読んで、インストールページの `%%HELP%%` にショートカットの一覧を書き出す。terser で圧縮し、`dist/paint.min.js`、`dist/bookmarklet.txt`、`docs/index.html` を作る。「このページで試す」用の埋め込み版は、既定の目印を `window.__paintBookmarkletDefaults` を読む式に変える（eval を使わない）。目印が 1 つだけあることも確かめる。インストールページのボタンの href がブックマークレットと一致するかを、書き出す前に確かめる
-- `test/paint.test.mjs`（テスト 87 件）、`test/helpers.mjs`（既定を埋め込んだコードを作る `withDefaults` と直接起動する `runCode`、サーバー〈`/install` はビルドしたインストールページ〉〈`/long` は縦 3000px、`/offset` は html に余白〉・起動・画素の読み取り `readMain` / `screenPixel`・`scrollTo`）、`test/bench.mjs`、`test/pop.mjs`（npm run pop）、`test/predict.mjs`（npm run predict。録った入力を処理した順にたどり、そのとき本体が知っている点から、なし・ブラウザ（本体での使い方）・曲がりに沿う（ownPred と同じ計算。値を変えたら両方そろえる）・直線を、1 フレーム後のペン先とのずれ・はみ出し・消える長さで比べる。負荷の様子と、予測線を消す判定の前と今の点滅の数も出す。analyze と ownPred を export している）
+- `test/paint.test.mjs`（テスト 88 件）、`test/helpers.mjs`（既定を埋め込んだコードを作る `withDefaults` と直接起動する `runCode`、サーバー〈`/install` はビルドしたインストールページ〉〈`/long` は縦 3000px、`/offset` は html に余白〉・起動・画素の読み取り `readMain` / `screenPixel`・`scrollTo`）、`test/bench.mjs`、`test/pop.mjs`（npm run pop）、`test/predict.mjs`（npm run predict。録った入力を処理した順にたどり、そのとき本体が知っている点から、なし・ブラウザ（本体での使い方）・曲がりに沿う（ownPred と同じ計算。値を変えたら両方そろえる）・直線を、1 フレーム後のペン先とのずれ・はみ出し・消える長さで比べる。負荷の様子と、予測線を消す判定の前と今の点滅の数も出す。analyze と ownPred を export している）
 - `.github/workflows/pages.yml`: main へのプッシュでテストしてから docs/ を Pages に公開。PR ではテストだけ
 - `.claude/`: CLAUDE.md（概要と読み込み）、`rules/`（tasks / handoff / human）、TASKS.md、HANDOFF.md、HANDOFF-simple.md（Simple だけのこと。T-095）、Stop フック（`hooks/check-handoff.mjs`）
 - `.human/`: ユーザーとの非同期のやりとり。`ideas/`（ユーザーのアイデア、1 件 1 ファイル）、`requests.md`（Claude からの判断・作業のお願い）
@@ -67,7 +67,7 @@ npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、予�
 - パネルは同時に 1 つだけ。閉じるのは wrap の pointerdown（capture）・Esc・hide。capture のリスナーはパネルが開いていなければ比較 1 回で戻る。パネルはバーの子（absolute）なので、バーの幅（measureBar）には入らない。
 - innerHTML・style 属性・外部リソースは使わない（CSP と Trusted Types への対策）。
 - 2 回目の実行は表示の切り替えだけ（`window.__paintBookmarklet` で判定）。閉じた後の取り消し待ち（`byeT`）の間は、show / toggle が reopen になる。Esc と「−」は hideHint で隠し、HINT_MS（4 秒）の間「ブックマークレットで再表示」を出す（`hintT`。close の取り消し待ちと同じく、お知らせ以外は消えて入力のリスナーも外れている）。show・close・destroy は先に endHint を呼ぶ。ブックマークレットと API の hide はお知らせを出さない。
-- × は `close()`（描いた物があれば BYE_MS = 8 秒の取り消し待ち。その後に destroy）。API の `destroy()` はすぐに解放する（テストで確かめている）。取り消し待ちの間は visible = false で、入力のリスナーも外れている。
+- × は `close()`（描いた物があれば BYE_MS = 8 秒の取り消し待ち。その後に destroy）。描いた物があるかは、描いている途中の線と打っている途中の文字を確定（endStroke・settle）してから見る（T-126）。API の `destroy()` はすぐに解放する（テストで確かめている）。取り消し待ちの間は visible = false で、入力のリスナーも外れている。
 
 ## 決定事項と理由
 
@@ -162,6 +162,11 @@ npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、予�
 - Artifact: https://claude.ai/artifact/Aj3XQxn6Q7EUaiHjYAFbve（インストールページ、非公開）。`docs/index.html` の本文だけの版
 
 ## 完了ログ（新しい順）
+
+### T-126 文字を打っている途中（確定する前）に × で閉じても、すぐには破棄せず取り消し待ちにする（打った文字も戻せる） — 2026-10-17
+- 変更: close（×）は、描いている途中の線と打っている途中の文字を先に確定してから、描いた物があるかを見るようにした。前は確定する前に履歴が空かを見ていたので、文字だけを打っている途中に × を押すと「何も描いていない」としてすぐに破棄され、打った文字が戻せなかった（取り消しのお知らせも出ない）。T-120〜T-124 の後に、コードを見直して見つけた。`fix/bugs` ブランチ。
+- 確認: テストを 1 件足した（文字ツールで打っている途中に × を押すと、破棄されずに取り消し待ちになり、Ctrl+Z で戻すと文字も戻る）。前の版で落ちることを確かめた。`npm test` 88 件が通過。
+- 残課題: なし。
 
 ### T-124 描いている途中に画面の大きさが変わり、その線が 2 本指やパームリジェクションで取り消されたときも、すぐにキャンバス・面・ツールバーを合わせ直す — 2026-10-17
 - 変更: abortStroke の最後でも、描いている間に後回しにした合わせ直し（pendingFit）を流すようにした（endStroke と同じ）。前は、取り消された後、次の線を描き終えるまで合わせ直しが遅れ、その間に広がった所へ描いた線は確定で消えた（live のキャンバスが狭いまま）。ツールバーが画面の外に残ることもあった。コードを読んで見つけた所見の 5。`fix/bugs` ブランチ。

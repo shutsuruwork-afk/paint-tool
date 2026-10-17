@@ -2242,6 +2242,57 @@ test('スマホの 2 本指: 本家でも Simple でも、2 本指で動かす�
   await page.close();
 });
 
+test('LINE の中のブラウザでは、ツールを使う間ページをいちばん上から 1px 下げておく（下へなぞると LINE がブラウザを小さくするのを避ける）。LINE でなければ今まで通り（T-105）', async () => {
+  const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Safari Line/15.19.0';
+  const open = async ua => {
+    const page = await browser.newPage({ viewport: { width: 390, height: 700 }, isMobile: true, hasTouch: true, ...(ua ? { userAgent: ua } : {}) });
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.goto(server.base + '/long');
+    await runCode(page, CODE);
+    const cdp = await page.context().newCDPSession(page);
+    const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], id) => ({ x, y, id })) });
+    // 2 本指を下へ動かす（ページは上へ戻る）
+    const twoDown = async () => {
+      await touch('touchStart', [[150, 300]]);
+      await touch('touchStart', [[150, 300], [250, 300]]);
+      for (let i = 1; i <= 10; i++) await touch('touchMove', [[150, 300 + i * 20], [250, 300 + i * 20]]);
+      await touch('touchEnd', [[150, 500]]);
+      await touch('touchEnd', []);
+      await page.waitForTimeout(100);
+    };
+    return { page, errors, touch, twoDown, y: () => page.evaluate(() => scrollY) };
+  };
+  const L = await open(UA);
+  assert.equal(await L.y(), 1, 'opening the tool moves the page 1px off the top');
+  await L.page.evaluate(() => scrollTo(0, 100));
+  await L.twoDown();
+  assert.equal(await L.y(), 1, 'two fingers stop 1px before the top');
+  // ページのスクリプトがいちばん上に戻しても、描き始めに 1px 下げてから描く（線はページの描いた所に付く）
+  await L.page.evaluate(() => scrollTo(0, 0));
+  await L.touch('touchStart', [[100, 400]]);
+  for (let i = 1; i <= 5; i++) await L.touch('touchMove', [[100 + i * 30, 400]]);
+  await L.touch('touchEnd', []);
+  await L.page.waitForTimeout(100);
+  assert.equal(await L.y(), 1);
+  assert.ok((await readMain(L.page, 160, 400))[3] > 200, 'the line is where it was drawn');
+  // ページ操作モードの間は下げない。描く方に戻ると下げる
+  await L.page.keyboard.press('v');
+  await L.page.evaluate(() => scrollTo(0, 0));
+  await L.page.keyboard.press('v');
+  assert.equal(await L.y(), 1);
+  assert.deepEqual(L.errors, []);
+  await L.page.close();
+  // LINE でなければ、いちばん上まで戻れる
+  const C = await open();
+  assert.equal(await C.y(), 0);
+  await C.page.evaluate(() => scrollTo(0, 100));
+  await C.twoDown();
+  assert.equal(await C.y(), 0);
+  assert.deepEqual(C.errors, []);
+  await C.page.close();
+});
+
 test('入力の録画（開発用）: 入れて描くと、線ごとに入力（押す・動く・離す・フレーム）が録られ、JSON で書き出せる。切ると録らない。開発用でなければ出ない', async () => {
   const { readFileSync } = await import('node:fs');
   const items = page => shadowEval(page, root => [...root.querySelectorAll('.mi span')].map(s => s.textContent).filter(t => /録/.test(t)));

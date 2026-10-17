@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.30.0';
+  const VERSION = '1.30.1';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -749,6 +749,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   bar.addEventListener('click', e => { if (eatClick) { eatClick = false; e.stopPropagation(); e.preventDefault(); } }, true);
   bar.addEventListener('pointerdown', e => {
     eatClick = false;
+    offTop();
     if (e.button !== 0 || e.target.closest('.pn')) return;
     measureBar();
     const sx = e.clientX, sy = e.clientY, ox = sx - barX, oy = sy - barY, id = e.pointerId;
@@ -926,6 +927,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (act !== -1) endStroke();
     settle();
     pass = !pass;
+    offTop();
     wrap.classList.toggle('pass', pass);
     passB.classList.toggle('on', pass);
     say(pass ? 'ページ操作モード（V で描画に戻る）' : '描画モード');
@@ -1231,7 +1233,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 2 本とも離すまでは描かない。pad に capture で登録し（起動時に一度）、onDown / onMove / onUp より先に呼ばれて、スクロールの間はそれらに渡さない。
   // タッチの塗りつぶしと文字は離したときに行う（tapId）ので、2 本指になったら取り消すだけでよい。1 本のときの仕事は、ポインタの番号の比較と座標の代入だけ
   let tI0 = -1, tX0 = 0, tY0 = 0, tI1 = -1, tX1 = 0, tY1 = 0, scr = 0, scrX = 0, scrY = 0; // scr: 1 = スクロール中、2 = 片方を離した（残りを離すまで描かない）
+  // LINE の中のブラウザ（UA に Line/）は、ページがいちばん上のときに下へなぞると、ブラウザごと小さくする。ページからはその操作を止められない
+  // （WebKit が preventDefault や touch-action で止めるのは Web ビューの中の操作だけ）ので、ツールを使う間はページを上から 1px 下げておく（T-105）。
+  // 出したとき・押したとき（線の前）・2 本指で上へ戻ったとき・ページ操作モードから戻ったときに直す。スクロールできないページでは効かない
+  const LINE = /\bLine\//.test(navigator.userAgent);
+  const offTop = () => { if (LINE && !pass && win.scrollY < 1) win.scrollTo(win.scrollX, 1); };
   function twoDown(e) {
+    if (act === -1) offTop();
     if (e.pointerType !== 'touch') return;
     const id = e.pointerId;
     if (e.isPrimary) { tI0 = tI1 = -1; scr = 0; } // 新しいタッチの始まり（離したことを取りこぼしていても数え直す）
@@ -1258,6 +1266,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (scr !== 1) return;
     const mx = (tX0 + tX1) / 2, my = (tY0 + tY1) / 2;
     win.scrollBy(scrX - mx, scrY - my);
+    offTop();
     scrX = mx; scrY = my;
   }
   function twoUp(e) {
@@ -3018,6 +3027,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     topLayer();
     listen(true);
     fit();
+    offTop();
     wrap.focus({ preventScroll: true });
   }
   function hide() {

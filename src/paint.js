@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.32.0';
+  const VERSION = '1.32.1';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -109,6 +109,8 @@
 
   // ガラスのガウス方式: ぼかしの元を周りへ --gm だけ広げて拾い、見せるのはバーの角丸の形だけ（mask で切る）。
   // 外側の要素で切り抜く（overflow・clip-path）と元の範囲が狭まってぼけが弱くなるので、角丸も mask の中で作る
+  // 地の色はぼかし（::before の backdrop-filter）と別の ::after に置く（T-110）。同じ要素だと、iOS で速くスクロールしてぼかしが一瞬描かれないとき、地ごと消えて透明になった。
+  // どちらも z-index: -1 で、後の ::after が上に描かれる（ぼかしの上に地、の重なりは前と同じ）
   // 地は縁（border の 1px）の下まで敷き、縁の線は outline で地の上に描く（T-102）。地が縁の内側だけだと、縁から下のページが透け、
   // 暗い見た目を白いページに置くと白い枠に見えた。縁の線は、暗いページで暗いバーの輪郭を見せるためのもの
   const GQ = (at, pos) => `radial-gradient(circle at ${at},#000 calc(var(--gr) - .5px),#0000 var(--gr)) ${pos}/var(--gr) var(--gr) no-repeat content-box`;
@@ -143,7 +145,8 @@ canvas{position:absolute;left:0;top:0;pointer-events:none}
 .dot{width:var(--d);height:var(--d);border-radius:50%;background:var(--c);opacity:var(--a);box-shadow:0 0 0 1px #ffffff59}
 .dot.er{background:none;opacity:1;box-shadow:inset 0 0 0 1.5px #e8e9ee}
 .glass .bar,.glass .pn{background:none;border-color:transparent;outline:1px solid #ffffff24;outline-offset:-1px;box-shadow:0 6px 24px #0007,inset 0 1px 0 #ffffff1c}.glass .pn{isolation:isolate}
-.glass .bar::before,.glass .pn::before{content:"";position:absolute;inset:-1px;z-index:-1;border-radius:inherit;background:rgb(var(--gc) / var(--gt));-webkit-backdrop-filter:blur(var(--gb)) saturate(var(--gs));backdrop-filter:blur(var(--gb)) saturate(var(--gs));pointer-events:none}
+.glass .bar::before,.glass .pn::before{content:"";position:absolute;inset:-1px;z-index:-1;border-radius:inherit;-webkit-backdrop-filter:blur(var(--gb)) saturate(var(--gs));backdrop-filter:blur(var(--gb)) saturate(var(--gs));pointer-events:none}
+.glass .bar::after,.glass .pn::after{content:"";position:absolute;inset:-1px;z-index:-1;border-radius:inherit;background:rgb(var(--gc) / var(--gt));pointer-events:none}
 .gauss .bar::before{--gr:12px}.gauss .pn::before{--gr:10px}
 .gauss .bar::before,.gauss .pn::before{inset:calc(var(--gm) * -1 - 1px);padding:var(--gm);border-radius:0;-webkit-mask:${GMASK};mask:${GMASK}}
 .light{color:#1d2026;color-scheme:light;--gc:250 250 252}

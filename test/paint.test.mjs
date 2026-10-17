@@ -280,29 +280,30 @@ test('? で操作の一覧が重なって出る（? ・Esc・外を押すと閉�
 
 test('見た目: 既定は白いガラス（ガウス・ぼかし 18px・地 80%・彩度 200%）。暗い（黒に白）・ガラスなし・ガラスの調整（ぼかし方・強さ・地の濃さ）をインストールページで選べる', async () => {
   const look = page => shadowEval(page, root => {
-    const w = root.querySelector('.w'), bar = root.querySelector('.bar'), pn = root.querySelector('.pn'), g = getComputedStyle(bar, '::before');
+    const w = root.querySelector('.w'), bar = root.querySelector('.bar'), pn = root.querySelector('.pn'), g = getComputedStyle(bar, '::before'), t = getComputedStyle(bar, '::after');
     return {
       cls: ['light', 'glass', 'gauss'].filter(c => w.classList.contains(c)).join(' '),
       color: getComputedStyle(w).color,
       bar: getComputedStyle(bar).backgroundColor,
       blur: g.backdropFilter,
-      tint: g.backgroundColor,
+      tint: t.backgroundColor, // 地の色はぼかし（::before）と別の ::after（T-110。ぼかしが一瞬描かれなくても地は残る）
+      blurBg: g.backgroundColor,
       mask: (g.maskImage || g.webkitMaskImage || '').includes('radial-gradient'),
       panel: getComputedStyle(pn, '::before').backdropFilter,
     };
   });
   const { page, errors } = await fresh();
-  assert.deepEqual(await look(page), { cls: 'light glass gauss', color: 'rgb(29, 32, 38)', bar: 'rgba(0, 0, 0, 0)', blur: 'blur(18px) saturate(2)', tint: 'rgba(250, 250, 252, 0.8)', mask: true, panel: 'blur(18px) saturate(2)' });
+  assert.deepEqual(await look(page), { cls: 'light glass gauss', color: 'rgb(29, 32, 38)', bar: 'rgba(0, 0, 0, 0)', blur: 'blur(18px) saturate(2)', tint: 'rgba(250, 250, 252, 0.8)', blurBg: 'rgba(0, 0, 0, 0)', mask: true, panel: 'blur(18px) saturate(2)' });
   const p0 = await prefs(page);
   assert.deepEqual([p0.theme, p0.glass, p0.blurMode, p0.blur, p0.tint, p0.sat], ['light', true, 'gauss', 18, 80, 200]);
   // 暗い・ガラスなし（T-050 より前の既定）
   await page.evaluate(() => window.__paintBookmarklet.destroy());
   await runCode(page, withDefaults(CODE, { theme: 'dark', glass: false }));
-  assert.deepEqual(await look(page), { cls: '', color: 'rgb(232, 233, 238)', bar: 'rgb(32, 34, 40)', blur: 'none', tint: 'rgba(0, 0, 0, 0)', mask: false, panel: 'none' });
+  assert.deepEqual(await look(page), { cls: '', color: 'rgb(232, 233, 238)', bar: 'rgb(32, 34, 40)', blur: 'none', tint: 'rgba(0, 0, 0, 0)', blurBg: 'rgba(0, 0, 0, 0)', mask: false, panel: 'none' });
   // 明るい・ガラス・ふつうのぼかし・強さ 8・濃さ 50%
   await page.evaluate(() => window.__paintBookmarklet.destroy());
   await runCode(page, withDefaults(CODE, { theme: 'light', glass: true, blurMode: 'plain', blur: 8, tint: 50 }));
-  assert.deepEqual(await look(page), { cls: 'light glass', color: 'rgb(29, 32, 38)', bar: 'rgba(0, 0, 0, 0)', blur: 'blur(8px) saturate(2)', tint: 'rgba(250, 250, 252, 0.5)', mask: false, panel: 'blur(8px) saturate(2)' });
+  assert.deepEqual(await look(page), { cls: 'light glass', color: 'rgb(29, 32, 38)', bar: 'rgba(0, 0, 0, 0)', blur: 'blur(8px) saturate(2)', tint: 'rgba(250, 250, 252, 0.5)', blurBg: 'rgba(0, 0, 0, 0)', mask: false, panel: 'blur(8px) saturate(2)' });
   const p1 = await prefs(page);
   assert.deepEqual([p1.theme, p1.glass, p1.blurMode, p1.blur, p1.tint], ['light', true, 'plain', 8, 50]);
   await page.close();

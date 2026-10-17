@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.30.1';
+  const VERSION = '1.31.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -749,6 +749,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   bar.addEventListener('click', e => { if (eatClick) { eatClick = false; e.stopPropagation(); e.preventDefault(); } }, true);
   bar.addEventListener('pointerdown', e => {
     eatClick = false;
+    stopFling();
     offTop();
     if (e.button !== 0 || e.target.closest('.pn')) return;
     measureBar();
@@ -1238,7 +1239,45 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 出したとき・押したとき（線の前）・2 本指で上へ戻ったとき・ページ操作モードから戻ったときに直す。スクロールできないページでは効かない
   const LINE = /\bLine\//.test(navigator.userAgent);
   const offTop = () => { if (LINE && !pass && win.scrollY < 1) win.scrollTo(win.scrollX, 1); };
+  // 離した後の慣性（T-106、ユーザーの要望: スクロールの持続性）: 離す前の 100 ms の中点の動き（輪 KN 個）から速さを出し、1 ms ごとに KF 倍に落としながら
+  // 毎フレーム scrollBy する（0.998 は iOS の UIScrollView の normal と同じ減り方）。止まってから離したときは滑らない。
+  // 滑っている間に押したら止めるだけ（その指では描かない）。ツールバーを押す・隠す・ページの端に着く、でも止まる
+  const KN = 8, KF = 0.998, kT = new Float64Array(KN), kX = new Float64Array(KN), kY = new Float64Array(KN);
+  let kN = 0, kVX = 0, kVY = 0, kAX = 0, kAY = 0, kL = 0, kR = 0;
+  const kPush = (t, x, y) => { const i = kN++ % KN; kT[i] = t; kX[i] = x; kY[i] = y; };
+  const stopFling = () => { if (kR) { cancelAnimationFrame(kR); kR = 0; } };
+  function flingStart(t) {
+    if (kN < 2) return;
+    const j = (kN - 1) % KN, tj = kT[j];
+    if (t - tj > 80) return;
+    let i = j;
+    for (let n = 1; n < min(kN, KN); n++) { const p = (i + KN - 1) % KN; if (tj - kT[p] > 100) break; i = p; }
+    const dt = tj - kT[i];
+    if (dt < 8) return;
+    let vx = (kX[i] - kX[j]) / dt, vy = (kY[i] - kY[j]) / dt; // スクロールの向き（指の動きの逆）。px/ms
+    const v = hypot(vx, vy);
+    if (v < 0.15) return;
+    if (v > 8) { vx *= 8 / v; vy *= 8 / v; }
+    kVX = vx; kVY = vy; kAX = kAY = 0; kL = t;
+    kR = requestAnimationFrame(fling);
+  }
+  function fling(ts) {
+    const dt = min(50, max(0, ts - kL)), k = KF ** dt;
+    kL = ts; kVX *= k; kVY *= k;
+    kAX += kVX * dt; kAY += kVY * dt;
+    const dx = Math.trunc(kAX), dy = Math.trunc(kAY);
+    kAX -= dx; kAY -= dy;
+    if (dx || dy) {
+      const x0 = win.scrollX, y0 = win.scrollY;
+      win.scrollBy(dx, dy);
+      offTop();
+      if (win.scrollX === x0 && win.scrollY === y0) { kR = 0; return; } // 端に着いた
+    }
+    kR = abs(kVX) + abs(kVY) < 0.03 ? 0 : requestAnimationFrame(fling);
+  }
   function twoDown(e) {
+    const flung = !!kR;
+    stopFling();
     if (act === -1) offTop();
     if (e.pointerType !== 'touch') return;
     const id = e.pointerId;
@@ -1246,11 +1285,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (tI0 === -1) { tI0 = id; tX0 = e.clientX; tY0 = e.clientY; }
     else if (tI1 === -1) { tI1 = id; tX1 = e.clientX; tY1 = e.clientY; }
     else return;
+    if (flung && !scr && tI1 === -1) scr = 2; // 滑っているのを止めた指は、離すまで描かない
     if (tI0 === -1 || tI1 === -1) { if (!scr) return; }
     else if (act === -1 || aType === 'touch') {
       if (act !== -1) abortStroke();
       tapId = -1;
       scr = 1; scrX = (tX0 + tX1) / 2; scrY = (tY0 + tY1) / 2;
+      kN = 0; kPush(e.timeStamp, scrX, scrY);
       for (const i of [tI0, tI1]) try { pad.setPointerCapture(i); } catch (_) { }
     } else return;
     e.preventDefault();
@@ -1268,6 +1309,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     win.scrollBy(scrX - mx, scrY - my);
     offTop();
     scrX = mx; scrY = my;
+    kPush(e.timeStamp, mx, my);
   }
   function twoUp(e) {
     const id = e.pointerId;
@@ -1276,6 +1318,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     else return;
     if (!scr) return;
     e.stopImmediatePropagation();
+    if (scr === 1 && e.type === 'pointerup') flingStart(e.timeStamp); // 1 本目を離したところで滑らせる
     scr = tI0 === -1 && tI1 === -1 ? 0 : 2;
   }
   const TWO = [['pointerdown', twoDown], ['pointermove', twoMove], ['pointerup', twoUp], ['pointercancel', twoUp]];
@@ -3031,6 +3074,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     wrap.focus({ preventScroll: true });
   }
   function hide() {
+    stopFling();
     if (!visible) return;
     if (act !== -1) endStroke();
     settle();

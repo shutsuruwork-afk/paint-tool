@@ -2196,6 +2196,7 @@ test('スマホの 2 本指: 本家でも Simple でも、2 本指で動かす�
     await touch('touchMove', [[160, 490]]);
     await touch('touchStart', [[160, 490], [250, 500]]);
     for (let i = 1; i <= 10; i++) await touch('touchMove', [[160, 490 - i * 20], [250, 500 - i * 20]]);
+    await page.waitForTimeout(150); // 止まってから離す（慣性で滑らせない。T-106）
     await touch('touchEnd', [[160, 290]]);
     await touch('touchEnd', []);
     await page.waitForTimeout(100);
@@ -2238,6 +2239,53 @@ test('スマホの 2 本指: 本家でも Simple でも、2 本指で動かす�
   await twoFingers();
   y += 200;
   assert.deepEqual([(await state()).y, (await state()).history], [y, h0 + 1]);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('2 本指のスクロールの慣性: 動かしたまま離すと滑って止まる。止まってから離すと滑らない。滑っている間に押すと止まり、その指では描かない（T-106）', async () => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 700 }, isMobile: true, hasTouch: true });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(server.base + '/long');
+  await runCode(page, CODE);
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], id) => ({ x, y, id })) });
+  const y = () => page.evaluate(() => scrollY);
+  // 2 本指を 16 ms ごとに 20 px ずつ上へ（約 1.25 px/ms）。pause なら止まってから離す
+  const swipe = async pause => {
+    await touch('touchStart', [[150, 600]]);
+    await touch('touchStart', [[150, 600], [250, 600]]);
+    for (let i = 1; i <= 10; i++) { await touch('touchMove', [[150, 600 - i * 20], [250, 600 - i * 20]]); await page.waitForTimeout(16); }
+    if (pause) await page.waitForTimeout(200);
+    await touch('touchEnd', [[150, 400]]);
+    await touch('touchEnd', []);
+  };
+  const settle = async () => { let a = await y(), b; for (;;) { await page.waitForTimeout(250); b = await y(); if (b === a) return b; a = b; } };
+  await swipe(false);
+  const y1 = await settle();
+  assert.ok(y1 > 200 + 150, 'it keeps scrolling after the fingers lift: ' + y1);
+  // 止まってから離すと滑らない
+  await swipe(true);
+  assert.equal(await settle(), y1 + 200);
+  // 滑っている間に押すと止まる。その指で動かしても描かない
+  const h0 = await page.evaluate(() => window.__paintBookmarklet.stats().history);
+  await swipe(false);
+  await page.waitForTimeout(60);
+  await touch('touchStart', [[200, 300]]);
+  const yStop = await y();
+  await page.waitForTimeout(200);
+  assert.equal(await y(), yStop, 'a touch stops the fling');
+  for (let i = 1; i <= 5; i++) await touch('touchMove', [[200 + i * 20, 300]]);
+  await touch('touchEnd', []);
+  await page.waitForTimeout(100);
+  assert.equal(await page.evaluate(() => window.__paintBookmarklet.stats().history), h0, 'the stopping touch does not draw');
+  // 次の 1 本指は描ける
+  await touch('touchStart', [[100, 400]]);
+  for (let i = 1; i <= 5; i++) await touch('touchMove', [[100 + i * 20, 400]]);
+  await touch('touchEnd', []);
+  await page.waitForTimeout(100);
+  assert.equal(await page.evaluate(() => window.__paintBookmarklet.stats().history), h0 + 1);
   assert.deepEqual(errors, []);
   await page.close();
 });

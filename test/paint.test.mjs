@@ -1567,6 +1567,54 @@ test('予測（曲がりに沿う）: 円を描いている途中の予測は、
   await page.close();
 });
 
+test('パソコンが重いとき: 入力が遅れてまとめて届いても、動いている途中に予測線が消えない（止まれば消える）。フレームが飛んでも 1 フレームの長さは伸びない', async () => {
+  const { page, errors } = await fresh();
+  const r = await page.evaluate(async () => {
+    const api = window.__paintBookmarklet, pad = document.querySelector('paint-bookmarklet').shadowRoot.querySelector('.p');
+    const ev = (type, x, y, ts) => { const e = new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, pointerId: 9, pointerType: 'mouse', isPrimary: true, clientX: x, clientY: y, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1 }); Object.defineProperty(e, 'timeStamp', { value: ts }); return e; };
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const frame = () => new Promise(r => requestAnimationFrame(r));
+    // 円の上を 8 ms ごとに進む点。時刻は本物の時計で、届けるのは 60 ms ごとにまとめて（ブラウザごと遅れているとき）
+    const C = [500, 380], R = 180, pos = i => [C[0] + R * Math.cos(i * 0.02), C[1] + R * Math.sin(i * 0.02)];
+    const T0 = performance.now();
+    pad.dispatchEvent(ev('pointerdown', ...pos(0), T0));
+    let sent = 1, done = false, moving = 0, off = 0;
+    (async () => { while (!done) { const s = api.stats().pred; await frame(); if (sent > 10 && !done) { moving++; if (!s) off++; } } })();
+    const N = 150; // 1.2 秒
+    while (sent < N) {
+      await sleep(60);
+      const now = performance.now();
+      for (; sent < N && T0 + sent * 8 <= now; sent++) pad.dispatchEvent(ev('pointermove', ...pos(sent), T0 + sent * 8));
+    }
+    done = true;
+    const delay = api.stats().inputDelay, predWhenStopped = api.stats().pred;
+    // 止まる（入力が来ない）: 遅れの分だけ待ってから消える
+    const tStop = performance.now();
+    let cleared = -1;
+    while (performance.now() - tStop < 600) { await frame(); if (!api.stats().pred) { cleared = performance.now() - tStop; break; } }
+    pad.dispatchEvent(ev('pointerup', ...pos(N - 1), performance.now()));
+    // フレームが飛ぶ（毎フレーム 22 ms ふさぐ）間に描いても、1 フレームの長さは画面の書き換えの間隔のまま
+    const T1 = performance.now();
+    pad.dispatchEvent(ev('pointerdown', 200, 600, T1));
+    let k = 0;
+    while (performance.now() - T1 < 800) {
+      await frame();
+      const end = performance.now() + 22; while (performance.now() < end);
+      k++; pad.dispatchEvent(ev('pointermove', 200 + k * 4, 600, performance.now()));
+    }
+    const fi = api.stats().frame;
+    pad.dispatchEvent(ev('pointerup', 200 + k * 4, 600, performance.now()));
+    return { moving, off, delay, predWhenStopped, cleared, fi };
+  });
+  assert.ok(r.moving > 40, 'frames while moving ' + JSON.stringify(r));
+  assert.ok(r.off <= 2, 'prediction stays while input arrives late in bursts ' + JSON.stringify(r));
+  assert.ok(r.delay > 30, 'measures the input delay ' + JSON.stringify(r));
+  assert.ok(r.predWhenStopped > 0 && r.cleared > 0 && r.cleared < 400, 'cleared after stopping ' + JSON.stringify(r));
+  assert.ok(r.fi > 14 && r.fi < 19, 'frame length is not stretched by dropped frames ' + JSON.stringify(r));
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('蛍光ペン（予測が必要な分だけ）: ゆっくり〜ふつうの速さで曲線を描いても、描いている途中に一度見えた所が次の入力で消えない（先端がぴょこぴょこしない）', async () => {
   const { page, errors } = await openPage(browser, server.base + '/');
   await runCode(page, withDefaults(CODE, { mpred: 'need' }));

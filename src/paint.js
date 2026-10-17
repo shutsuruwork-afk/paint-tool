@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.28.0';
+  const VERSION = '1.28.1';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -31,7 +31,7 @@
   const CTX_OPT = { desynchronized: true };
   const PRED_MAX = 16;  // 保持する予測点の上限
   const PRED_MS = 12;   // 予測 API が無い環境で外挿する時間 (ms)
-  const PRED_TTL = 40;  // 入力が途絶えてから予測線を消すまでの時間 (ms)
+  const PRED_TTL = 40;  // 入力が途絶えてから予測線を消すまでの時間 (ms)。入力が遅れて届いているときは、その遅れ（dl）を足す
   // 自前の予測（T-060）: 当てはめる直近の時間（ms）、長さの上限（CSS px）、急に曲がるほど短くする強さ。録った人の線で比べて決めた
   const PW = 32, PCAP = 40, PDAMP = 2;
   const FILL_TOL = 48;  // 塗りつぶしの色許容差 (0-255)
@@ -1116,8 +1116,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const px = new Float64Array(PRED_MAX), py = new Float64Array(PRED_MAX), pt = new Float64Array(PRED_MAX);
   // 直近の入力の点（自前の予測で当てはめる。止まっている間の点も入れる）。HN 個の輪
   const HN = 64, hT = new Float64Array(HN), hX = new Float64Array(HN), hY = new Float64Array(HN);
-  let hN = 0;
-  function hPush(t, x, y) { const j = hN++ % HN; hT[j] = t; hX[j] = x; hY[j] = y; }
+  let hN = 0, fT = 0, dl = 0; // fT: 前のフレームから新しく来た点の一番古い時刻。dl: 入力が届くまでの遅れ（ms、tick で測る）
+  function hPush(t, x, y) { const j = hN++ % HN; hT[j] = t; hX[j] = x; hY[j] = y; if (!fT) fT = t; }
   const ePts = new Float64Array(512); // 消しゴム: 1 回の描画で使う点（S 座標、最大 256 点）
   let handoff = 0, hcx = 0, hcy = 0, hcw = 0, hch = 0; // 確定後に live を消すまでの受け渡し（commitLive）
   // 計測（HUD 表示中のみ時間を測る）
@@ -1219,7 +1219,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         else if (sPen === 3) { const g = grain(); lctx.strokeStyle = lctx.fillStyle = pctx.strokeStyle = g; }
         inkS = pctx.strokeStyle;
         // 押した瞬間に点を出す（タップでも点が残る）
-        hN = 0; hPush(lt, x, y);
+        hN = 0; fT = 0; hPush(lt, x, y);
         lctx.beginPath(); lctx.arc(x, y, bw / 2, 0, TAU);
         if (sTr) { lctx.globalAlpha = sA; lctx.fill(); lctx.globalAlpha = 1; addPiece(2, x, y, x, y, x, y, bw); } else lctx.fill();
         const p = bw / 2 + 2;
@@ -1236,6 +1236,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     // 図形は 1 フレームに 1 回の再描画で十分なので rawupdate は使わない
     sRaw = HAS_RAW && mode !== 3;
     if (sRaw) pad.addEventListener('pointerrawupdate', onMove);
+    lastTs = 0; // 線と線の間は rAF を止めているので、その間隔は数えない
     raf = requestAnimationFrame(tick);
     if (rec && mode === 1) recStart(e, t);
   }
@@ -1633,10 +1634,15 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     raf = requestAnimationFrame(tick);
     if (recCur) recRow(6, ts, 0, 0, 0, now());
     // 1 フレームの長さを測る（蛍光ペンの予測の長さに使う。120 Hz の画面なら短くなる）
-    if (lastTs && ts - lastTs > 4 && ts - lastTs < 40) fi += (ts - lastTs - fi) * 0.1;
+    // 重くてフレームが飛んだときは、何フレーム分かで割る（画面の書き換えの間隔は変わらないので、予測を伸ばさない）
+    const fd = ts - lastTs;
+    if (lastTs && fd > 4 && fd < 100) fi += (fd / max(1, round(fd / fi)) - fi) * 0.1;
     lastTs = ts;
-    // ポインタが止まったら古い予測線を消す（行き過ぎた線が残らないように）
-    if (pn && ts - lt > PRED_TTL) { pn = 0; drawTail(); }
+    // 入力が届くまでの遅れ: このフレームまでに新しく来た点のうち一番古い点が待った時間。増えるときはすぐ、減るときはゆっくり追う。
+    // パソコンが重いと、入力が古い時刻のまままとめて届く。その間も動いているので、遅れの分だけ待ってから止まったとみなす（T-087）
+    if (fT) { const g = ts - fT; if (g < 500) dl = g > dl ? g : dl + (g - dl) * 0.05; fT = 0; }
+    // ポインタが止まったら古い予測線を消す（行き過ぎた線が残らないように）。止まった点が届き続けている（ペンを止めて押さえている）ときは待たない
+    if (pn && (ts - lt > PRED_TTL + dl || hT[(hN - 1) % HN] - lt > PRED_TTL)) { pn = 0; drawTail(); }
     if (tHit !== tShown) showErased();
   }
 
@@ -3034,7 +3040,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // ---------- 起動 ----------
   const stats = () => ({
     width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, selection: sel ? [selX, selY, selW, selH] : null, texts: tlist.length, fixed, history: hist.length, historyPixels: hpix, events: nEv, points: nPts,
-    desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, nativePrediction: nativePred, inkTrail: !!inkP,
+    desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, nativePrediction: nativePred, inkTrail: !!inkP, pred: pn, frame: round(fi * 10) / 10, inputDelay: round(dl * 10) / 10,
     rec: [rec, recS.length, recN],
     prefs: { ...snapPrefs(), bar: [barX, barY], touchText, pickOnce, keepPanels, dev, ...look, ppred, mpred, blend },
   });

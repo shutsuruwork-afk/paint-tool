@@ -3,6 +3,7 @@
 // 線ごとに、点の間隔・フレームの間隔・処理までの遅れを出し、予測の方法ごとに次の 2 つを出す（CSS px）。
 //   遅れ: 入力の時点から 1 フレーム後（録画のフレームの間隔）の実際のペン先と、描いた予測の先との距離（小さいほどペン先に付いてくる）
 //   はみ出し: 描いた予測の点が、実際にこの後 150 ms に通る線から外れた距離（大きいほど、後で消える線〈ぴょこぴょこ〉が出る）
+//   点滅: 動いている途中に、予測線を消す判定（止まったとみなす）が効いたフレームの数（前の判定と今の判定。パソコンが重いと増える）
 //   消える長さ: 前の入力で描いた予測のうち、次の入力で描いた物（そこまでの線と新しい予測）から 1px より離れた所の長さ（入力ごと。ぴょこぴょこそのもの）
 // 入力は処理した順にたどり、そのとき本体が知っている点（pointerrawupdate が pointermove より先に新しい点を運ぶ）から予測する。
 // 予測: なし / ブラウザ（本体の前の方式。pointermove の getPredictedEvents を入れ替え、rawupdate では前の予測点の先の部分を描く）/
@@ -93,6 +94,33 @@ export function ownPred(hist, H) {
   return out;
 }
 
+// 予測線を消す判定（本体の tick）を、処理した順にたどる。動いている途中（このフレームの 30 ms 後までに次に動いた点がある）に消えたフレームを数える。
+//   前の判定: フレームの時刻 − 最後に動いた点の時刻 > 40 ms。今の判定（T-087）: 入力が届くまでの遅れ dl を足す。止まった点が 40 ms 続けば待たない
+// あわせて、フレームまでに新しく届いた点のうち一番古い点が待った時間（届くまでの遅れ）を集める
+function blinks(R) {
+  const P = R.filter(r => r.k === 4 || r.k === 0).sort((a, b) => a.t - b.t), end = R.find(r => r.k === 3)?.t ?? Infinity;
+  const o = { moving: 0, old: 0, now: 0, wait: [] };
+  let lt = -1e9, lastT = -1e9, bx = NaN, by = NaN, fT = 0, dl = 0, pOld = false, pNow = false, j = 0;
+  for (const r of R) {
+    if (r.k === 0 || r.k === 4) {
+      if (r.t > lastT && !fT) fT = r.t;
+      if (r.t >= lastT) lastT = r.t;
+      if (r.t >= lt && (r.x !== bx || r.y !== by)) { lt = r.t; bx = r.x; by = r.y; }
+    }
+    if (r.k === 1 || r.k === 2) pOld = pNow = true; // 入力ごとに予測を描き直す
+    if (r.k !== 6) continue;
+    const ts = r.t;
+    if (fT) { const g = ts - fT; o.wait.push(g); if (g < 500) dl = g > dl ? g : dl + (g - dl) * 0.05; fT = 0; }
+    if (ts > end) continue;
+    while (j < P.length && (P[j].t <= lt || (P[j].x === bx && P[j].y === by))) j++;
+    const mv = j < P.length && P[j].t <= ts + 30;
+    if (mv) o.moving++;
+    if (pOld && ts - lt > 40) { pOld = false; if (mv) o.old++; }
+    if (pNow && (ts - lt > 40 + dl || lastT - lt > 40)) { pNow = false; if (mv) o.now++; }
+  }
+  return o;
+}
+
 export function analyze(data) {
   const out = [];
   for (const s of data.strokes) {
@@ -153,7 +181,7 @@ export function analyze(data) {
     for (let i = 1; i < P.length; i++) len += Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y);
     out.push({
       tool: s.tool, pen: s.pen, type: s.type, len, dur: P.length ? P[P.length - 1].t - P[0].t : 0,
-      dt: med(P.slice(1).map((p, i) => p.t - P[i].t)), fdt: H, lag: med(lag), horizon: med(horizon), res,
+      dt: med(P.slice(1).map((p, i) => p.t - P[i].t)), fdt: H, lag: med(lag), horizon: med(horizon), res, blink: blinks(R),
     });
   }
   return out;
@@ -170,6 +198,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     const res = analyze(data);
     console.log('  線  道具（入力）           長さ    時間   点の間隔  フレーム  処理の遅れ  ブラウザの予測の先');
     res.forEach((r, i) => console.log(`  ${String(i + 1).padStart(2)}  ${(r.tool + (r.pen && r.pen !== 'pen' ? '/' + r.pen : '') + '（' + r.type + '）').padEnd(18)} ${f1(r.len).padStart(7)}px ${f1(r.dur).padStart(7)}ms ${f1(r.dt).padStart(6)}ms ${f1(r.fdt).padStart(6)}ms ${f1(r.lag).padStart(7)}ms ${f1(r.horizon).padStart(9)}ms`));
+    const bl = res.map(r => r.blink), wait = bl.flatMap(b => b.wait), mvn = bl.reduce((s, b) => s + b.moving, 0);
+    const fdts = data.strokes.flatMap(s => { const f = []; for (let i = 0; i < s.rows.length; i += 6) if (s.rows[i] === 6) f.push(s.rows[i + 1]); return f.slice(1).map((t, i) => t - f[i]); });
+    console.log(`\n  負荷の様子: フレームの間隔 中央 ${f1(med(fdts))} / 90% ${f1(pct(fdts, 0.9))} / 最大 ${f1(Math.max(...fdts))} ms、入力が届くまでの遅れ（一番古い新しい点）中央 ${f1(med(wait))} / 90% ${f1(pct(wait, 0.9))} / 最大 ${f1(Math.max(...wait))} ms`);
+    console.log(`  動いている途中に予測線が消えたフレーム（点滅）: 前の判定 ${bl.reduce((s, b) => s + b.old, 0)}・今の判定 ${bl.reduce((s, b) => s + b.now, 0)}（動いているフレーム ${mvn}）`);
     console.log('\n  予測の方法ごと（すべての線、CSS px）   1 フレーム後の遅れ（平均 / 90%）   はみ出し（平均 / 90% / 99%）   消える長さ（平均 / 90%）');
     for (const [k, name] of [['none', 'なし'], ['chrome', 'ブラウザ（前の方式）'], ['own', '曲がりに沿う（本体）'], ['linear', '直線']]) {
       const lag = res.flatMap(r => r.res[k].lag), off = res.flatMap(r => r.res[k].off), ls = res.flatMap(r => r.res[k].lost);

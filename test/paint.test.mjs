@@ -1286,6 +1286,31 @@ test('文字に触れる: ペンのまま文字を押して動かし、もう一
   await o2.page.close();
 });
 
+test('文字に触れる: ペンで動かした文字を選んだままでも、その文字が元あった所から線を描ける（囲む選択にならない）。元あった所のカーソルもペンのまま（T-121）', async () => {
+  const { page, errors } = await fresh();
+  await page.keyboard.press('t');
+  await page.mouse.click(200, 300);
+  await page.keyboard.type('Memo');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('p');
+  const t0 = await textRect(page);
+  const cx = t0.x + 5, cy = t0.y + t0.h / 2;
+  await drag(page, [[cx, cy], [cx + 150, cy + 80]], 5);
+  assert.ok(await selBox(page), 'the moved text stays selected');
+  // 元あった所では、移動のカーソルではなくペンのカーソル
+  await page.mouse.move(cx, cy);
+  assert.match(await shadowEval(page, root => root.querySelector('.p').style.cursor), /^url\(/);
+  // 元あった所から線を描くと線が描け、文字は動かした所で確定する
+  await drag(page, [[cx, cy], [cx + 120, cy - 60]], 8);
+  assert.equal(await selBox(page), null);
+  assert.equal(await hist(page), 3); // 文字・移動・線
+  assert.ok((await alphaStats(page, cx + 40, cy - 50, 60, 40)).count > 50, 'the line is drawn');
+  const t1 = await textRect(page);
+  assert.ok(near(t1.x, t0.x + 150, 1) && near(t1.y, t0.y + 80, 1), JSON.stringify(t1));
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('インストールページの「Paint」ボタンの中身が、そのままのブックマークレットになっている', async () => {
   const html = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8');
   const m = html.match(/id="bm" class="bm" href="([^"]*)"/);

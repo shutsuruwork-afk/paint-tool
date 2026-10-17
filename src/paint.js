@@ -2589,11 +2589,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       p[1] = cur;
     }
   }
-  // S の点にある、いちばん手前の文字の物
+  // S の点にある、いちばん手前の文字の物。浮いている選択の中の文字は選択の枠で扱うので除く
+  // （物の位置は置くまで動かす前のままなので、元あった所を押すと当たり、ペンで描けずに囲む選択が始まった。T-121）
   function textHit(X, Y) {
     const r = 3 * sdpr;
     for (let i = tlist.length - 1; i >= 0; i--) {
       const o = tlist[i];
+      if (o.el.parentNode === selIn) continue;
       if (X >= o.x - r && X <= o.x + o.w + r && Y >= o.y - r && Y <= o.y + o.h + r) return o;
     }
     return null;

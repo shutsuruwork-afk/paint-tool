@@ -2081,6 +2081,35 @@ test('（お試し）Simple でペンを選んでいるとき、ペンボタン�
   await page.close();
 });
 
+test('空の文字の入力欄で改行すると、点線の枠も行の数だけ広がり、次の行に打つ文字（日本語入力の変換中も）が枠に収まる（T-099）', async () => {
+  const { page, errors } = await openPage(browser, server.base + '/');
+  await runCode(page, CODE);
+  const cdp = await page.context().newCDPSession(page);
+  await page.keyboard.press('t');
+  await page.mouse.click(300, 250);
+  // 枠（入力欄の中身の大きさ）に、中身が収まっているか。lines は枠の高さが何行分か
+  const box = () => shadowEval(page, root => {
+    const t = root.querySelector('textarea'), cs = getComputedStyle(t), lh = parseFloat(cs.fontSize) * 1.25;
+    return { fitsW: t.clientWidth >= t.scrollWidth, fitsH: t.clientHeight >= t.scrollHeight, lines: Math.round((parseFloat(cs.height)) / lh) };
+  });
+  assert.deepEqual(await box(), { fitsW: true, fitsH: true, lines: 1 });
+  await page.keyboard.press('Enter');
+  assert.deepEqual(await box(), { fitsW: true, fitsH: true, lines: 2 }, 'after one newline');
+  await page.keyboard.press('Enter');
+  assert.deepEqual(await box(), { fitsW: true, fitsH: true, lines: 3 }, 'after two newlines');
+  // 3 行目に日本語入力で打つ（変換中・変換後・確定）
+  for (const text of ['「こーど', '「コード']) {
+    await cdp.send('Input.imeSetComposition', { text, selectionStart: text.length, selectionEnd: text.length });
+    const b = await box();
+    assert.ok(b.fitsW && b.fitsH && b.lines === 3, 'composing ' + text + ' ' + JSON.stringify(b));
+  }
+  await cdp.send('Input.insertText', { text: '「コード' });
+  assert.deepEqual(await box(), { fitsW: true, fitsH: true, lines: 3 });
+  assert.equal(await shadowEval(page, root => root.querySelector('textarea').value), '\n\n「コード');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('文字を入力中に、その上にパネルを開くと、パネルが手前に出る（入力欄の枠・文字・薄い答えはツールバーとパネルの下。T-092）', async () => {
   const { page, errors } = await openPage(browser, server.base + '/');
   await runCode(page, withDefaults(CODE, { ui: 'cp2' }));

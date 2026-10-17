@@ -2566,6 +2566,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     taX = cx; taCY = cy; // クリックした点が 1 行目の高さの中央になるように置く
     for (const t of TA_STOP) ta.addEventListener(t, stop);
     ta.addEventListener('input', updateGhost);
+    // 日本語入力の変換中も枠を合わせる（変換中の文字で input が来ない環境でも、枠の外にはみ出さないように。T-099）
+    ta.addEventListener('compositionupdate', updateGhost);
+    ta.addEventListener('compositionend', updateGhost);
     ta.addEventListener('keyup', updateGhost);
     ta.addEventListener('pointerup', updateGhost);
     ta.addEventListener('keydown', e => {
@@ -2614,7 +2617,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function fitTa() {
     const s = ta.style;
     s.padding = '0';
-    s.width = s.height = '0';
+    // 0 ではなく 1px にして測る。中身が改行だけ（字が 1 つもない）のとき、幅 0 の textarea は scrollHeight が 0 になり、枠が 1 行のままだった（T-099）
+    s.width = s.height = '1px';
     const w = max(ta.scrollWidth, ceil(taFs), ghostR) + 2, h = max(ta.scrollHeight, round(taFs * LH));
     s.padding = '';
     s.width = w + 'px';

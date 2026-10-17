@@ -1855,7 +1855,7 @@ test('直線・矢印・楕円と Shift 拘束', async () => {
   await page.close();
 });
 
-test('CP2（Preview）: 開発用のときだけその他に出て、押すと絵と履歴はそのままで CP2 の表示になる（ペン ⇄ 消しゴム・文字〈電卓は入り〉・元に戻す・その他〈全消去・色・本家に戻す〉・閉じる〈中身は隠す〉）。本家に戻せ、サイトごとに覚える（T-088）', async () => {
+test('Simple（Preview。CP2）: 開発用のときだけその他に出て、押すと絵と履歴はそのままで CP2 の表示になる（ペン ⇄ 消しゴム・文字〈電卓は入り〉・元に戻す・その他〈全消去・色・本家に戻す〉・閉じる〈中身は隠す〉）。本家に戻せ、サイトごとに覚える（T-088）', async () => {
   const bar = page => shadowEval(page, root => [...root.querySelector('.bar').children].filter(e => e.classList.contains('b'))
     .map(b => b.title.split(/[ （(]/)[0] + (b.classList.contains('on') ? '*' : '')));
   const menu = page => shadowEval(page, root => [...root.querySelector('[title^="全消去"]').parentElement.children]
@@ -1864,23 +1864,23 @@ test('CP2（Preview）: 開発用のときだけその他に出て、押すと�
   const MAIN = ['選択', 'ペン*', '蛍光ペン', '消しゴム', '直線', '文字', '塗りつぶし', '色・太さ・濃さ', '元に戻す', 'やり直す', 'ページ操作モード', 'その他', '隠す', '閉じる'];
   // 開発用でなければ、その他に出ない
   const { page: p0 } = await fresh();
-  assert.ok(!(await menu(p0)).includes('CP2 を試す（Preview）'));
+  assert.ok(!(await menu(p0)).includes('Simple（Preview）'));
   await p0.close();
   const { page, errors } = await openPage(browser, server.base + '/');
   await runCode(page, withDefaults(CODE, { dev: true }));
   assert.deepEqual(await bar(page), MAIN);
-  assert.equal((await menu(page)).at(-1), 'CP2 を試す（Preview）');
+  assert.equal((await menu(page)).at(-1), 'Simple（Preview）');
   await drag(page, [[100, 300], [400, 320]], 10);
   const sum = await checksum(page);
   // 切り替える: 絵と履歴はそのまま。お知らせには「本家に戻す」が付く。CP2 にない道具（塗りつぶし）を選んでいたらペンになる（T-089）
   await mouseClick(page, '.bar > [aria-label^="塗りつぶし"]');
-  await click(page, '[title^="CP2 を試す"]');
+  await click(page, '[title^="Simple"]');
   assert.deepEqual(await bar(page), ['ペン*', '文字', '元に戻す', 'その他', '閉じる']);
   assert.equal((await prefs(page)).tool, 'pen');
   assert.equal((await prefs(page)).ui, 'cp2');
   assert.equal(await checksum(page), sum);
   assert.equal((await page.evaluate(() => window.__paintBookmarklet.stats())).history, 1);
-  assert.equal(await toast(page), 'CP2（Preview）にしました本家に戻す');
+  assert.equal(await toast(page), 'Simple（Preview）にしました本家に戻す');
   // ペンのボタンを押すたびに消しゴムと入れ替わる
   await mouseClick(page, '.bar > [aria-label^="ペン"]');
   assert.deepEqual(await bar(page), ['消しゴム*', '文字', '元に戻す', 'その他', '閉じる']);
@@ -1931,11 +1931,11 @@ test('CP2（Preview）: 開発用のときだけその他に出て、押すと�
   await click(page, '[title^="本家に戻す"]');
   assert.deepEqual(await bar(page), MAIN);
   assert.equal(await toast(page), '本家に戻しました');
-  assert.equal((await menu(page)).at(-1), 'CP2 を試す（Preview）');
+  assert.equal((await menu(page)).at(-1), 'Simple（Preview）');
   // CP2 にもある道具（消しゴム・文字）は、切り替えてもそのまま
   for (const [key, want] of [['e', '消しゴム*'], ['t', 'ペン']]) {
     await page.keyboard.press(key);
-    await click(page, '[title^="CP2 を試す"]');
+    await click(page, '[title^="Simple"]');
     assert.equal((await bar(page))[0], want, key);
     if (key === 't') assert.equal((await bar(page))[1], '文字*');
     await click(page, '[title^="本家に戻す"]');
@@ -1951,7 +1951,7 @@ test('CP2（Preview）: 開発用のときだけその他に出て、押すと�
   assert.deepEqual(await menu(p1), ['全消去', '8 色', '本家に戻す']);
   await click(p1, '[title^="本家に戻す"]');
   assert.deepEqual(await bar(p1), MAIN);
-  assert.ok(!(await menu(p1)).includes('CP2 を試す（Preview）'));
+  assert.ok(!(await menu(p1)).includes('Simple（Preview）'));
   assert.deepEqual(e1, []);
   await p1.close();
   // インストールページ: 最初の版を選ぶと、ボタンの名前と中身が変わる
@@ -1959,7 +1959,7 @@ test('CP2（Preview）: 開発用のときだけその他に出て、押すと�
   assert.equal((await ip.textContent('#bm')).trim(), 'Paint');
   assert.ok(await ip.isChecked('#p-ui input[value="main"]'));
   await ip.check('#p-ui input[value="cp2"]');
-  assert.equal((await ip.textContent('#bm')).trim(), 'Paint CP2');
+  assert.equal((await ip.textContent('#bm')).trim(), 'Paint Simple');
   assert.ok(decodeURIComponent(await ip.getAttribute('#bm', 'href')).includes('{\\"ui\\":\\"cp2\\"}'));
   await ip.click('#try');
   assert.equal(await ip.evaluate(() => window.__paintBookmarklet.stats().prefs.ui), 'cp2');
@@ -1967,7 +1967,7 @@ test('CP2（Preview）: 開発用のときだけその他に出て、押すと�
   await ip.close();
 });
 
-test('CP2 のスマホ: 2 本指で動かすとページがスクロールし、1 本目で描き始めた線は残らない。1 本指では今まで通り描ける。本家では 2 本指でもスクロールしない（T-088）', async () => {
+test('Simple（CP2）のスマホ: 2 本指で動かすとページがスクロールし、1 本目で描き始めた線は残らない。1 本指では今まで通り描ける。本家では 2 本指でもスクロールしない（T-088）', async () => {
   const page = await browser.newPage({ viewport: { width: 390, height: 700 }, isMobile: true, hasTouch: true });
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));

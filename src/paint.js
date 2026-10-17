@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.29.10';
+  const VERSION = '1.30.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -294,7 +294,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const keepPanels = DEF.keepPanels === true;
   // 表示の版（T-088）: 本家と CP2（シンプル版のチェックポイント 2。research/simple-cp2 から移した。お試し〈Preview〉。画面では「Simple Preview」と呼ぶ。T-090・T-101）。切り替えても絵と履歴はそのままで、
   // ツールバーに出す物といくつかの動きだけが変わる（layout）。CP2 は、バーにペン（押すたびに消しゴムと入れ替わる）・文字・元に戻す・その他（全消去・色）・
-  // 閉じる（× の見た目で、中身は隠す）だけ。押せるボタンのないお知らせは出さず、電卓はいつも入り、ページ操作モードはなく、タッチは 2 本指でスクロールする。
+  // 閉じる（× の見た目で、中身は隠す）だけ。押せるボタンのないお知らせは出さず、電卓はいつも入り、ページ操作モードはない（2 本指のスクロールは本家にも入れた。T-104）。
   // ほかの道具はキーで使える。本家のその他からいつでも CP2 を試せる（T-101 で開発用だけでなくした。CP2 のその他からは、いつでも本家に戻せる）。
   // 最初の版はインストールページ（DEF.ui）で選び、切り替えるとサイトごとに覚える
   const UIS = ['main', 'cp2'], CP2_TOOLS = ['pen', 'eraser', 'text'];
@@ -675,8 +675,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     moreB.title = MORE_T[+cp2];
     moreB.setAttribute('aria-label', MORE_T[+cp2]);
     penB.classList.toggle('dd', !cp2);
-    for (const [t, f] of TWO) cp2 ? pad.addEventListener(t, f, true) : pad.removeEventListener(t, f, true);
-    tI0 = tI1 = -1; scr = 0;
     helpEl.replaceChildren(); // 操作の一覧は次に開いたときに作り直す（CP2 ではページ操作モードの行を出さない）
     syncPen();
     syncTool(false);
@@ -1229,9 +1227,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     c.lineJoin = 'round';
   }
 
-  // 2 本指でスクロール（CP2。T-088、CP2 ブランチの T-074）: タッチが 2 本になったら、1 本目で描き始めていた線は捨てて、2 本の中点の動きでページをスクロールする。
-  // 2 本とも離すまでは描かない。CP2 のときだけ pad に capture で登録し（layout）、onDown / onMove / onUp より先に呼ばれて、スクロールの間はそれらに渡さない。
-  // 1 本のときの仕事は、ポインタの番号の比較と座標の代入だけ
+  // 2 本指でスクロール（CP2 ブランチの T-074 を T-088 で移し、T-104 で本家にも入れた）: タッチが 2 本になったら、1 本目で描き始めていた線は捨てて、2 本の中点の動きでページをスクロールする。
+  // 2 本とも離すまでは描かない。pad に capture で登録し（起動時に一度）、onDown / onMove / onUp より先に呼ばれて、スクロールの間はそれらに渡さない。
+  // タッチの塗りつぶしと文字は離したときに行う（tapId）ので、2 本指になったら取り消すだけでよい。1 本のときの仕事は、ポインタの番号の比較と座標の代入だけ
   let tI0 = -1, tX0 = 0, tY0 = 0, tI1 = -1, tX1 = 0, tY1 = 0, scr = 0, scrX = 0, scrY = 0; // scr: 1 = スクロール中、2 = 片方を離した（残りを離すまで描かない）
   function twoDown(e) {
     if (e.pointerType !== 'touch') return;
@@ -1243,6 +1241,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (tI0 === -1 || tI1 === -1) { if (!scr) return; }
     else if (act === -1 || aType === 'touch') {
       if (act !== -1) abortStroke();
+      tapId = -1;
       scr = 1; scrX = (tX0 + tX1) / 2; scrY = (tY0 + tY1) / 2;
       for (const i of [tI0, tI1]) try { pad.setPointerCapture(i); } catch (_) { }
     } else return;
@@ -1272,6 +1271,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   const TWO = [['pointerdown', twoDown], ['pointermove', twoMove], ['pointerup', twoUp], ['pointercancel', twoUp]];
 
+  // 塗りつぶしと文字（x, y は V、cx, cy は client。sk・sox・soy は押したときの mapNow のまま）
+  let tapId = -1, tapT = '', tapX = 0, tapY = 0, tapCX = 0, tapCY = 0;
+  function tapAct(t, x, y, cx, cy) {
+    if (t === 'fill') { floodFill(x, y); return; }
+    const o = textHit(x * sk + sox, y * sk + soy);
+    if (o) editText(o);
+    else textAt(cx, cy);
+  }
   function onDown(e) {
     const type = e.pointerType, pen = type === 'pen';
     if (pen) lastPen = e.timeStamp;
@@ -1300,11 +1307,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     // 文字に触れる: 選んでいる物か文字の上を押したら、どの道具でも選択ツールと同じに扱う
     if (t === 'select' || (touchText && TOUCH[t] && ((sel && selHit(X, Y) !== -2) || textHit(X, Y)))) { selDown(e, X, Y); return; }
     dropSel();
-    if (t === 'fill') { floodFill(x, y); return; }
-    if (t === 'text') {
-      const o = textHit(x * sk + sox, y * sk + soy);
-      if (o) editText(o);
-      else textAt(e.clientX, e.clientY);
+    if (t === 'fill' || t === 'text') {
+      // タッチは離したときに行う（2 本指のスクロールになったら何もしない。T-104）
+      if (type === 'touch') { tapId = e.pointerId; tapT = t; tapX = x; tapY = y; tapCX = e.clientX; tapCY = e.clientY; }
+      else tapAct(t, x, y, e.clientX, e.clientY);
       return;
     }
 
@@ -1778,11 +1784,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 
   function onUp(e) {
     if (e.pointerType === 'pen') lastPen = e.timeStamp; // ペンを離した直後に手のひらが触れても描かない
+    if (e.pointerId === tapId) { tapId = -1; tapAct(tapT, tapX, tapY, tapCX, tapCY); return; }
     if (e.pointerId !== act) return;
     onMove(e);
     endStroke();
   }
   function onLost(e) {
+    if (e.pointerId === tapId) tapId = -1;
     if (e.pointerId === act) endStroke();
   }
 
@@ -2973,6 +2981,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
 
   // ---------- イベント登録 ----------
+  for (const [t, f] of TWO) pad.addEventListener(t, f, true); // 2 本指のスクロール（onDown などより先に呼ぶ）
   pad.addEventListener('pointerdown', onDown);
   pad.addEventListener('pointermove', onMove);
   pad.addEventListener('pointerup', onUp);

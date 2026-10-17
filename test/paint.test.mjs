@@ -2178,15 +2178,18 @@ test('文字を入力中に、その上にパネルを開くと、パネルが�
   await page.close();
 });
 
-test('Simple（CP2）のスマホ: 2 本指で動かすとページがスクロールし、1 本目で描き始めた線は残らない。1 本指では今まで通り描ける。本家では 2 本指でもスクロールしない（T-088）', async () => {
+test('スマホの 2 本指: 本家でも Simple でも、2 本指で動かすとページがスクロールし、1 本目で始めた線・選択・塗りつぶし・文字は残らない。1 本指では今まで通り描け、タッチの塗りつぶしと文字は離したときに行う（T-088・T-104）', async () => {
   const page = await browser.newPage({ viewport: { width: 390, height: 700 }, isMobile: true, hasTouch: true });
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.goto(server.base + '/long');
-  await runCode(page, withDefaults(CODE, { ui: 'cp2' }));
+  await runCode(page, CODE);
   const cdp = await page.context().newCDPSession(page);
   const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], id) => ({ x, y, id })) });
-  const hist = () => page.evaluate(() => window.__paintBookmarklet.stats().history);
+  const state = () => page.evaluate(() => {
+    const s = window.__paintBookmarklet.stats();
+    return { y: scrollY, history: s.history, input: !!document.querySelector('paint-bookmarklet').shadowRoot.querySelector('.tx'), sel: !!s.selection };
+  });
   const twoFingers = async () => {
     // 1 本目を置いて少し動かしてから（線を描き始める）、2 本目を置いて 2 本とも上へ 200px 動かす
     await touch('touchStart', [[150, 500]]);
@@ -2197,20 +2200,44 @@ test('Simple（CP2）のスマホ: 2 本指で動かすとページがスクロ�
     await touch('touchEnd', []);
     await page.waitForTimeout(100);
   };
-  await twoFingers();
-  assert.equal(await page.evaluate(() => scrollY), 200);
-  assert.equal(await hist(), 0, 'the stroke started by the first finger is dropped');
-  // 1 本指は描く（スクロールしない）
+  const tap = async (x, y) => { await touch('touchStart', [[x, y]]); await touch('touchEnd', []); await page.waitForTimeout(100); };
+  // 本家: ペン・選択・塗りつぶし・文字のどれでも、2 本指はスクロールだけ（何も残らない）
+  let y = 0;
+  for (const key of ['p', 's', 'f', 't']) {
+    await page.keyboard.press(key);
+    await twoFingers();
+    y += 200;
+    assert.deepEqual(await state(), { y, history: 0, input: false, sel: false }, key);
+  }
+  // 1 本指: 塗りつぶしは離したときに塗る。文字は離したときに入力欄が出る
+  await page.keyboard.press('f');
+  await touch('touchStart', [[200, 450]]);
+  assert.equal((await state()).history, 0, 'not filled while the finger is down');
+  await touch('touchEnd', []);
+  await page.waitForTimeout(100);
+  assert.equal((await state()).history, 1, 'filled on release');
+  await page.keyboard.press('t');
+  await touch('touchStart', [[200, 450]]);
+  assert.equal((await state()).input, false);
+  await touch('touchEnd', []);
+  await page.waitForTimeout(100);
+  assert.equal((await state()).input, true, 'the text input appears on release');
+  await page.keyboard.type('ab');
+  await tap(100, 600); // 外を押すと確定
+  assert.equal(await page.evaluate(() => window.__paintBookmarklet.stats().texts), 1);
+  // 1 本指のペンは描く（スクロールしない）
+  await page.keyboard.press('p');
+  const h0 = (await state()).history;
   await touch('touchStart', [[100, 400]]);
   for (let i = 1; i <= 5; i++) await touch('touchMove', [[100 + i * 20, 400 + i * 10]]);
   await touch('touchEnd', []);
   await page.waitForTimeout(100);
-  assert.equal(await page.evaluate(() => scrollY), 200);
-  assert.equal(await hist(), 1);
-  // 本家に戻すと、2 本指ではスクロールしない（今まで通り）
-  await click(page, '[title^="本家に戻す"]');
+  assert.deepEqual([(await state()).y, (await state()).history], [y, h0 + 1]);
+  // Simple でも同じ
+  await click(page, '[title^="Simple Preview"]');
   await twoFingers();
-  assert.equal(await page.evaluate(() => scrollY), 200);
+  y += 200;
+  assert.deepEqual([(await state()).y, (await state()).history], [y, h0 + 1]);
   assert.deepEqual(errors, []);
   await page.close();
 });

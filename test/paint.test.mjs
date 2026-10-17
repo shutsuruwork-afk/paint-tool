@@ -2243,6 +2243,56 @@ test('スマホの 2 本指: 本家でも Simple でも、2 本指で動かす�
   await page.close();
 });
 
+test('2 本指のスクロールは、置いた位置＋指の動きを目標に 1 フレームに 1 回だけ動かす。ページが scroll-behavior: smooth でも指に付いていき、端で止まってから戻すとすぐ動く（T-108）', async () => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 700 }, isMobile: true, hasTouch: true });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(server.base + '/long');
+  await page.evaluate(() => { document.documentElement.style.scrollBehavior = 'smooth'; });
+  await runCode(page, CODE);
+  // スクロールを動かした回数とフレームの数を数える
+  await page.evaluate(() => {
+    window.__sc = 0; window.__fr = 0;
+    for (const k of ['scrollTo', 'scrollBy']) { const f = window[k]; window[k] = function (...a) { window.__sc++; return f.apply(this, a); }; }
+    const tick = () => { window.__fr++; requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
+  });
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], id) => ({ x, y, id })) });
+  const y = () => page.evaluate(() => scrollY);
+  const maxY = await page.evaluate(() => { scrollTo({ top: 1e6, behavior: 'instant' }); const m = scrollY; scrollTo({ top: 0, behavior: 'instant' }); return m; });
+  // 2 本の指を交互に 3px ずつ動かす（中点は 1.5px ずつ動く）。合わせて 150px 上へ
+  await touch('touchStart', [[150, 600]]);
+  await touch('touchStart', [[150, 600], [250, 600]]);
+  const c0 = await page.evaluate(() => [window.__sc, window.__fr]);
+  let a = 600, b = 600;
+  for (let i = 0; i < 50; i++) {
+    if (i % 2) b -= 6; else a -= 6;
+    await touch('touchMove', [[150, a], [250, b]]);
+  }
+  await page.waitForTimeout(150);
+  const c1 = await page.evaluate(() => [window.__sc, window.__fr]);
+  assert.equal(await y(), 150, 'the page follows the fingers exactly');
+  assert.ok(c1[0] - c0[0] <= c1[1] - c0[1] + 1, 'at most one scroll per frame: ' + (c1[0] - c0[0]) + ' scrolls in ' + (c1[1] - c0[1]) + ' frames');
+  await touch('touchEnd', [[150, a]]);
+  await touch('touchEnd', []);
+  await page.waitForTimeout(100);
+  // 下の端まで行ってからさらに引き、そのまま 20px 戻すと、すぐ 20px 戻る
+  await page.evaluate(m => scrollTo({ top: m - 50, behavior: 'instant' }), maxY);
+  await touch('touchStart', [[150, 600]]);
+  await touch('touchStart', [[150, 600], [250, 600]]);
+  for (let i = 1; i <= 10; i++) { await touch('touchMove', [[150, 600 - i * 20], [250, 600 - i * 20]]); await page.waitForTimeout(16); }
+  await page.waitForTimeout(50);
+  assert.equal(await y(), maxY);
+  for (let i = 1; i <= 2; i++) { await touch('touchMove', [[150, 400 + i * 10], [250, 400 + i * 10]]); await page.waitForTimeout(16); }
+  await page.waitForTimeout(150);
+  assert.equal(await y(), maxY - 20, 'moving back scrolls back at once');
+  await touch('touchEnd', [[150, 420]]);
+  await touch('touchEnd', []);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('2 本指のスクロールの慣性: 動かしたまま離すと滑って止まる。止まってから離すと滑らない。滑っている間に押すと止まり、その指では描かない（T-106）', async () => {
   const page = await browser.newPage({ viewport: { width: 390, height: 700 }, isMobile: true, hasTouch: true });
   const errors = [];

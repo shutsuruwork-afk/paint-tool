@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.31.1';
+  const VERSION = '1.31.2';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -1234,6 +1234,23 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 2 本とも離すまでは描かない。pad に capture で登録し（起動時に一度）、onDown / onMove / onUp より先に呼ばれて、スクロールの間はそれらに渡さない。
   // タッチの塗りつぶしと文字は離したときに行う（tapId）ので、2 本指になったら取り消すだけでよい。1 本のときの仕事は、ポインタの番号の比較と座標の代入だけ
   let tI0 = -1, tX0 = 0, tY0 = 0, tI1 = -1, tX1 = 0, tY1 = 0, scr = 0, scrX = 0, scrY = 0; // scr: 1 = スクロール中、2 = 片方を離した（残りを離すまで描かない）
+  // スクロールの目標は「置いたときのスクロール位置（sbX, sbY）＋ 置いたときの中点（scrX, scrY）からの指の動き」で、1 フレームに 1 回だけ scrollTo する（T-108）。
+  // 前の中点からの差を指の動きのたびに scrollBy すると、指 1 本の動きで中点は半分しか動かず端数が出て、iOS が整数に丸めるので 1px と 2px が交互に進んで震え、
+  // 指とページも少しずつずれた。behavior: 'instant' で、ページの scroll-behavior: smooth を効かせない。端で止まったら目標を今の位置に合わせ直す（戻すとすぐ動く）
+  let sbX = 0, sbY = 0, tgX = 0, tgY = 0, scrR = 0;
+  const INSTANT = { left: 0, top: 0, behavior: 'instant' };
+  const scrollTo = (x, y) => {
+    INSTANT.left = x; INSTANT.top = y;
+    try { win.scrollTo(INSTANT); } catch (_) { INSTANT.behavior = 'auto'; win.scrollTo(INSTANT); } // 'instant' を知らない古いブラウザ
+  };
+  const scrollNow = () => {
+    scrR = 0;
+    scrollTo(tgX, tgY);
+    offTop();
+    const ax = win.scrollX, ay = win.scrollY;
+    if (abs(ax - tgX) > 1) sbX += ax - tgX;
+    if (abs(ay - tgY) > 1) sbY += ay - tgY;
+  };
   // LINE の中のブラウザ（UA に Line/）は、ページがいちばん上のときに下へなぞると、ブラウザごと小さくする。ページからはその操作を止められない
   // （WebKit が preventDefault や touch-action で止めるのは Web ビューの中の操作だけ）ので、ツールを使う間はページを上から 1px 下げておく（T-105）。
   // 出したとき・押したとき（線の前）・2 本指で上へ戻ったとき・ページ操作モードから戻ったときに直す。スクロールできないページでは効かない
@@ -1245,7 +1262,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const KN = 8, KF = 0.998, kT = new Float64Array(KN), kX = new Float64Array(KN), kY = new Float64Array(KN);
   let kN = 0, kVX = 0, kVY = 0, kAX = 0, kAY = 0, kL = 0, kR = 0;
   const kPush = (t, x, y) => { const i = kN++ % KN; kT[i] = t; kX[i] = x; kY[i] = y; };
-  const stopFling = () => { if (kR) { cancelAnimationFrame(kR); kR = 0; } };
+  const stopFling = () => { if (kR) { cancelAnimationFrame(kR); kR = 0; } if (scrR) { cancelAnimationFrame(scrR); scrR = 0; } };
   function flingStart(t) {
     if (kN < 2) return;
     const j = (kN - 1) % KN, tj = kT[j];
@@ -1269,7 +1286,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     kAX -= dx; kAY -= dy;
     if (dx || dy) {
       const x0 = win.scrollX, y0 = win.scrollY;
-      win.scrollBy(dx, dy);
+      scrollTo(x0 + dx, y0 + dy);
       offTop();
       if (win.scrollX === x0 && win.scrollY === y0) { kR = 0; return; } // 端に着いた
     }
@@ -1290,7 +1307,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     else if (act === -1 || aType === 'touch') {
       if (act !== -1) abortStroke();
       tapId = -1;
-      scr = 1; scrX = (tX0 + tX1) / 2; scrY = (tY0 + tY1) / 2;
+      scr = 1; scrX = (tX0 + tX1) / 2; scrY = (tY0 + tY1) / 2; sbX = win.scrollX; sbY = win.scrollY;
       kN = 0; kPush(e.timeStamp, scrX, scrY);
       for (const i of [tI0, tI1]) try { pad.setPointerCapture(i); } catch (_) { }
     } else return;
@@ -1306,9 +1323,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     e.stopImmediatePropagation();
     if (scr !== 1) return;
     const mx = (tX0 + tX1) / 2, my = (tY0 + tY1) / 2;
-    win.scrollBy(scrX - mx, scrY - my);
-    offTop();
-    scrX = mx; scrY = my;
+    tgX = sbX + scrX - mx; tgY = sbY + scrY - my;
+    if (!scrR) scrR = requestAnimationFrame(scrollNow);
     kPush(e.timeStamp, mx, my);
   }
   function twoUp(e) {
@@ -3039,6 +3055,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // パネルの中（スライダー）は止めない。ほかのブラウザ（Chrome など）では足さない（touch-action で足り、入力の経路を変えないため）
   if (/iP(hone|ad|od)/.test(navigator.userAgent) || (/Mac/.test(PLAT) && navigator.maxTouchPoints > 1)) {
     pad.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+    // Safari の拡大縮小の合図（GestureEvent）も止める（2 本指のスクロールが拡大縮小と取り合わないように。T-108）
+    for (const t of ['gesturestart', 'gesturechange']) pad.addEventListener(t, e => e.preventDefault(), { passive: false });
     bar.addEventListener('touchmove', e => { if (!e.target.closest('.pn')) e.preventDefault(); }, { passive: false });
   }
   pad.addEventListener('pointerdown', onDown);

@@ -1967,9 +1967,10 @@ test('Simple（Preview。CP2）: 開発用のときだけその他に出て、�
   await ip.close();
 });
 
-test('Simple のペンはいつも太さ 5・濃さ 100%。本家の太さと濃さ（インストールページ・サイトの記憶）に影響されず、Simple で変えた太さは覚えない（T-091・T-093）', async () => {
+test('Simple のペンはいつも太さ 5・濃さ 100%・普通のペン。本家の太さ・濃さ・種類（インストールページ・サイトの記憶）に影響されず、Simple で変えた太さは覚えない（T-091・T-093・T-097）', async () => {
   const { page, errors } = await openPage(browser, server.base + '/');
   await runCode(page, withDefaults(CODE, { dev: true, size: { pen: 12 }, alpha: { pen: 0.35 } }));
+  const penB = () => shadowEval(page, root => [...root.querySelector('.bar').children].find(b => /^(ペン|万年筆|筆|鉛筆) \(P\)/.test(b.getAttribute('aria-label') || '')).getAttribute('aria-label'));
   // 横線を引いて、真ん中の列で線の画素を数える（線の太さ）。濃さは一番濃い画素の不透明度
   let peak = 0;
   const line = async y => {
@@ -1982,7 +1983,12 @@ test('Simple のペンはいつも太さ 5・濃さ 100%。本家の太さと濃
   let n = await line(200);
   assert.ok(near(n, 12), 'main pen ' + n);
   assert.ok(Math.abs(peak - 89) <= 3, 'main pen alpha ' + peak);
+  // 本家のペンを筆にしてから Simple にすると、Simple は普通のペン（本家の種類は預かる）
+  await click(page, '[title^="筆"]');
+  assert.equal((await prefs(page)).pen, 'brush');
   await click(page, '[title^="Simple"]');
+  assert.equal(await penB(), 'ペン (P)', 'the simple pen is the plain pen');
+  assert.equal((await prefs(page)).pen, 'brush', 'the main pen type is kept');
   n = await line(260);
   assert.ok(near(n, 5), 'simple pen ' + n);
   assert.equal(peak, 255, 'simple pen is opaque');
@@ -1995,8 +2001,10 @@ test('Simple のペンはいつも太さ 5・濃さ 100%。本家の太さと濃
   assert.ok(n > 6, 'bigger in simple ' + n);
   await page.waitForTimeout(500);
   assert.equal(JSON.parse(await lsGet(page)).size, undefined);
-  // 本家に戻すと 12
+  // 本家に戻すと筆・12（太さは普通のペンに戻してから測る）
   await click(page, '[title^="本家に戻す"]');
+  assert.match(await penB(), /^筆/);
+  await click(page, '[title^="ペン (P)"]');
   n = await line(380);
   assert.ok(near(n, 12), 'main pen again ' + n);
   assert.ok(Math.abs(peak - 89) <= 3, 'main pen alpha again ' + peak);

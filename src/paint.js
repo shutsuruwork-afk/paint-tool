@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.29.5';
+  const VERSION = '1.29.6';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -297,13 +297,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 最初の版はインストールページ（DEF.ui）で選び、切り替えるとサイトごとに覚える
   const UIS = ['main', 'cp2'], CP2_TOOLS = ['pen', 'eraser', 'text'];
   let cp2 = false;
-  // Simple のペンはいつも太さ 5・濃さ 100%（T-091・T-093。本家の設定には影響されない）。Simple の間は本家の [太さ, 濃さ] を mainPen に預かる（null = 預かっていない）。
-  // Simple の中でキー（[ ]）で変えた太さは覚えない。サイトに覚えるのは本家の太さと濃さだけ（snapPrefs）
+  // Simple のペンはいつも太さ 5・濃さ 100%・普通のペン（T-091・T-093・T-097。本家の設定には影響されない）。Simple の間は本家の [太さ, 濃さ, 種類] を mainPen に預かる（null = 預かっていない）。
+  // Simple の中でキー（[ ]）で変えた太さは覚えない。サイトに覚えるのは本家の値だけ（snapPrefs）
   const SIMPLE_PEN = 5;
   let mainPen = null;
   function swapPen(on) {
-    if (on && !mainPen) { mainPen = [CFG.pen.size, CFG.pen.alpha]; CFG.pen.size = SIMPLE_PEN; CFG.pen.alpha = 1; }
-    else if (!on && mainPen) { [CFG.pen.size, CFG.pen.alpha] = mainPen; mainPen = null; }
+    if (on && !mainPen) { mainPen = [CFG.pen.size, CFG.pen.alpha, penType]; CFG.pen.size = SIMPLE_PEN; CFG.pen.alpha = 1; penType = 'pen'; }
+    else if (!on && mainPen) { [CFG.pen.size, CFG.pen.alpha, penType] = mainPen; mainPen = null; }
   }
   // 見た目（インストールページの設定）: 明るい（白に黒）と、ガラス風（半透明にして下をぼかす）。既定は白いガラス（T-050、ユーザーが決めた）。
   // ガラスの調整は開発用: ぼかし方（gauss は周りも拾う本物のガウス、plain は backdrop-filter そのまま）・強さ・地の濃さ
@@ -3119,7 +3119,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function snapPrefs() {
     const size = {}, alpha = {};
     for (const k of PREF_T) { const held = k === 'pen' && mainPen; size[k] = held ? mainPen[0] : CFG[k].size; alpha[k] = held ? mainPen[1] : CFG[k].alpha; }
-    return { color, tool, pen: penType, calc, ui: UIS[+cp2], size, alpha };
+    return { color, tool, pen: mainPen ? mainPen[2] : penType, calc, ui: UIS[+cp2], size, alpha };
   }
   function remember() {
     if (!ready) return;

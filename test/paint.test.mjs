@@ -1967,21 +1967,27 @@ test('Simple（Preview。CP2）: 開発用のときだけその他に出て、�
   await ip.close();
 });
 
-test('Simple のペンはいつも太さ 5。本家の太さ（インストールページ・サイトの記憶）に影響されず、Simple で変えた太さは覚えない（T-091）', async () => {
+test('Simple のペンはいつも太さ 5・濃さ 100%。本家の太さと濃さ（インストールページ・サイトの記憶）に影響されず、Simple で変えた太さは覚えない（T-091・T-093）', async () => {
   const { page, errors } = await openPage(browser, server.base + '/');
-  await runCode(page, withDefaults(CODE, { dev: true, size: { pen: 12 } }));
-  // 横線を引いて、真ん中の列で濃い画素を数える（線の太さ）
+  await runCode(page, withDefaults(CODE, { dev: true, size: { pen: 12 }, alpha: { pen: 0.35 } }));
+  // 横線を引いて、真ん中の列で線の画素を数える（線の太さ）。濃さは一番濃い画素の不透明度
+  let peak = 0;
   const line = async y => {
     await drag(page, [[150, y], [450, y]], 10);
-    return page.evaluate(y => { const d = window.__paintBookmarklet.pixels(300, y - 20, 1, 40).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 127) n++; return n; }, y);
+    const [n, a] = await page.evaluate(y => { const d = window.__paintBookmarklet.pixels(300, y - 20, 1, 40).data; let n = 0, a = 0; for (let i = 3; i < d.length; i += 4) { if (d[i] > 40) n++; a = Math.max(a, d[i]); } return [n, a]; }, y);
+    peak = a;
+    return n;
   };
   const near = (n, w) => Math.abs(n - w) <= 1;
   let n = await line(200);
   assert.ok(near(n, 12), 'main pen ' + n);
+  assert.ok(Math.abs(peak - 89) <= 3, 'main pen alpha ' + peak);
   await click(page, '[title^="Simple"]');
   n = await line(260);
   assert.ok(near(n, 5), 'simple pen ' + n);
+  assert.equal(peak, 255, 'simple pen is opaque');
   assert.equal((await prefs(page)).size.pen, 12, 'the main size is kept');
+  assert.equal((await prefs(page)).alpha.pen, 0.35, 'the main alpha is kept');
   // Simple の中で ] を押して太くしても、覚えるのは本家の太さだけ
   await page.keyboard.press(']');
   await page.keyboard.press(']');
@@ -1993,15 +1999,18 @@ test('Simple のペンはいつも太さ 5。本家の太さ（インストー�
   await click(page, '[title^="本家に戻す"]');
   n = await line(380);
   assert.ok(near(n, 12), 'main pen again ' + n);
+  assert.ok(Math.abs(peak - 89) <= 3, 'main pen alpha again ' + peak);
   // Simple を覚えたサイトで開き直しても、ペンは 5（Simple で変えた太さは残らない）
   await click(page, '[title^="Simple"]');
   await page.waitForTimeout(500);
   await page.evaluate(() => window.__paintBookmarklet.destroy());
-  await runCode(page, withDefaults(CODE, { dev: true, size: { pen: 12 } }));
+  await runCode(page, withDefaults(CODE, { dev: true, size: { pen: 12 }, alpha: { pen: 0.35 } }));
   assert.equal((await prefs(page)).ui, 'cp2');
   n = await line(440);
   assert.ok(near(n, 5), 'simple pen after reopening ' + n);
+  assert.equal(peak, 255);
   assert.equal((await prefs(page)).size.pen, 12);
+  assert.equal((await prefs(page)).alpha.pen, 0.35);
   assert.deepEqual(errors, []);
   await page.close();
 });

@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.29.8';
+  const VERSION = '1.29.9';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -109,6 +109,8 @@
 
   // ガラスのガウス方式: ぼかしの元を周りへ --gm だけ広げて拾い、見せるのはバーの角丸の形だけ（mask で切る）。
   // 外側の要素で切り抜く（overflow・clip-path）と元の範囲が狭まってぼけが弱くなるので、角丸も mask の中で作る
+  // 地は縁（border の 1px）の下まで敷き、縁の線は outline で地の上に描く（T-102）。地が縁の内側だけだと、縁から下のページが透け、
+  // 暗い見た目を白いページに置くと白い枠に見えた。縁の線は、暗いページで暗いバーの輪郭を見せるためのもの
   const GQ = (at, pos) => `radial-gradient(circle at ${at},#000 calc(var(--gr) - .5px),#0000 var(--gr)) ${pos}/var(--gr) var(--gr) no-repeat content-box`;
   const GMASK = [GQ('100% 100%', '0 0'), GQ('0 100%', '100% 0'), GQ('100% 0', '0 100%'), GQ('0 0', '100% 100%'),
     'linear-gradient(#000 0 0) 50% 50%/calc(100% - 2 * var(--gr)) 100% no-repeat content-box',
@@ -140,13 +142,13 @@ canvas{position:absolute;left:0;top:0;pointer-events:none}
 .dd{position:relative}.dd::after{content:"";position:absolute;right:3px;bottom:3px;border:2.5px solid transparent;border-right-color:currentColor;border-bottom-color:currentColor;opacity:.55}
 .dot{width:var(--d);height:var(--d);border-radius:50%;background:var(--c);opacity:var(--a);box-shadow:0 0 0 1px #ffffff59}
 .dot.er{background:none;opacity:1;box-shadow:inset 0 0 0 1.5px #e8e9ee}
-.glass .bar,.glass .pn{background:none;border-color:#ffffff30;box-shadow:0 6px 24px #0007,inset 0 1px 0 #ffffff1c}.glass .pn{isolation:isolate}
-.glass .bar::before,.glass .pn::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;background:rgb(var(--gc) / var(--gt));-webkit-backdrop-filter:blur(var(--gb)) saturate(var(--gs));backdrop-filter:blur(var(--gb)) saturate(var(--gs));pointer-events:none}
-.gauss .bar::before{--gr:11px}.gauss .pn::before{--gr:9px}
-.gauss .bar::before,.gauss .pn::before{inset:calc(var(--gm) * -1);padding:var(--gm);border-radius:0;-webkit-mask:${GMASK};mask:${GMASK}}
+.glass .bar,.glass .pn{background:none;border-color:transparent;outline:1px solid #ffffff24;outline-offset:-1px;box-shadow:0 6px 24px #0007,inset 0 1px 0 #ffffff1c}.glass .pn{isolation:isolate}
+.glass .bar::before,.glass .pn::before{content:"";position:absolute;inset:-1px;z-index:-1;border-radius:inherit;background:rgb(var(--gc) / var(--gt));-webkit-backdrop-filter:blur(var(--gb)) saturate(var(--gs));backdrop-filter:blur(var(--gb)) saturate(var(--gs));pointer-events:none}
+.gauss .bar::before{--gr:12px}.gauss .pn::before{--gr:10px}
+.gauss .bar::before,.gauss .pn::before{inset:calc(var(--gm) * -1 - 1px);padding:var(--gm);border-radius:0;-webkit-mask:${GMASK};mask:${GMASK}}
 .light{color:#1d2026;color-scheme:light;--gc:250 250 252}
 .light .bar,.light .pn,.light .t,.light .hp{background:var(--bb,#fbfbfc);border-color:#0000001a;box-shadow:0 6px 24px #0003}
-.light.glass .bar,.light.glass .pn{background:none;border-color:#0000001f;box-shadow:0 6px 24px #0003,inset 0 1px 0 #ffffff99}
+.light.glass .bar,.light.glass .pn{background:none;border-color:transparent;outline-color:#0000001a;box-shadow:0 6px 24px #0003,inset 0 1px 0 #ffffff99}
 .light .b:hover,.light .t button:hover{background:#0000000f}.light .b:active,.light .b.open:not(.on){background:#0000001c}
 .b.on:not(.c):hover,.light .b.on:not(.c):hover,.light .b.on:not(.c):active{background:#2f6bea}
 .b.on.pc,.b.on.pc:hover,.light .b.on.pc:hover,.light .b.on.pc:active{background:var(--pc);color:var(--pi);box-shadow:0 1px 3px #0000003d}

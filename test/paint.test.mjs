@@ -321,6 +321,39 @@ test('見た目: 既定は白いガラス（ガウス・ぼかし 18px・地 80%
   await ip.close();
 });
 
+test('ガラスの縁: 地を縁の下まで敷き、細い線をその上に描く。暗い見た目を白いページに置いても白い枠にならず、暗いページでは縁が見える（T-102）', async () => {
+  // バーの左の縁を横切る 1 行の画素（赤の値）: [ページ, ページ, 縁, 中, 中, 中]
+  const edge = async page => {
+    const [x, y] = await shadowEval(page, root => { const b = root.querySelector('.bar').getBoundingClientRect(); return [Math.round(b.x), Math.round(b.y + b.height / 2)]; });
+    const png = (await page.screenshot({ clip: { x: x - 2, y, width: 6, height: 1 } })).toString('base64');
+    return page.evaluate(async src => {
+      const im = new Image(); im.src = 'data:image/png;base64,' + src; await im.decode();
+      const c = document.createElement('canvas'); c.width = im.width; c.height = 1;
+      const x = c.getContext('2d'); x.drawImage(im, 0, 0);
+      return [...x.getImageData(0, 0, im.width, 1).data].filter((_, i) => i % 4 === 0);
+    }, png);
+  };
+  const errors = [];
+  for (const [opts, bg] of [[{ theme: 'dark' }, '#fff'], [{ theme: 'dark', blurMode: 'plain' }, '#fff'], [{ theme: 'dark' }, '#1b1d22']]) {
+    const { page, errors: e } = await openPage(browser, server.base + '/');
+    await page.evaluate(bg => { document.body.style.background = bg; }, bg);
+    await runCode(page, withDefaults(CODE, { ui: 'cp2', ...opts }));
+    await page.waitForTimeout(200);
+    const [p0, , rim, in1] = await edge(page);
+    const tag = JSON.stringify(opts) + ' ' + bg;
+    if (bg === '#fff') {
+      // 白いページ: 縁は白くならず、中の地に近い（前は 255）
+      assert.ok(rim < 150 && Math.abs(rim - in1) < 45, tag + ' ' + [p0, rim, in1]);
+    } else {
+      // 暗いページ: 縁の線が、ページと中の地より明るく見える
+      assert.ok(rim > p0 + 15 && rim > in1 + 15, tag + ' ' + [p0, rim, in1]);
+    }
+    errors.push(...e);
+    await page.close();
+  }
+  assert.deepEqual(errors, []);
+});
+
 test('見た目（開発用）と色と太さのパネルは、ツールバーを引いて動かしても閉じず一緒に動く（下の端では上に開く）。引かずに押せば閉じる。ほかのパネルは引くと閉じる（設定ですべて閉じなくできる）', async () => {
   const { page, errors } = await openPage(browser, server.base + '/');
   await runCode(page, withDefaults(CODE, { dev: true }));

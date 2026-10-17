@@ -4,18 +4,18 @@
 
 ## 現在地
 
-- 最終更新: 2026-10-17、T-101 の完了時
-- ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない。HEAD は T-101 のコミット（`git log --grep T-101`）
-- CI: GitHub Actions「Pages」は main へのプッシュごとに test → deploy。T-100 の run（39029707223）まで test・deploy とも成功。T-101 のプッシュの結果は Actions で確かめる
-- 公開: https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）の 2 か所。版は v1.29.8
+- 最終更新: 2026-10-17、T-102 の完了時
+- ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない。HEAD は T-102 のコミット（`git log --grep T-102`）
+- CI: GitHub Actions「Pages」は main へのプッシュごとに test → deploy。T-101 の run（39032330417）まで test・deploy とも成功。T-102 のプッシュの結果は Actions で確かめる
+- 公開: https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）の 2 か所。版は v1.29.9
 - 人の操作待ち: なし（R-007 は、重くなったのが勝手に始まったダウンロードのときの出来事で再現できない、との回答で閉じた）。R-004 は C に決まった（インストールページの既定＋サイトごとに覚える）
-- 次の一手: Simple Preview（T-101 で開発用から出した。ペンボタンの地の色〈T-100〉はユーザーが「とてもお洒落」と気に入った）の使い心地を聞く。暗い見た目のツールバーの白いフチ（ガラスの縁の 1px に地が敷かれず、白いページが透ける）をどうするかを聞いている（Simple のことは `.claude/HANDOFF-simple.md` にまとめた。Simple を触るときは先に読む）。ユーザーに実機で、開発用の「予測の方法: 曲がりに沿う／ブラウザ」を見比べてもらう（特に蛍光ペンと濃さ 35% のペン。Windows の不透明のペンは Ink Trail なので予測を使わない）。ペンタブ・指などの録画が届いたら `npm run predict` で比べる（T-086）。効率と中身の改善は、トレードオフがあれば先にユーザーに確認する（履歴のメモリ上限・全消去の後のタイルの解放・塗りつぶしを画面の外まで広げる、は今のままでよいと回答済み）。残りの候補は T-086・T-084（全消去を消す物がないときに薄くする。research/simple の T-085 で試した。実機で試してもらってから）・T-018・T-013・T-031・T-020（T-011・T-017 は後回し）。タスクの番号: T-071〜T-083・T-085 は research/simple ブランチで使ったので、次は T-102 から
+- 次の一手: Simple Preview（T-101 で開発用から出した。ペンボタンの地の色〈T-100〉はユーザーが「とてもお洒落」と気に入った）の使い心地を聞く（Simple のことは `.claude/HANDOFF-simple.md` にまとめた。Simple を触るときは先に読む）。ユーザーに実機で、開発用の「予測の方法: 曲がりに沿う／ブラウザ」を見比べてもらう（特に蛍光ペンと濃さ 35% のペン。Windows の不透明のペンは Ink Trail なので予測を使わない）。ペンタブ・指などの録画が届いたら `npm run predict` で比べる（T-086）。効率と中身の改善は、トレードオフがあれば先にユーザーに確認する（履歴のメモリ上限・全消去の後のタイルの解放・塗りつぶしを画面の外まで広げる、は今のままでよいと回答済み）。残りの候補は T-086・T-084（全消去を消す物がないときに薄くする。research/simple の T-085 で試した。実機で試してもらってから）・T-018・T-013・T-031・T-020（T-011・T-017 は後回し）。タスクの番号: T-071〜T-083・T-085 は research/simple ブランチで使ったので、次は T-103 から
 
 ## 始め方
 
 ```sh
 npm install          # terser 5.36.0 と playwright 1.56.1（ブラウザは /opt/pw-browsers にある）
-npm test             # ビルドしてから Playwright のテスト 76 件
+npm test             # ビルドしてから Playwright のテスト 77 件
 npm run bench        # 性能計測（メインスレッドの占有時間）
 npm run pop          # 蛍光ペンの先端の消える画素（ぴょこぴょこ）と、1〜2 フレーム後のペン先との隙間（T-055）
 npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、予測の方法ごとの 1 フレーム後のペン先とのずれ・はみ出し・消える長さを比べる（T-060）。負荷の様子（フレームの間隔・届くまでの遅れ・予測線の点滅）も出す（T-087）
@@ -37,7 +37,7 @@ npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、予�
   - お知らせ（`say(msg, ms, act, fn, xfn, inl)`。fn を渡すとボタン付き、xfn を渡すと × 付き、inl ならボタンを文の続きに置く）、塗りつぶし（floodFill → maskClear / maskColor → scanFill。画面に何も描いていなければ全体の矩形を 1 つ）、選択（settle / showSel / liftSel → liftRaster + beginSel / dropSel / paintSel / selHit / selHover / selDown / selMove / scaleSel / selUp / selAbort / pickSel / nudgeSel。浮かせた画素は selC、選んだ文字の物の組は selT、どちらも入れ物 selIn に入れて transform で拡大縮小。枠は selEl と selB）、文字（物: tlist / tNew / tSnap / tApply / swapText / textHit / paintText（書き出し用）/ eraseText・showErased・takeErased（消しゴム）。入力: textAt / editText / styleTa / fitTa / commitText。電卓: updateGhost（fitTa も呼ぶ）/ lineW / acceptGhost / calcLine（薄い答えは ghostEl、右端は ghostR）。入力欄は `ta`、書き直し中の物は `taObj`）、書き出し（capture / exportBlob / save / copyImg / pixels）、HUD（D キー）、操作の一覧（HELP / openHelp / closeHelp。? キー）、キーボード（onKey）、設定（applyPrefs / snapPrefs / remember → savePrefs / loadSite / placeBar。DEF ＋ サイトの保存）、表示制御（show / hide / hideHint → endHint / toggle / close → endBye / reopen / onByeKey、destroy）、起動
 - `src/install.html`: インストールページのテンプレート（本文のみ）。並びは T-039 で、見出し（Paint ボタン・試す・目次）→ 入れ方 → 試し書き → デフォルトの設定（id="defaults"、動きはスイッチ）→ 使い方（機能の説明と操作の一覧 %%HELP%%）→ できないこと → 仕組みと計測（仕組み・低遅延機能の表・計測の表）にした。機能の説明は「使い方」に、技術の説明は「仕組みと計測」に分ける。`%%BOOKMARKLET_HREF%%` などを build.mjs が置き換える。「デフォルトの設定」のフォームは、選んだ既定（組み込みの既定との差分）を JSON にして、ボタンの href の `'__PAINT_DEFAULTS__'` を置き換える。フォームの状態はインストールページ自身の localStorage（`paint-defaults`）に、組み込みの既定との差分だけを残す（T-046。それより前に保存した人は全体の形のまま）。組み込みの既定（BUILTIN と PALETTE）は src/paint.js と手で合わせる（テストで一致を確かめている）
 - `build.mjs`: src/paint.js の HELP（`/*HELP*/` の間の JSON）を読んで、インストールページの `%%HELP%%` にショートカットの一覧を書き出す。terser で圧縮し、`dist/paint.min.js`、`dist/bookmarklet.txt`、`docs/index.html` を作る。「このページで試す」用の埋め込み版は、既定の目印を `window.__paintBookmarkletDefaults` を読む式に変える（eval を使わない）。目印が 1 つだけあることも確かめる。インストールページのボタンの href がブックマークレットと一致するかを、書き出す前に確かめる
-- `test/paint.test.mjs`（テスト 76 件）、`test/helpers.mjs`（既定を埋め込んだコードを作る `withDefaults` と直接起動する `runCode`、サーバー〈`/install` はビルドしたインストールページ〉〈`/long` は縦 3000px、`/offset` は html に余白〉・起動・画素の読み取り `readMain` / `screenPixel`・`scrollTo`）、`test/bench.mjs`、`test/pop.mjs`（npm run pop）、`test/predict.mjs`（npm run predict。録った入力を処理した順にたどり、そのとき本体が知っている点から、なし・ブラウザ（本体での使い方）・曲がりに沿う（ownPred と同じ計算。値を変えたら両方そろえる）・直線を、1 フレーム後のペン先とのずれ・はみ出し・消える長さで比べる。負荷の様子と、予測線を消す判定の前と今の点滅の数も出す。analyze と ownPred を export している）
+- `test/paint.test.mjs`（テスト 77 件）、`test/helpers.mjs`（既定を埋め込んだコードを作る `withDefaults` と直接起動する `runCode`、サーバー〈`/install` はビルドしたインストールページ〉〈`/long` は縦 3000px、`/offset` は html に余白〉・起動・画素の読み取り `readMain` / `screenPixel`・`scrollTo`）、`test/bench.mjs`、`test/pop.mjs`（npm run pop）、`test/predict.mjs`（npm run predict。録った入力を処理した順にたどり、そのとき本体が知っている点から、なし・ブラウザ（本体での使い方）・曲がりに沿う（ownPred と同じ計算。値を変えたら両方そろえる）・直線を、1 フレーム後のペン先とのずれ・はみ出し・消える長さで比べる。負荷の様子と、予測線を消す判定の前と今の点滅の数も出す。analyze と ownPred を export している）
 - `.github/workflows/pages.yml`: main へのプッシュでテストしてから docs/ を Pages に公開。PR ではテストだけ
 - `.claude/`: CLAUDE.md（概要と読み込み）、`rules/`（tasks / handoff / human）、TASKS.md、HANDOFF.md、HANDOFF-simple.md（Simple だけのこと。T-095）、Stop フック（`hooks/check-handoff.mjs`）
 - `.human/`: ユーザーとの非同期のやりとり。`ideas/`（ユーザーのアイデア、1 件 1 ファイル）、`requests.md`（Claude からの判断・作業のお願い）
@@ -93,7 +93,7 @@ npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、予�
 - 設定の記憶は C（R-004 でユーザーが決定）: インストールページで選んだ既定で始まり、サイトで変えた所はそのサイトの localStorage（キー `paint-bookmarklet`）に差分だけを書く。サイトをまたいで自動で共有する方法はない（保存領域はサイトごとに分かれる）ので、共通の既定はブックマークレットの中に埋め込む。差分だけにしたので、あとでインストールページの既定を変えると、サイトで触っていない所には新しい既定が効く。touchText はインストールページだけで選ぶ（ツールの中に切り替えは置いていない）。背景・ページ操作モード・計測表示は覚えない。
 - デフォルトの変更（T-038、ユーザーの提案）: その他のメニューから、インストールページ（PAGE、Pages の URL を直書き）を新しいタブで開く。今のブックマークの DEF を `#defaults=<JSON>` で渡し、ページはそれをフォームに読み込んで保存し、ハッシュを `#defaults` に戻して設定の節（id="defaults"）を見せる。設定はページに集め、メニューの項目は増やさない方針（サイトをまたいで設定を共有する方法はないので、変えたらドラッグし直す）。
 - 見た目の開発用パネル（T-042、ユーザーの要望: 開発用に、操作盤から操作盤の色を変えたい）: DEF.dev（インストールページの「開発用」、既定は切り）のときだけ、その他のメニューに「見た目（開発用）」を出す（ふだんのメニューは増やさない方針のため）。パネル lookP で、ツールバーの色（暗い・明るい・好きな色）・ガラス・ガウス・ぼかし・地の濃さをその場で変える（look を書き換えて applyLook）。彩度（look.sat、100〜300%、既定 180%）もここで変える（T-065、ユーザーの要望。--gs で saturate に入れる。インストールページのガラスの調整にもある）。このパネルと色と太さのパネルは、ツールバーを引いて動かす間も閉じない（T-066・T-068、ユーザーの要望: 下の色を変えて見比べるため。色と太さも既定で閉じない。ほかのパネルはインストールページの keepPanels〈動き、既定は切り〉を入れたときだけ閉じない）。keepP が閉じないパネルを決める（Simple のその他も閉じない。T-094、ユーザーの要望）。wrap の pointerdown ではバーの中なら閉じず、引かずに離したら閉じる。動かす間は placePanel で上下と左右を直す。「この見た目をデフォルトに」は、DEF に look を重ねて openDefaults（デフォルトの変更と同じく #defaults=）。好きな色は theme='#rrggbb' で、--bb（地）と --gc（ガラスの地）にし、相対輝度 0.3 を超えたら .light（黒い文字）。サイトごとには覚えない。
-- 見た目（T-040・T-041、ユーザーが試したいと言った。インストールページの「見た目」。DEF の theme・glass・blurMode・blur・tint。既定は明るい・ガラス入り・ガウス・ぼかし 18px・地 80%・彩度 200%（T-050・T-069、ユーザーが実機で試して決めた。それまでは暗い・ガラスなしで、ガラスの重さが実機で未確認だったため切りにしていた）。彩度は T-065 で開発用に変えられるようにした）: 明るい（theme='light'）は wrap の .light で、バー・パネル・お知らせ・一覧の色を上書きする（暗い方の規則はそのまま）。ガラスは wrap の .glass で、バーとパネルの背景を消して ::before（z-index:-1）に地 rgb(var(--gc) / var(--gt)) と backdrop-filter: blur(var(--gb)) を置く（バー自体に付けると、子のパネルの backdrop-filter がバーの中しか見なくなるため）。ふつうの backdrop-filter は細長い要素だと下の文字がほぼくっきり残り、薄くなるだけだった（headless で確認。ユーザーも実機で「もっとガウス的に」と言った）。ガウス方式（.gauss、既定）は ::before を周りへ --gm（強さの 2 倍）広げて拾い、mask（角 4 つの radial-gradient と 2 本の linear-gradient、content-box）で角丸の形に切る。外側の要素の overflow や clip-path で切ると、拾う範囲も狭まってぼけが弱くなる。--gb・--gm・--gt は wrap に CSSOM で入れる（style 属性は使わない）。
+- 見た目（T-040・T-041、ユーザーが試したいと言った。インストールページの「見た目」。DEF の theme・glass・blurMode・blur・tint。既定は明るい・ガラス入り・ガウス・ぼかし 18px・地 80%・彩度 200%（T-050・T-069、ユーザーが実機で試して決めた。それまでは暗い・ガラスなしで、ガラスの重さが実機で未確認だったため切りにしていた）。彩度は T-065 で開発用に変えられるようにした）: 明るい（theme='light'）は wrap の .light で、バー・パネル・お知らせ・一覧の色を上書きする（暗い方の規則はそのまま）。ガラスは wrap の .glass で、バーとパネルの背景を消して ::before（z-index:-1）に地 rgb(var(--gc) / var(--gt)) と backdrop-filter: blur(var(--gb)) を置く（バー自体に付けると、子のパネルの backdrop-filter がバーの中しか見なくなるため）。ふつうの backdrop-filter は細長い要素だと下の文字がほぼくっきり残り、薄くなるだけだった（headless で確認。ユーザーも実機で「もっとガウス的に」と言った）。ガウス方式（.gauss、既定）は ::before を周りへ --gm（強さの 2 倍）広げて拾い、mask（角 4 つの radial-gradient と 2 本の linear-gradient、content-box）で角丸の形に切る。外側の要素の overflow や clip-path で切ると、拾う範囲も狭まってぼけが弱くなる。地（::before）は縁（border の 1px）の下まで敷き（inset を 1px 外へ、mask の角丸 --gr もバーの外形 12px・パネル 10px に）、縁の線は border を透明にして outline（offset −1px）で地の上に描く（T-102、ユーザーの指摘: 暗い見た目の白いフチは要らないように見える）。地が縁の内側だけだと縁からページが透け、暗い見た目を白いページに置くと白い枠になっていた。縁の線は、暗いページで暗いバーの輪郭を見せるために残した（地だけにすると暗いページで輪郭が消えた）。--gb・--gm・--gt は wrap に CSSOM で入れる（style 属性は使わない）。
 - 入り・切りの項目（その他のメニューの電卓・画面に固定、インストールページの入り・切り）はスイッチの形にする（T-036、ユーザーが画像で示した）。メニューは role="switch" と aria-checked で状態を持ち、つまみ（.sw）は CSS だけで動かす。色はツールが青（#3d7cff）、インストールページはページの赤（チェックボックスのまま appearance: none で見た目だけ変える）。
 - 操作の一覧（T-007、ユーザーの決定）: ? キーで画面の中央に重ねて出す。ツールバーにはボタンを置かない。中身は paint.js の HELP 1 か所に持ち、build.mjs がインストールページにも同じ物を書き出す（食い違わない。テストで両方の行を比べている）。キーは `{…}` で書き、Mac では Ctrl を ⌘ にして出す。DOM は初めて開いたときに作る。外を押すと閉じるだけで、その押下は描画に渡さない。起動時のお知らせは「Esc で隠す」だけ（T-037、ユーザーの要望。? や V は一覧で分かる）。日本語の文字列は圧縮後に \u エスケープになるので、一覧の分でブックマークレットが約 4 KB 増えた。
 - ツールを選ぶ（setTool）とページ操作モードを解除する（T-021、ユーザーの提案）。ツールを選ぶのは描くつもりのときなので。色や太さの変更では解除しない。ペンと図形のボタンは、選んでいる道具をもう一度押すとパネルを開いて setTool を通らないので、ページ操作モードのときは先に setTool で戻してから、普段と同じにパネルを開け閉めする（T-057・T-062。ユーザー: 仕様の統一性）。
@@ -156,6 +156,11 @@ npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、予�
 
 ## 完了ログ（新しい順）
 
+### T-102 ガラスのツールバーの縁: 地を縁の下まで敷き、細い線をその上に描く（暗い見た目の白いフチをなくす） — 2026-10-17
+- 変更: ガラスのバーとパネルで、ぼかした地（::before）を縁（border の 1px）の下まで広げ、縁の線は border を透明にして outline で地の上に描くようにした（暗い見た目は白 14%、明るい見た目は黒 10%）。地が縁の内側だけだったので、縁から下のページが透け、暗い見た目を白いページに置くと白い枠に見えていた。暗いページでは今まで通り細い明るい縁が見える。版を 1.29.9 にした。ユーザーの指摘と選択（チャット: 黒の白いフチ、要らないようにも見える → 3 案〈今・縁の下にも地・地＋上に細い線〉を見比べて「地を敷いて、上に細い線を描く」）。
+- 確認: テストを 1 件足した（暗い見た目の縁の画素: 白いページでは白くならず中の地に近い〈ガウス・ふつうのぼかしの両方〉、暗いページではページと中の地より明るい）。直す前の版では落ちる（縁が 255）ことを確かめた。暗い / 明るい × 白い / 暗いページで、バーとその他のパネルをスクリーンショットで確かめた。`npm test` 77 件が通過。
+- 残課題: なし。
+
 ### T-101 Simple を開発用限定から外し、呼び名を「Simple Preview」にする — 2026-10-17
 - 変更: 本家のその他の最後に、開発用でなくても「Simple Preview」を出すようにした（開発用なら開発用の項目の後）。インストールページの「最初に出す版」を開発用の節から出し、見た目の次のふつうの設定にした（どちらでもその他で切り替えられる、の説明付き）。使い方にも Simple Preview の項目を足した。画面の呼び名の「Simple（Preview）」を「Simple Preview」にした（メニュー・お知らせ・インストールページ・README。Paint ボタンの名前は Paint Simple のまま、コードと設定の値は cp2 のまま）。README の Simple の説明を開発の節から使い方へ移し、T-100 の前のままだった「ペンボタンのすぐ下に色の線」を直した。版を 1.29.8 にした。ユーザーの決定（チャット: Simple を開発用限定から外して、名前を Simple Preview にする。（）を外す、一歩前進）。
 - 確認: Simple の切り替えのテストを、開発用でないブックマークレットでその他の最後に出る・開発用なら開発用の項目の後・Simple で始めて本家に戻すとまた出る・インストールページの #p-ui が「最初に出す版」の節にある、に直した。開発用だけに出す版では落ちることを確かめた。インストールページの節とその他のメニューをスクリーンショットで確かめた。`npm test` 76 件が通過。
@@ -191,12 +196,8 @@ npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、予�
 - 確認: 停止フックが通ること・HANDOFF.md から Simple の決まりが消えていない（案内が残る）ことを読み直した。コードは変えていない。
 - 残課題: なし。
 
-### T-094 Simple でその他（⋯）を開いたまま、ツールバーを引いて動かしても閉じないようにする — 2026-10-17
-- 変更: Simple のその他（全消去・色・本家に戻す）を、色と太さのパネルと同じく、ツールバーを引いて動かしても閉じないようにした（keepP に Simple のその他を足した。一緒に動き、引かずに押せば閉じる）。本家のその他は今まで通り（keepPanels でなければ閉じる）。README に書いた。版は 1.29.4（T-093 と同じ）。ユーザーの要望（チャット: Simple では三点リーダーを開いた状態で操作盤を動かすと、開いた部分が消えてしまう）。
-- 確認: テストを 1 件足した（ペンのボタンの上から引いても開いたまま一緒に動き、ペンは消しゴムにならない・開いたまま色を選べる・引かずに押せば閉じて押したボタンが効く）。直す前の版では落ちることを確かめた。本家のパネルのテストもそのまま通る。
-- 残課題: なし。
-
 ### それより前（1 行に畳んだもの）
+- T-094 Simple のその他を開いたまま、ツールバーを引いて動かしても閉じないようにした（keepP）— 2026-10-17
 - T-093 Simple のペンをいつも濃さ 100% にした（本家の濃さは太さと一緒に預かる）— 2026-10-17
 - T-092 文字を入力中にパネルを開くと、入力欄（点線の枠・文字・薄い答え）がパネルの上に出ていたのを直した（ta・ghostEl・mta を bar.before）— 2026-10-17
 - T-091 Simple のペンをいつも太さ 5 にした（本家の太さは預かる。詳しくは HANDOFF-simple.md）— 2026-10-17

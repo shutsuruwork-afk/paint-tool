@@ -137,7 +137,7 @@ canvas{position:absolute;left:0;top:0;pointer-events:none}
 .b:disabled{opacity:.3;cursor:default;background:none}
 .b:focus-visible{outline:2px solid #3d7cff;outline-offset:-2px}
 .b.open:not(.on){background:#ffffff2e}
-.pc{position:relative}.pc::after{content:"";position:absolute;left:8px;right:8px;bottom:2.5px;height:3px;border-radius:2px;background:var(--pc);box-shadow:0 0 0 1px #ffffffb0;pointer-events:none}.light .pc:not(.on)::after{box-shadow:0 0 0 1px #00000040}
+.pc{position:relative}.pc::after{content:"";position:absolute;left:6px;right:6px;bottom:-4px;height:3px;border-radius:2px;background:var(--pc);pointer-events:none}
 .dd{position:relative}.dd::after{content:"";position:absolute;right:3px;bottom:3px;border:2.5px solid transparent;border-right-color:currentColor;border-bottom-color:currentColor;opacity:.55}
 .dot{width:var(--d);height:var(--d);border-radius:50%;background:var(--c);opacity:var(--a);box-shadow:0 0 0 1px #ffffff59}
 .dot.er{background:none;opacity:1;box-shadow:inset 0 0 0 1.5px #e8e9ee}
@@ -849,8 +849,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   // CP2: ペンのボタンは、消しゴムのときは消しゴムの印と名前にし、ペンか消しゴムのとき選んだ見た目にする（T-088。CP2 ブランチの T-076）
   function markPen() {
-    // Simple のペンのとき、ペンボタンの下に今の色の下線（T-096、お試し）。白い地では薄い黒、青い地と暗い見た目では白の縁で、白や青も見えるようにする
-    penB.classList.toggle('pc', cp2 && tool !== 'eraser');
+    // Simple でペンを選んでいるとき、ペンボタンのすぐ下（ツールバーの下の余白）に今の色の下線（T-096・T-098、お試し。縁なし）
+    penB.classList.toggle('pc', cp2 && tool === 'pen');
     if (!cp2) return;
     const er = tool === 'eraser', t = er ? TITLES.eraser : PEN_TITLES[penType];
     penD.setAttribute('d', I[er ? 'eraser' : penType]);

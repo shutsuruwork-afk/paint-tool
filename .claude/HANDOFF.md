@@ -4,18 +4,18 @@
 
 ## 現在地
 
-- 最終更新: 2026-10-17、T-110 の完了時
-- ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない。HEAD は T-110 のコミット（`git log --grep T-110`）
-- CI: GitHub Actions「Pages」は main へのプッシュごとに test → deploy。T-109 の run（39042677325）まで test・deploy とも成功。T-110 のプッシュの結果は Actions で確かめる
-- 公開: https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）の 2 か所。版は v1.32.1
-- 人の操作待ち: R-011（iPhone の LINE の中のブラウザで、2 本指のスクロールが滑らかになったか〈T-108〉を確かめてもらう。ツールバーとペンは T-107 で直ったと回答済み）。R-007 は、重くなったのが勝手に始まったダウンロードのときの出来事で再現できない、との回答で閉じた。R-004 は C に決まった（インストールページの既定＋サイトごとに覚える）
-- 次の一手: Simple Preview（T-101 で開発用から出した。ペンボタンの地の色〈T-100〉はユーザーが「とてもお洒落」と気に入った）の使い心地を聞く。R-011 の答えが来たら、震えが残る動きを調べる。直っていたら T-105 の 1px 下げるのが要るかを見直す（Simple のことは `.claude/HANDOFF-simple.md` にまとめた。Simple を触るときは先に読む）。ユーザーに実機で、開発用の「予測の方法: 曲がりに沿う／ブラウザ」を見比べてもらう（特に蛍光ペンと濃さ 35% のペン。Windows の不透明のペンは Ink Trail なので予測を使わない）。ペンタブ・指などの録画が届いたら `npm run predict` で比べる（T-086）。効率と中身の改善は、トレードオフがあれば先にユーザーに確認する（履歴のメモリ上限・全消去の後のタイルの解放・塗りつぶしを画面の外まで広げる、は今のままでよいと回答済み）。残りの候補は T-086・T-084（全消去を消す物がないときに薄くする。research/simple の T-085 で試した。実機で試してもらってから）・T-018・T-013・T-031・T-020（T-011・T-017 は後回し）。タスクの番号: T-071〜T-083・T-085 は research/simple ブランチで使ったので、次は T-111 から
+- 最終更新: 2026-10-17、T-111・T-112 の完了時
+- ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない。HEAD は T-112 のコミット（`git log --grep T-112`）。T-111 の監査のサブエージェントの作業コピーは `.claude/worktrees/`（.gitignore 済み。監査の後はこの作業コピーから作業してプッシュした）
+- CI: GitHub Actions「Pages」は main へのプッシュごとに test → deploy。T-110 の run（39043640393）まで test・deploy とも成功。T-112 のプッシュの結果は Actions で確かめる
+- 公開: https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）の 2 か所。版は v1.32.2
+- 人の操作待ち: R-012（描いている間だけガラスのぼかしを止めるか。まず実機でガラスを切って比べてもらう）・R-013（iPhone のメモリの使いすぎをどこまで減らすか）・R-011（iPhone の LINE の中のブラウザで、2 本指のスクロールが滑らかになったか〈T-108〉を確かめてもらう。ツールバーとペンは T-107 で直ったと回答済み）。R-007 は、重くなったのが勝手に始まったダウンロードのときの出来事で再現できない、との回答で閉じた。R-004 は C に決まった（インストールページの既定＋サイトごとに覚える）
+- 次の一手: Simple Preview（T-101 で開発用から出した。ペンボタンの地の色〈T-100〉はユーザーが「とてもお洒落」と気に入った）の使い心地を聞く。R-011 の答えが来たら、震えが残る動きを調べる。直っていたら T-105 の 1px 下げるのが要るかを見直す（Simple のことは `.claude/HANDOFF-simple.md` にまとめた。Simple を触るときは先に読む）。ユーザーに実機で、開発用の「予測の方法: 曲がりに沿う／ブラウザ」を見比べてもらう（特に蛍光ペンと濃さ 35% のペン。Windows の不透明のペンは Ink Trail なので予測を使わない）。ペンタブ・指などの録画が届いたら `npm run predict` で比べる（T-086）。効率と中身の改善は、トレードオフがあれば先にユーザーに確認する（履歴のメモリ上限・全消去の後のタイルの解放・塗りつぶしを画面の外まで広げる、は今のままでよいと回答済み）。残りの候補は T-086・T-084（全消去を消す物がないときに薄くする。research/simple の T-085 で試した。実機で試してもらってから）・T-018・T-013・T-031・T-020（T-011・T-017 は後回し）。タスクの番号: T-071〜T-083・T-085 は research/simple ブランチで使ったので、次は T-113 から
 
 ## 始め方
 
 ```sh
 npm install          # terser 5.36.0 と playwright 1.56.1（ブラウザは /opt/pw-browsers にある）
-npm test             # ビルドしてから Playwright のテスト 82 件
+npm test             # ビルドしてから Playwright のテスト 88 件（paint.test.mjs 82 件・audit.test.mjs 6 件）
 npm run bench        # 性能計測（メインスレッドの占有時間）
 npm run pop          # 蛍光ペンの先端の消える画素（ぴょこぴょこ）と、1〜2 フレーム後のペン先との隙間（T-055）
 npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、予測の方法ごとの 1 フレーム後のペン先とのずれ・はみ出し・消える長さを比べる（T-060）。負荷の様子（フレームの間隔・届くまでの遅れ・予測線の点滅）も出す（T-087）
@@ -29,7 +29,7 @@ npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、予�
 - `src/paint.js`: 本体。`// ---------- 名前 ----------` の節で区切ってある。
   - ホスト要素: 画面に固定する host（UI、live / pred、top layer）と、ページに貼り付ける surf（`paint-bookmarklet-surface`、確定した絵）の 2 つを documentElement 直下に置く。`pin()` で `!important` のインラインスタイルを当てる
   - 状態、面（mapNow / origin / dtile / forTiles / sizeSurface。画面に固定は fixed / fx / fy）、ツールバー（TITLES、図形ボタン shapeB と lastShape、色と太さ styleB と点 dot、その他 moreB と item()、ペン penB と種類のパネル penP（setPen / syncPen / grain）、パネル shapeP / styleP / moreP と openPanel / closePanel / togglePanel、ドラッグ移動 moveBar / measureBar。バーのどこを押しても 4px 引けば動く。1 段に収まらなければ layBar で 2 段〈.two、塗りつぶしの後ろの .brk で段を分ける〉。パネルの位置は placePanel、引いても閉じないパネルは keepP。ボタンは全部作り、バーとその他に並べるのは layout()〈本家と Simple の版ごと。Simple の部分は HANDOFF-simple.md〉）、UI 同期（setTool / syncTool / syncDot / liveAlpha / setColor / syncBg …）、キャンバスのサイズ管理（fit, warm）
-  - 履歴（push / swap / pack / gather / grow、undo / redo / clearAll）。gather は面のタイルからアトラスへ、swap はアトラスと面を入れ替える
+  - 履歴（push / swap / pack / gather / grow、undo / redo / clearAll）。gather は面のタイルからアトラスへ、swap はアトラスと面を入れ替える。全消去の手だけはアトラスを作らず、タイルの canvas そのものを手の d（[タイル番号, タイル, …]）に移し、swapTiles で入れ替える（T-112）。shiftAll の前には toAtlas でふつうの手に直す
   - 画面に固定（toggleFixed / shiftAll / syncFixed）。shiftAll は面のタイル・履歴の矩形と外接矩形・文字の状態（今と履歴）・cb* をまとめて S でずらす
   - 2 本指のスクロール（twoDown / twoMove / twoUp・TWO。起動時に pad へ capture で登録。T-104 で本家にも。目標 tgX / tgY を 1 フレームに 1 回 scrollNow で scrollTo する。T-108）と慣性（kPush で中点を輪に入れ、1 本目を離したら flingStart → 毎フレーム fling。stopFling。T-106）。LINE の中では offTop で上から 1px 下げる（T-105）。タッチの塗りつぶしと文字は tapId に覚えて onUp の tapAct で行う
   - ストローク状態と入力: onDown（finishHandoff → mapNow）→ onMove（inkMove〈蛍光ペンは sPoly で点と点を直線。半透明は stk で抜いてから足し、addPiece で形を覚える。点は hPush で予測の輪 hT / hX / hY にも入れる〉, predict〈既定は入力ごとに ownPred。ppred = 'chrome' なら pointermove で readPred、蛍光ペンの「必要な分だけ」は needPred〉, drawTail〈半透明は cutPred〉 / eraseMove → erasePts / drawShape）、tick（毎フレーム。1 フレームの長さ fi、入力が届くまでの遅れ dl、止まったら予測線を消す PRED_TTL）→ onUp → endStroke（commitLive → 2 フレーム後に finishHandoff）。abortStroke はパームリジェクションで使う
@@ -38,7 +38,7 @@ npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、予�
   - お知らせ（`say(msg, ms, act, fn, xfn, inl)`。fn を渡すとボタン付き、xfn を渡すと × 付き、inl ならボタンを文の続きに置く）、塗りつぶし（floodFill → maskClear / maskColor → scanFill。画面に何も描いていなければ全体の矩形を 1 つ）、選択（settle / showSel / liftSel → liftRaster + beginSel / dropSel / paintSel / selHit / selHover / selDown / selMove / scaleSel / selUp / selAbort / pickSel / nudgeSel。浮かせた画素は selC、選んだ文字の物の組は selT、どちらも入れ物 selIn に入れて transform で拡大縮小。枠は selEl と selB）、文字（物: tlist / tNew / tSnap / tApply / swapText / textHit / paintText（書き出し用）/ eraseText・showErased・takeErased（消しゴム）。入力: textAt / editText / styleTa / fitTa / commitText。電卓: updateGhost（fitTa も呼ぶ）/ lineW / acceptGhost / calcLine（薄い答えは ghostEl、右端は ghostR）。入力欄は `ta`、書き直し中の物は `taObj`）、書き出し（capture / exportBlob / save / copyImg / pixels）、HUD（D キー）、操作の一覧（HELP / openHelp / closeHelp。? キー）、キーボード（onKey）、設定（applyPrefs / snapPrefs / remember → savePrefs / loadSite / placeBar。DEF ＋ サイトの保存）、表示制御（show / hide / hideHint → endHint / toggle / close → endBye / reopen / onByeKey、destroy）、起動
 - `src/install.html`: インストールページのテンプレート（本文のみ）。並びは T-039 で、見出し（Paint ボタン・試す・目次）→ 入れ方 → 試し書き → デフォルトの設定（id="defaults"、動きはスイッチ）→ 使い方（機能の説明と操作の一覧 %%HELP%%）→ できないこと → 仕組みと計測（仕組み・低遅延機能の表・計測の表）にした。機能の説明は「使い方」に、技術の説明は「仕組みと計測」に分ける。`%%BOOKMARKLET_HREF%%` などを build.mjs が置き換える。「デフォルトの設定」のフォームは、選んだ既定（組み込みの既定との差分）を JSON にして、ボタンの href の `'__PAINT_DEFAULTS__'` を置き換える。フォームの状態はインストールページ自身の localStorage（`paint-defaults`）に、組み込みの既定との差分だけを残す（T-046。それより前に保存した人は全体の形のまま）。組み込みの既定（BUILTIN と PALETTE）は src/paint.js と手で合わせる（テストで一致を確かめている）
 - `build.mjs`: src/paint.js の HELP（`/*HELP*/` の間の JSON）を読んで、インストールページの `%%HELP%%` にショートカットの一覧を書き出す。terser で圧縮し、`dist/paint.min.js`、`dist/bookmarklet.txt`、`docs/index.html` を作る。「このページで試す」用の埋め込み版は、既定の目印を `window.__paintBookmarkletDefaults` を読む式に変える（eval を使わない）。目印が 1 つだけあることも確かめる。インストールページのボタンの href がブックマークレットと一致するかを、書き出す前に確かめる
-- `test/paint.test.mjs`（テスト 82 件）、`test/helpers.mjs`（既定を埋め込んだコードを作る `withDefaults` と直接起動する `runCode`、サーバー〈`/install` はビルドしたインストールページ〉〈`/long` は縦 3000px、`/offset` は html に余白〉・起動・画素の読み取り `readMain` / `screenPixel`・`scrollTo`）、`test/bench.mjs`、`test/pop.mjs`（npm run pop）、`test/predict.mjs`（npm run predict。録った入力を処理した順にたどり、そのとき本体が知っている点から、なし・ブラウザ（本体での使い方）・曲がりに沿う（ownPred と同じ計算。値を変えたら両方そろえる）・直線を、1 フレーム後のペン先とのずれ・はみ出し・消える長さで比べる。負荷の様子と、予測線を消す判定の前と今の点滅の数も出す。analyze と ownPred を export している）
+- `test/paint.test.mjs`（テスト 82 件）、`test/audit.test.mjs`（T-111 の監査で見つかった不具合のテスト 6 件。T-112）、`test/helpers.mjs`（既定を埋め込んだコードを作る `withDefaults` と直接起動する `runCode`、サーバー〈`/install` はビルドしたインストールページ〉〈`/long` は縦 3000px、`/offset` は html に余白〉・起動・画素の読み取り `readMain` / `screenPixel`・`scrollTo`）、`test/bench.mjs`、`test/pop.mjs`（npm run pop）、`test/predict.mjs`（npm run predict。録った入力を処理した順にたどり、そのとき本体が知っている点から、なし・ブラウザ（本体での使い方）・曲がりに沿う（ownPred と同じ計算。値を変えたら両方そろえる）・直線を、1 フレーム後のペン先とのずれ・はみ出し・消える長さで比べる。負荷の様子と、予測線を消す判定の前と今の点滅の数も出す。analyze と ownPred を export している）
 - `.github/workflows/pages.yml`: main へのプッシュでテストしてから docs/ を Pages に公開。PR ではテストだけ
 - `.claude/`: CLAUDE.md（概要と読み込み）、`rules/`（tasks / handoff / human）、TASKS.md、HANDOFF.md、HANDOFF-simple.md（Simple だけのこと。T-095）、Stop フック（`hooks/check-handoff.mjs`）
 - `.human/`: ユーザーとの非同期のやりとり。`ideas/`（ユーザーのアイデア、1 件 1 ファイル）、`requests.md`（Claude からの判断・作業のお願い）
@@ -48,13 +48,14 @@ npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、予�
 ## 不変条件（壊すと困る）
 
 - 座標は 2 種類。V は画面のデバイスピクセル（client × dpr。入力、live / pred）、S は面のピクセル。S = V × sk + (sox, soy)。sk・sox・soy は onDown の `mapNow()` で 1 回だけ求め、ストローク中は変えない。スクロール位置は必ず `origin()` を通して読む（画面に固定の間は入れた時の fx / fy を返す）。押していない間（ホバーなど）に sox / soy を使うときは、先に mapNow() を呼ぶ（最後に押してからスクロールしているかもしれない。T-048）。面の密度 `sdpr` は起動時の dpr で固定し、表示タイルの大きさ DT もそこで決まる。
-- 面を変える操作は必ず `push(R, atlas, b)` で履歴に積む（R は S 座標、b は描いた物の外接矩形で、選択ツールのクリックで使う。消しゴム・全消去・選択の削除は b なし）。R の矩形は重なってもよいが、アトラスの画素はどの矩形も同じ時点（その手の前）の状態にそろえる。面に描くのは必ず R の中だけ（R の外に描いた画素は元に戻しても残る。T-044 で塗りつぶしの 1px の膨張が画面の外へはみ出していた）。描いた範囲 `cb*` は push / swap で広げ、clearAll で空にする。塗りつぶしの読み戻し範囲と全消去が積むタイルがこれに依存している（画素は cb* の中にしかない）。全消去は、直前の手が全消去（履歴の手の `clr`）か、cb* が空で文字もなければ何もしない（T-058）。直前の手が描く手（b がある）でなく文字もなければ、hasInk で cb* に掛かるタイルを読み戻し、画素がなければ何もしない（T-063。消しゴム・選択の削除・最初まで元に戻した後）。b は描く手（線・図形・塗りつぶし・選択の移動）にだけ付ける決まりなので、新しい手を足すときも守る。
+- 面を変える操作は必ず `push(R, atlas, b)` で履歴に積む（全消去だけは atlas が null で、タイルを手の d に移す。T-112。R は S 座標、b は描いた物の外接矩形で、選択ツールのクリックで使う。消しゴム・全消去・選択の削除は b なし）。R の矩形は重なってもよいが、アトラスの画素はどの矩形も同じ時点（その手の前）の状態にそろえる。面に描くのは必ず R の中だけ（R の外に描いた画素は元に戻しても残る。T-044 で塗りつぶしの 1px の膨張が画面の外へはみ出していた）。描いた範囲 `cb*` は push / swap で広げ、clearAll で空にする。塗りつぶしの読み戻し範囲と全消去が積むタイルがこれに依存している（画素は cb* の中にしかない）。全消去は、直前の手が全消去（履歴の手の `clr`）か、cb* が空で文字もなければ何もしない（T-058）。直前の手が描く手（b がある）でなく文字もなければ、hasInk で cb* に掛かるタイルを読み戻し、画素がなければ何もしない（T-063。消しゴム・選択の削除・最初まで元に戻した後）。b は描く手（線・図形・塗りつぶし・選択の移動）にだけ付ける決まりなので、新しい手を足すときも守る。
 - 消しゴムでは `markBox` / `markSeg` を `erasePts()` より前に呼ぶ（削る前のタイルを退避するため）。
 - 文字の物は面の要素（.to）で、状態は [文字, x, y, 大きさ, 色, 濃さ]（S の px、CSS px の整数に丸める）。状態を変えるのは必ず `tApply(物, 状態)`（null で外す）で、その前の状態を履歴の手の `t` に [物, 前の状態] として積む。undo / redo は `swapAll` が画素（c があれば swap）と文字（t があれば swapText）を両方入れ替える。
 - インストールページで選んだ既定は、コードの中の文字列 `'__PAINT_DEFAULTS__'` を JSON の文字列に置き換えて渡す（`DEF`）。terser は JSON.parse の引数を畳まないので、この文字列は圧縮後もそのまま残る（変えるときは dist で確かめる）。
 - 設定は「組み込み → DEF（インストールページ）→ サイトの保存」の順に重ねる。サイトに書くのは、組み込み＋DEF からの差分だけ（`base` と比べる）。保存は remember() から 400 ms 後にまとめて行い、hide の前には待たずに済ませる。起動中（`ready` が立つ前）の setColor などは保存しない。
 - 入力中の文字（`ta`）と浮いている選択（`sel`）は、面や履歴を変える操作の前に `settle()`（commitText + dropSel）で確定する（undo・redo・clearAll・exportBlob・togglePass・hide。onDown と setTool は道具に応じて片方だけ）。新しく面を変える操作を足すときも同じにする。選択が浮いている間は、元の範囲が面から消えていて履歴とずれている。文字の入力欄のイベント（TA_STOP）はページへ渡さない。
 - 入力のホットパス（onMove 以下）では、オブジェクトの割り当ても DOM の読み書きもしない（例外は開発用の入力の録画を入れている間だけ。録っていなければ recCur の比較 1 回）。面のタイルの読み戻しもしない。`now()` を呼ぶのは HUD を表示しているときだけ。erasePts は `ePts`（Float64Array）と既存タイルのループだけで動く。自前の予測（ownPred）も輪（hT / hX / hY、HN = 64）と px / py / pt だけで動く。`lt` は最後に動いた点の時刻（筆の速さ・速度のならし・予測線を消す PRED_TTL が使う）。止まっている点は hPush だけして lt を進めない（進めると、整数座標でゆっくり動かしたとき筆の速さが跳ねる）。hPush は前のフレームから最初に来た点の時刻を fT に残し、tick が届くまでの遅れ dl に使う（onDown で fT = 0 に戻す。戻さないと前の線の時刻から測って dl が何秒にもなる）。
+- ペン・蛍光ペンの onMove は、新しい点が 1 つもない入力（rawupdate で描き終えた点の pointermove。hN が増えない）では predict と drawTail を呼ばない（T-112）。描くと pred の canvas の書き出し（desynchronized の DispatchFrame）が 1 回増え、メインスレッドの大半はこの書き出しだった（監査: 125 Hz で入力 1 件あたり約 2.5 回 → 2 回）。ブラウザの予測（ppred = 'chrome'）と蛍光ペンの必要な分だけ（sNeed）は pointermove で新しくなるので描く。Ink Trail の updateInkTrailStartPoint はいつも呼ぶ。
 - 文字の入力欄 ta・薄い答え ghostEl・測る用の mta は、wrap の中でツールバーより前に置く（bar.before。T-092）。どれも z-index なしの absolute なので、後ろに足すと開いたパネルより手前に描かれる。wrap に新しく重ねる物を足すときも、ツールバーより手前に出したい物（お知らせ・一覧・HUD）以外は bar.before にする。
 - ツールバーとその他に並べるのは layout() だけ（T-088）。ボタンや項目を足すときは、本家と Simple のどちらに出すかを決めて layout の並び（本家のその他は mainMore）に入れる。Simple の決まり（お知らせ・ペンの値の預かり・2 本指など）は HANDOFF-simple.md の不変条件。
 - live / pred の W / H は縮めない（fit は大きくなるときだけ作り直す）。面は `sizeSurface()` で文書の大きさに合わせる（縮むこともある。タイルは消さず、clip で隠れるだけ）。
@@ -62,7 +63,7 @@ npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、予�
 - 確定の受け渡し: commitLive はタイルに描いたのと同じフレームでグループの opacity を 0 にし、live は 2 フレーム後に `finishHandoff()` で消す。次の onDown・undo・redo・fit は先に finishHandoff を呼ぶ。受け渡し中は liveAlpha が opacity を戻さない。
 - 半透明の線（T-056、blend が既定の 'canvas'）: ペン・蛍光ペンは live に線の濃さで描く。stk() が、新しい部分の所を destination-out で抜いてから lighter・globalAlpha = sA で足す（濃さ = sA ×（今までの形 ∪ 新しい部分）。不透明で重ねてから濃さをかけるのと同じ計算）。pred は globalAlpha = sA で描き、drawTail の最後に cutPred が、描いた部分の形（addPiece で覚えた区間。輪 RN = 16384 個、RB = 32 個ずつの外接矩形で絞る）を destination-out で抜く（live と重ねても、縁のぼかしの数画素を除いて sA を超えない。live は区間ごとの確率的な和、抜く形は 1 回の stroke の幾何的な和なので、縁だけ少し抜き足りない）。図形は live に直接 sA で描く（毎回描き直すので重ならない）。確定は live をそのまま（sCa = 1）面に合成する（前の方式と 8 ビットの丸めで 3 以内）。まとめた要素（.g）の opacity は 1 のまま（確定の受け渡しで 0 にするのは同じ）。前の方式（'group'）では live / pred に不透明で描いて .g に opacity をかけ、liveAlpha が押す前に合わせておく（描き始めの 1 フレームが濃くならないように）。どちらの方式も壊さない。描いている途中にキャンバスからキャンバスへ drawImage しない（コピー元を描き換えると、スナップショットの分だけキャンバス全体のコピーが走る）。unbounded な合成（destination-in・source-in・copy など）も canvas 全体に効くので、入力のたびには使わない。
 - scroll / wheel のリスナーは登録しない（テストで確かめている）。スクロールはブラウザに任せる（2 本指と慣性だけは、pointer の動きから scrollTo する）。
-- 2 本指のリスナー（TWO）は pad に capture で登録する。bubble で足すと onDown の後に呼ばれ、1 本目の線が描き始まってしまう。2 本目が来たら、1 本目で始めた手（線・図形・消しゴム・選択）は abortStroke で取り消し、tapId も消す。ただしペン・蛍光ペンの線を押してから KEEP_MS（150 ms）以上たち、線の外接矩形（x0〜x1・y0〜y1）が KEEP_PX（16 CSS px）以上なら endStroke で確定して残す（T-109）。慣性で滑っている間の押下は止めるだけで、その指は離すまで描かない（scr = 2）。慣性の rAF は hide で止める（destroy も hide を通る）。押した瞬間に面を変える道具をタッチに足すときは、塗りつぶし・文字と同じく離したとき（tapId）にする（押した瞬間だと 2 本指でスクロールするたびに実行される）。
+- 2 本指のリスナー（TWO）は pad に capture で登録する。bubble で足すと onDown の後に呼ばれ、1 本目の線が描き始まってしまう。2 本目が来たら、1 本目で始めた手（線・図形・消しゴム・選択）は abortStroke で取り消し、tapId も消す。ただしペン・蛍光ペンの線を押してから KEEP_MS（150 ms）以上たち、線の外接矩形（x0〜x1・y0〜y1）が KEEP_PX（16 CSS px）以上なら endStroke で確定して残す（T-109）。慣性で滑っている間の押下は止めるだけで、その指は離すまで描かない（scr = 2）。スクロールの間の 3 本目以降の指も描かない。ペンで描いている間と、ペンを離した・近づけてから 500 ms のタッチ（手のひら）はスクロールにも使わず、ペンやマウスで押したら 2 本指のスクロールはそこで止める（T-112。onDown のパームリジェクションと同じ決まり）。慣性の rAF は hide で止める（destroy も hide を通る）。押した瞬間に面を変える道具をタッチに足すときは、塗りつぶし・文字と同じく離したとき（tapId）にする（押した瞬間だと 2 本指でスクロールするたびに実行される）。
 - パネルは同時に 1 つだけ。閉じるのは wrap の pointerdown（capture）・Esc・hide。capture のリスナーはパネルが開いていなければ比較 1 回で戻る。パネルはバーの子（absolute）なので、バーの幅（measureBar）には入らない。
 - innerHTML・style 属性・外部リソースは使わない（CSP と Trusted Types への対策）。
 - 2 回目の実行は表示の切り替えだけ（`window.__paintBookmarklet` で判定）。閉じた後の取り消し待ち（`byeT`）の間は、show / toggle が reopen になる。Esc と「−」は hideHint で隠し、HINT_MS（4 秒）の間「ブックマークレットで再表示」を出す（`hintT`。close の取り消し待ちと同じく、お知らせ以外は消えて入力のリスナーも外れている）。show・close・destroy は先に endHint を呼ぶ。ブックマークレットと API の hide はお知らせを出さない。
@@ -122,7 +123,7 @@ npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、予�
 - build.mjs のテンプレートの置き換えは、置き換え後の文字列を必ず関数で渡す。`replaceAll(目印, 文字列)` だと、コードの中の `$&` などが特殊な記号として解釈される。圧縮で変数名が `$` になった T-010（v1.5.0）から T-022（v1.7.0）まで、インストールページのボタンの中身が壊れていた（T-023 で修正）。テストは dist/bookmarklet.txt を使っていたので気づかなかった。今はビルドとテストの両方で、ボタンの href を確かめている。
 - 合成した PointerEvent の timeStamp は生成時刻になる。pointerdown より前に作った move は重複として捨てられる（ベンチで一度これにハマった）。
 - headless での getImageData の読み戻しは数百 ms かかることがある。時間に依存するテスト（パームリジェクションの 500ms）は、イベントを全部撃ってから検証する。
-- headless Chromium は SwiftShader（ソフトウェア GPU）で動く。GPU 寄りの処理時間は実機より悲観的に出る。初回だけ遅いのはバッキングの確保が原因（→ warm）。キャンバスの確保は面積に比例して重い。
+- headless Chromium は、何も指定しないとソフトウェアで合成する（SwiftShader の GPU 経路でもない。T-111 の監査で分かった）。この状態では desynchronized の canvas の書き出しのたびに canvas 全体を CPU で写すので、合成の重さは実機と比べられない。GPU 経路で測るときは `--use-angle=swiftshader --enable-unsafe-swiftshader --ignore-gpu-blocklist` で起動する（それでも GPU は CPU で動くので、比べるのは相対だけ）。GPU 寄りの処理時間は実機より悲観的に出る。初回だけ遅いのはバッキングの確保が原因（→ warm）。キャンバスの確保は面積に比例して重い。
 - ベンチで確定や元に戻すを測る前に、GPU の仕事を吐き出させる（`getImageData(0,0,1,1)` か `api.pixels`）。溜まったままだと、前の処理の分まで次の計測に乗って数倍に見える。@2x は特にばらつきが大きいので、2 回以上流して範囲で書く。
 - テストでツールバーの上（画面の上端付近）から描き始めると、pointerdown がツールバーに取られて線が描かれない。継ぎ目の確認で一度「線が消えた」と誤解した。
 - 面の画素を確かめるときは、live に残っている線を拾わないように `pixels()`（面だけ）か `screenPixel()`（画面の位置にあるタイル）を使う。確定の直後は live がまだ 2 フレーム残っている。
@@ -141,7 +142,7 @@ npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、予�
 - 画素のループの速さは、ヘッドレスでも実機と同じ（CPU）。測るときは単独で何度も回した値ではなく、本物の操作の初回（冷えた状態）で測る。単独で測った塗りつぶしの走査が速く見えたのは、たまたま囲まれた小さな領域だったため（T-047 で一度取り違えた）。2x の塗りつぶしの合計は、ヘッドレスでは GPU の読み戻しとコピーが大半で、±20 ms ぶれる。
 - `fresh()` は dist/bookmarklet.txt から起動する。前の版でテストが落ちるかを確かめるときは、dist/paint.min.js と bookmarklet.txt の両方を差し替える（paint.min.js だけ替えて、前の版でも通ると一度取り違えた。T-055）。
 - 合成の PointerEvent の timeStamp は、`Object.defineProperty(e, 'timeStamp', { value })` で決められる（予測・速度のテストで、計測にかかる時間で速さが狂わない）。
-- `npm run bench` は 3,000 点を 1 タスクで一気に流すので、入力の時刻がほぼ同じになる。自前の予測は輪の 64 点を毎回全部たどり、予測もいつも上限まで伸びるので、入力 1 件の時間が悲観的に出る（T-060 の前より 1x で約 +3 µs）。入力の時刻を 1 ms・4 ms 刻みにすると差は +0.3〜0.8 µs（scratchpad の ppbench.mjs で測った。リポジトリには入れていない）。
+- `npm run bench` は 3,000 点を 1 タスクで一気に流すので、入力の時刻がほぼ同じになる。canvas の書き出し（Blink の FinalizeFrame → DispatchFrame。描いた canvas ごとに、タスクの終わりに 1 回）もまとめて 1 回になり、入力ごとの本当の重さが見えない。入力ごとの重さは、CDP の Input.dispatchMouseEvent を決まった間隔（125〜1000 Hz）で送って測る（T-111 の監査の scratchpad/audit/rate.mjs）。自前の予測は輪の 64 点を毎回全部たどり、予測もいつも上限まで伸びるので、入力 1 件の時間が悲観的に出る（T-060 の前より 1x で約 +3 µs）。入力の時刻を 1 ms・4 ms 刻みにすると差は +0.3〜0.8 µs（scratchpad の ppbench.mjs で測った。リポジトリには入れていない）。
 - ヘッドレスで重い状態を作るとき: Playwright の `page.mouse.move` は処理されるのを待つので、ページを止めるとマウスも止まる（本物と違う）。CDP の `Input.dispatchMouseEvent` を待たずに送り、`timestamp`（秒）に生成した時刻を入れる。ページのメインスレッドを止めるだけでは、まとめて届く点の最後が新しいので予測線はほとんど消えない。ブラウザごと遅れる状態は、Node 側で点をためて、元の時刻のまま 15〜75 ms ごとにまとめて送って作る（scratchpad の load/jankrec3.mjs）。
 - `npm run pop` の合成の入力は、座標が整数で時刻を ±1.5 ms ぶらしてあるので、ゆっくりの弧では自前の予測の長さが揺れ、消える画素が前（直線の外挿）より多く出る（150 px/s で 3.9 → 10.0。速い円では 37.8 → 14.2）。人の録画では消える長さが減っているので、録画の方を信じる。合成の PointerEvent の getPredictedEvents は空なので、ヘッドレスで ppred = 'chrome' にすると直線の外挿（PRED_MS）になる。
 - テストで「ページの上にツールがかぶっていない」を見るときは、elementFromPoint が `PAINT-BOOKMARKLET` かどうかで判定する（下にあるのは本文の段落など、場所で変わる）。
@@ -160,6 +161,16 @@ npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、予�
 - Artifact: https://claude.ai/artifact/Aj3XQxn6Q7EUaiHjYAFbve（インストールページ、非公開）。`docs/index.html` の本文だけの版
 
 ## 完了ログ（新しい順）
+
+### T-112 監査で見つかった不具合と無駄を直す — 2026-10-17
+- 変更: T-111 の監査のサブエージェントが作った直しを確かめて取り込んだ。(1) ペンで描いている間とペンを離した・近づけてから 500 ms のタッチ（手のひら）は 2 本指のスクロールにも使わず、ペンやマウスで押したらスクロールを止める（前は手のひらでページが 413px 動き、描いている線が本文からずれた。T-104 から）。(2) 2 本指でスクロールしている間の 3 本目の指では描かない（T-104 から）。(3) 全消去はタイルを 1 枚のアトラスに写さず、タイルの canvas を履歴の手（d）に移す（3x の長いページでは iOS の canvas の上限 8192² を超えて黙って空になり、元に戻しても絵が戻らない恐れがあった。写す GPU とメモリも要らなくなった）。(4) ペン・蛍光ペンで新しい点のない pointermove では pred を描き直さない（canvas の書き出しが 1000 Hz で 2243 → 1701 回、メインスレッド 66% → 58%）。(5) LINE で、ページが scroll-behavior: smooth でも offTop をすぐ動かす（描き始めの線が 1px ずれていた）。版を 1.32.2 にした。
+- 確認: テストを 6 件足した（test/audit.test.mjs。5 件は v1.32.1 で落ち、1 件は画面に固定を切るときの全消去の元に戻す〈toAtlas〉を守る）。`npm test` 88 件が通過。監査では 40 通り × 100 手のでたらめな操作でも壊れなかった。
+- 残課題: 描いている間のガラスのぼかしの重さは R-012、iPhone のメモリは R-013 で判断を待つ。
+
+### T-111 安定性・効率・速さ・不具合を、サブエージェントで洗い出す — 2026-10-17
+- 変更: ユーザーの依頼（ちょっと重くなった？ 安定性・効率性・高速性〈とバグ〉をよく調べたい。計画を立てて Opus 5.5 max でサブエージェントを）で、Opus・max のサブエージェント 1 つに、速さと遅延 → 不具合と安定性 → 描画の合成と iPhone の順に調べさせた（はじめは 3 つ並べたが、ユーザーの指示で 1 つに順にやらせる形にした）。最初のコミットで、サブエージェントの作業コピー（.claude/worktrees/）を git add -A で埋め込みのリポジトリとして取り込んでしまい、次のコミットで外して .gitignore に足した。
+- 確認（報告の要点）: T-104〜T-110 では、デスクトップの Chrome で重くなったことは測れなかった（入力 1 件の重さ・起動・層の数・GPU とも v1.29.6 と同じ）。重さの元は前からある 2 つ: 入力ごとの canvas の書き出し（マウスの報告の速さに比例。125 Hz でメインスレッド 21%、1000 Hz で 66%。自分の JS は 1% ほど）と、描いている間のガラスのぼかし（GPU で 1 フレーム 12〜25 ms、ガラスなし 0.5 ms）。iPhone の touchmove のリスナー（T-107）は、WebKit のソースでは前から pointer のリスナーで「止められる touchmove」になっていたので、増えた重さはほぼない。2 本指・慣性・offTop・地の分け方（T-110）も、測って重さはなかった。不具合は T-112 で直した。
+- 残課題: R-012（ガラスのぼかし）と R-013（iPhone のメモリ）の判断。決まった間隔で入力を送るベンチ（監査の rate.mjs）をリポジトリに入れるかは未定。
 
 ### T-110 速くスクロールしたときに、ガラスのツールバーの背景が透明になるのを防ぐ — 2026-10-17
 - 変更: ガラスのバーとパネルで、地の色をぼかし（::before の backdrop-filter）から外し、別の ::after に置いた。ぼかしが一瞬描かれなくても地の色は残る。見た目は前と同じ。版を 1.32.1 にした。ユーザーの報告（チャット: 高速スクロールで操作盤の表示が崩れる。追加の検証で、背景が透明になる、が正しいと分かった）。
@@ -181,17 +192,9 @@ npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、予�
 - 確認: テストを 1 件足した（iPhone の UA で、描く面とツールバーの touchmove が止められる・線は描ける・ボタンはタップで押せる・パネルのスライダーの touchmove は止めない・2 本指のスクロールはそのまま。ほかの UA では止めない）。ヘッドレスの CDP のタッチは、リスナーを足してから少し待ち、動きの間にも待たないと touchmove が届かなかった。`npm test` 80 件が通過。
 - 残課題: LINE の実機で震えが止まったかは未確認（R-010）。T-105 の 1px 下げるのは残してある（直ったら要るかを見直す）。
 
-### T-106 2 本指のスクロールに慣性を付ける（離した後も滑って止まる） — 2026-10-17
-- 変更: 2 本指で動かしたまま離すと、離す前の速さでしばらく滑って止まるようにした（直近 100 ms の中点の動きから速さを出し、1 ms ごとに 0.998 倍。iOS のスクロールと同じ減り方。上限 8 px/ms）。止まってから離したときは滑らない。滑っている間に画面を押すと止まり、その指では描かない。ツールバーを押す・隠す・ページの端に着く、でも止まる。README・インストールページの使い方に書いた。版を 1.31.0 にした。ユーザーの要望（チャット: スクロールの持続性を改善して）。
-- 確認: テストを 1 件足した（動かしたまま離すと指の分より先まで滑る・止まってから離すと指の分だけ・滑っている間に押すと止まり、その指で動かしても描かない・次の 1 本指は描ける）。T-104 のテストは、止まってから離す形に直した。ヘッドレスで、離した後 1.5 秒で約 270px 滑って止まるのを確かめた。`npm test` 79 件が通過。
-- 残課題: 実機の手触り（滑る長さ・減り方）は未確認。
-
-### T-105 LINE 内ブラウザで、描く・2 本指・ツールバーを下へ動かすと、LINE のブラウザが小さくなるのを防ぐ — 2026-10-17
-- 変更: LINE の中のブラウザ（UA に Line/）では、ツールを使う間（ページ操作モードでないとき）ページをいちばん上から 1px 下げておくようにした（offTop。出したとき・押したとき・2 本指で上へ戻ったとき・ページ操作モードから戻ったとき）。LINE でなければ今まで通り。README・インストールページの「できないこと」に書いた。版を 1.30.1 にした。ユーザーの報告（チャット、画像・動画付き: LINE 内ブラウザだと、2 本指スクロールと操作盤を動かすとき、ペンで描くときにも、LINE のブラウザを小さくする操作が同時に起きる）。
-- 確認: テストを 1 件足した（UA を LINE にすると、出したときに 1px 下がる・2 本指で上へ戻っても 1px で止まる・ページがいちばん上に戻っても描き始めに 1px 下げて線は描いた所に付く・ページ操作モードの間は下げず戻すと下げる。LINE でなければいちばん上まで戻れる）。`npm test` 78 件が通過。
-- 残課題: LINE の実機で直ったかは未確認（R-009）。いちばん上のときだけ始まる、は WebKit のソースと動画からの推測。スクロールできないページでは効かない。
-
 ### それより前（1 行に畳んだもの）
+- T-106 2 本指のスクロールに慣性を付けた（離す前 100 ms の速さから、1 ms ごとに 0.998 倍。滑っている間に押すと止まり、その指では描かない）— 2026-10-17
+- T-105 LINE の中のブラウザでは、ツールを使う間ページをいちばん上から 1px 下げておく（offTop）— 2026-10-17
 - T-104 本家でも 2 本指でページをスクロールできるようにした（リスナーは起動時に pad へ capture。タッチの塗りつぶしと文字は離したときに行う）— 2026-10-17
 - T-103 Simple Preview に切り替えたとき・本家に戻したときのお知らせをなくした（ボタンのないお知らせも消す）— 2026-10-17
 - T-102 ガラスのツールバーの縁: 地を縁の下まで敷き、細い線を outline で上に描く（暗い見た目の白いフチをなくした）— 2026-10-17

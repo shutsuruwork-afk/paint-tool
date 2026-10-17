@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.32.1';
+  const VERSION = '1.32.2';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -1058,6 +1058,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function free(h) {
     hpix -= h.pix;
     if (h.c) h.c.width = h.c.height = 0;
+    if (h.d) for (let i = 1; i < h.d.length; i += 2) if (h.d[i]) h.d[i].c.width = h.d[i].c.height = 0;
   }
   // 矩形群を棚詰め (shelf packing) で 1 枚のアトラスに配置し、その大きさのキャンバスを返す
   function pack(R) {
@@ -1096,8 +1097,31 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     src.width = src.height = 0;
     h.c = cur;
   }
+  // 全消去の手（d = [タイル番号, タイル, …]）: 履歴に移したタイルと、今その場所にあるタイル（全消去の後に作られ、後の手を元に戻して透明に戻った物）を入れ替える。
+  // 元に戻すのは新しい手から順なので、入れ替える時はいつも、その場所は全消去の直後と同じ状態になっている
+  function swapTiles(h) {
+    const D = h.d;
+    for (let i = 0; i < D.length; i += 2) {
+      const k = D[i], t = D[i + 1], cur = dtiles.get(k) || null;
+      if (cur) cur.c.remove();
+      if (t) { dtiles.set(k, t); sbox.append(t.c); } else dtiles.delete(k);
+      D[i + 1] = cur;
+    }
+    grow(h.R);
+  }
+  // 全消去の手を、ふつうの手（R と 1 枚のアトラス）に直す。画面に固定を切って面をずらすときだけ使う（ずらすとタイルの区切りに合わなくなるため）
+  function toAtlas(h) {
+    const R = h.R, D = h.d, a = pack(R), c = a.getContext('2d');
+    for (let i = 0, j = 0; i < R.length; i += 6, j += 2) {
+      const t = D[j + 1];
+      if (t) { c.drawImage(t.c, R[i + 4], R[i + 5]); t.c.width = t.c.height = 0; }
+    }
+    h.c = a;
+    h.d = null;
+  }
   function swapAll(h) {
     if (h.c) swap(h);
+    if (h.d) swapTiles(h);
     if (h.t) swapText(h);
   }
   function undo() {
@@ -1114,7 +1138,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     swapAll(hist[hpos++]);
     syncHist();
   }
-  // 全消去はページ全体（見えていない所も含む）。元に戻せるように、全タイルをアトラスに退避してから消す
+  // 全消去はページ全体（見えていない所も含む）。元に戻せるように、描いた範囲に掛かるタイルの canvas そのものを履歴に移して面から外す（写さない）。
+  // アトラスに写すと、タイルが多いとき（3x の長いページなど）に canvas の大きさの上限（iOS は 8192²）を超えて黙って空になり、元に戻しても絵が戻らなかった。写す GPU とメモリも要らない
   function clearAll() {
     if (act !== -1) return;
     settle();
@@ -1124,15 +1149,17 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     // 直前の手が描く手（b がある）でなければ、消しゴム・選択の削除・最初まで元に戻した、で空になっているかもしれないので読み戻して確かめる
     const h = hpos ? hist[hpos - 1] : null;
     if ((h && h.clr) || (!tlist.length && (cbx1 <= cbx0 || (!(h && h.b) && !hasInk())))) return;
-    const R = [], P = tlist.map(o => [o, tSnap(o)]);
-    for (const k of dtiles.keys()) {
+    const R = [], D = [], P = tlist.map(o => [o, tSnap(o)]);
+    for (const [k, t] of dtiles) {
       const x = (k % 65536) * DT, y = ((k / 65536) | 0) * DT;
-      if (x < cbx1 && x + DT > cbx0 && y < cby1 && y + DT > cby0) R.push(x, y, DT, DT, 0, 0);
+      if (x < cbx1 && x + DT > cbx0 && y < cby1 && y + DT > cby0) { R.push(x, y, DT, DT, 0, 0); D.push(k, t); }
     }
     if (!R.length && !P.length) return;
-    push(R, R.length ? gather(R, pack(R)) : null, null, P.length ? P : null);
-    hist[hpos - 1].clr = true;
-    for (let i = 0; i < R.length; i += 6) dtiles.get((R[i + 1] / DT) * 65536 + R[i] / DT).x.clearRect(0, 0, DT, DT);
+    push(R, null, null, P.length ? P : null);
+    const e = hist[hpos - 1];
+    e.clr = true;
+    if (D.length) e.d = D;
+    for (let i = 0; i < D.length; i += 2) { dtiles.delete(D[i]); D[i + 1].c.remove(); }
     for (const p of P) tApply(p[0], null);
     cbx0 = cby0 = cbx1 = cby1 = 0;
   }
@@ -1172,6 +1199,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   // 面の中身を S の (dx, dy) だけずらす（文字は CSS px の整数のまま (tx, ty) だけ）。文書の上や左にはみ出した所は消える
   function shiftAll(dx, dy, tx, ty) {
+    for (const h of hist) if (h.d) toAtlas(h); // 全消去の手は、ずらす前にふつうの手に直す（タイルの区切りに合わなくなるため）
     const old = [...dtiles.entries()];
     dtiles.clear();
     for (const [k, t] of old) {
@@ -1260,7 +1288,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // （WebKit が preventDefault や touch-action で止めるのは Web ビューの中の操作だけ）ので、ツールを使う間はページを上から 1px 下げておく（T-105）。
   // 出したとき・押したとき（線の前）・2 本指で上へ戻ったとき・ページ操作モードから戻ったときに直す。スクロールできないページでは効かない
   const LINE = /\bLine\//.test(navigator.userAgent);
-  const offTop = () => { if (LINE && !pass && win.scrollY < 1) win.scrollTo(win.scrollX, 1); };
+  const offTop = () => { if (LINE && !pass && win.scrollY < 1) scrollTo(win.scrollX, 1); }; // instant: ページが smooth でもすぐ動かす（描き始めの mapNow より前に 1px 下がっている）
   // 離した後の慣性（T-106、ユーザーの要望: スクロールの持続性）: 離す前の 100 ms の中点の動き（輪 KN 個）から速さを出し、1 ms ごとに KF 倍に落としながら
   // 毎フレーム scrollBy する（0.998 は iOS の UIScrollView の normal と同じ減り方）。止まってから離したときは滑らない。
   // 滑っている間に押したら止めるだけ（その指では描かない）。ツールバーを押す・隠す・ページの端に着く、でも止まる
@@ -1301,12 +1329,15 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const flung = !!kR;
     stopFling();
     if (act === -1) offTop();
-    if (e.pointerType !== 'touch') return;
+    // ペンやマウスで押したら、2 本指のスクロールはそこで止める（描いている間にページが動くと、線が本文からずれる）
+    if (e.pointerType !== 'touch') { if (scr === 1) scr = 2; return; }
+    // パームリジェクション（onDown と同じ）: ペンで描いている間と、ペンを離した・近づけてから 500 ms のタッチは手のひらとみなし、スクロールにも使わない
+    if ((act !== -1 && aType === 'pen') || e.timeStamp - lastPen < 500) return;
     const id = e.pointerId;
     if (e.isPrimary) { tI0 = tI1 = -1; scr = 0; } // 新しいタッチの始まり（離したことを取りこぼしていても数え直す）
     if (tI0 === -1) { tI0 = id; tX0 = e.clientX; tY0 = e.clientY; }
     else if (tI1 === -1) { tI1 = id; tX1 = e.clientX; tY1 = e.clientY; }
-    else return;
+    else { if (scr) { e.preventDefault(); e.stopImmediatePropagation(); } return; } // スクロールの間の 3 本目以降の指では描かない
     if (flung && !scr && tI1 === -1) scr = 2; // 滑っているのを止めた指は、離すまで描かない
     if (tI0 === -1 || tI1 === -1) { if (!scr) return; }
     else if (act === -1 || aType === 'touch') {
@@ -1465,12 +1496,16 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const n = list.length;
     const isMove = e.type === 'pointermove';
     if (mode === 1) {
+      const h0 = hN;
       inkMove(e, list, n);
+      // 新しい点が 1 つもない入力（rawupdate で描いた点の pointermove など）では、末尾も自前の予測も同じ物になるので描き直さない。
+      // 描くと pred の canvas の書き出し（desynchronized の DispatchFrame）が 1 回増える。ブラウザの予測・蛍光ペンの必要な分だけは pointermove で新しくなるので描く
+      let redraw = hN !== h0 || (isMove && (ppred !== 'own' || sNeed));
       if (inkP && sA === 1) {
         // OS が実際のポインタ位置まで線を伸ばすので、推測（予測線）は使わない
-        if (isMove) try { inkP.updateInkTrailStartPoint(e, { color, diameter: bw / dpr }); pn = 0; } catch (_) { if (sPd) predict(e, true); }
-      } else if (sPd) predict(e, isMove);
-      drawTail();
+        if (isMove) try { inkP.updateInkTrailStartPoint(e, { color, diameter: bw / dpr }); pn = 0; } catch (_) { if (sPd) { predict(e, true); redraw = true; } }
+      } else if (sPd && redraw) predict(e, isMove);
+      if (redraw) drawTail();
     } else if (mode === 2) {
       eraseMove(e, list, n);
     } else if (mode === 4) {

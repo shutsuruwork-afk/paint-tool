@@ -938,6 +938,63 @@ test('選択: 選んだままスクロールすると枠も本文と一緒に動
   await page.close();
 });
 
+test('選択を引いている途中に元に戻す・やり直す・道具のキー・保存を押しても、空の枠が残らない。元に戻す・やり直すは何もせず、道具のキーと保存は引く前の位置で確定する（T-120）', async () => {
+  const { page, errors } = await fresh();
+  const selected = () => page.evaluate(() => !!window.__paintBookmarklet.stats().selection);
+  const frame = () => page.evaluate(() => {
+    const e = document.querySelector('paint-bookmarklet-surface').shadowRoot.querySelector('.sel');
+    return !!(e && e.isConnected);
+  });
+  await drag(page, [[100, 300], [400, 300]], 10);
+  const s0 = await checksum(page);
+  await page.keyboard.press('s');
+  await drag(page, [[80, 250], [450, 350]], 5);
+  // 元に戻す・やり直すは、引いている間は何もしない。離すと動かした所で選ばれたまま
+  await page.mouse.move(250, 300);
+  await page.mouse.down();
+  await page.mouse.move(250, 350, { steps: 5 });
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('Control+Shift+z');
+  assert.equal(await hist(page), 1);
+  assert.equal(await selected(), true);
+  await page.mouse.move(250, 400, { steps: 5 });
+  await page.mouse.up();
+  assert.ok(near((await selBox(page)).y, 398), JSON.stringify(await selBox(page)));
+  // 離した後の元に戻すは今まで通り（動かした分を確定してから戻す）
+  await page.keyboard.press('Control+z');
+  assert.equal(await selected(), false);
+  assert.equal(await frame(), false);
+  assert.equal(await checksum(page), s0);
+  // 道具のキー: 引いている途中なら、その引きを取り消して引く前の位置で確定する。枠は残らず、残りの引きでは何も描かない
+  await drag(page, [[80, 250], [450, 350]], 5);
+  await page.mouse.move(250, 300);
+  await page.mouse.down();
+  await page.mouse.move(250, 350, { steps: 5 });
+  await page.keyboard.press('p');
+  await page.mouse.move(250, 450, { steps: 5 });
+  await page.mouse.up();
+  assert.match(await toolOn(page), /^ペン/);
+  assert.equal(await selected(), false);
+  assert.equal(await frame(), false);
+  assert.equal(await checksum(page), s0);
+  // 保存（Ctrl+S）も同じ
+  await page.keyboard.press('s');
+  await drag(page, [[80, 250], [450, 350]], 5);
+  await page.mouse.move(250, 300);
+  await page.mouse.down();
+  await page.mouse.move(250, 350, { steps: 5 });
+  const dl = page.waitForEvent('download');
+  await page.keyboard.press('Control+s');
+  await dl;
+  await page.mouse.move(250, 450, { steps: 5 });
+  await page.mouse.up();
+  assert.equal(await selected(), false);
+  assert.equal(await frame(), false);
+  assert.equal(await checksum(page), s0);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 const textInfo = page => page.evaluate(() => [...document.querySelector('paint-bookmarklet-surface').shadowRoot.querySelectorAll('.to')]
   .map(e => ({ s: e.textContent, fs: getComputedStyle(e).fontSize, ed: e.classList.contains('ed'), gone: e.classList.contains('gone') })));
 

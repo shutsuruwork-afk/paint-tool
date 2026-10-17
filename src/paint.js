@@ -1100,16 +1100,19 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (h.c) swap(h);
     if (h.t) swapText(h);
   }
+  // 描いている途中（選択を引いている途中も）は何もしない。先に settle すると、引いている途中の選択が確定されて枠が残った（T-120）
   function undo() {
+    if (act !== -1) return;
     settle();
-    if (act !== -1 || !hpos) return;
+    if (!hpos) return;
     finishHandoff();
     swapAll(hist[--hpos]);
     syncHist();
   }
   function redo() {
+    if (act !== -1) return;
     settle();
-    if (act !== -1 || hpos >= hist.length) return;
+    if (hpos >= hist.length) return;
     finishHandoff();
     swapAll(hist[hpos++]);
     syncHist();
@@ -2368,8 +2371,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     return true;
   }
   // 浮かせた中身を今の枠に描き込み、文字の物を枠に合わせて動かす。del なら置かずに消す。
-  // 何も変わっていなければ元に戻すだけで、履歴は増やさない。変わっていれば 1 手として積む
+  // 何も変わっていなければ元に戻すだけで、履歴は増やさない。変わっていれば 1 手として積む。
+  // 選択を引いている途中（道具のキー・保存など）なら、その引きを取り消して引く前の位置で確定する（そのままだと、残りの引きが空の枠を付け直した。T-120）
   function dropSel(del) {
+    if (act !== -1 && mode === 4) abortStroke();
     if (!sel) return;
     sel = false;
     selEl.remove();

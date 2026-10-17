@@ -2006,6 +2006,30 @@ test('Simple のペンはいつも太さ 5。本家の太さ（インストー�
   await page.close();
 });
 
+test('文字を入力中に、その上にパネルを開くと、パネルが手前に出る（入力欄の枠・文字・薄い答えはツールバーとパネルの下。T-092）', async () => {
+  const { page, errors } = await openPage(browser, server.base + '/');
+  await runCode(page, withDefaults(CODE, { ui: 'cp2' }));
+  // その他のパネルが開く所を測って閉じ、そこに文字を書き始める（電卓は入りなので薄い答えも出る）
+  await mouseClick(page, '.bar > [aria-label^="その他"]');
+  const pr = await shadowEval(page, root => { const r = root.querySelector('.pn.on').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; });
+  await page.keyboard.press('Escape');
+  await mouseClick(page, '.bar > [aria-label^="文字"]');
+  await page.mouse.click(pr[0] + 30, pr[1] + 20);
+  await page.keyboard.type('11+1');
+  assert.equal(await shadowEval(page, root => root.querySelector('.gh').textContent), '=12');
+  // 入力したままパネルを開く
+  await mouseClick(page, '.bar > [aria-label^="その他"]');
+  const r = await shadowEval(page, root => {
+    const ta = root.querySelector('textarea'), gh = root.querySelector('.gh'), bar = root.querySelector('.bar'), kids = [...bar.parentElement.children];
+    const t = ta.getBoundingClientRect(), hit = root.elementFromPoint(t.left + 15, t.top + t.height / 2);
+    return { open: !!root.querySelector('.pn.on'), hitPanel: !!(hit && hit.closest('.pn')),
+      taBelow: kids.indexOf(ta) < kids.indexOf(bar), ghBelow: kids.indexOf(gh) < kids.indexOf(bar) };
+  });
+  assert.deepEqual(r, { open: true, hitPanel: true, taBelow: true, ghBelow: true });
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('Simple（CP2）のスマホ: 2 本指で動かすとページがスクロールし、1 本目で描き始めた線は残らない。1 本指では今まで通り描ける。本家では 2 本指でもスクロールしない（T-088）', async () => {
   const page = await browser.newPage({ viewport: { width: 390, height: 700 }, isMobile: true, hasTouch: true });
   const errors = [];

@@ -2578,7 +2578,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       }
     });
     if (value) ta.value = value;
-    wrap.append(ta);
+    bar.before(ta); // ツールバーの前に置く（後に置くと、開いたパネルより手前に出る。T-092）
     styleTa();
     ta.focus({ preventScroll: true });
     if (value) ta.setSelectionRange(value.length, value.length);
@@ -2631,7 +2631,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     }
     mta.style.setProperty('--fs', taFs + 'px');
     mta.value = t;
-    wrap.append(mta);
+    bar.before(mta);
     const w = mta.scrollWidth;
     mta.remove();
     return w;
@@ -2653,7 +2653,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         s.setProperty('--fs', taFs + 'px');
         s.left = taX + lineW(line) + 'px';
         s.top = taCY - taFs * LH / 2 + row * taFs * LH + 'px';
-        if (!ghostEl.parentNode) wrap.append(ghostEl);
+        if (!ghostEl.parentNode) bar.before(ghostEl); // 入力欄と同じく、ツールバーとパネルの下（T-092）
       }
     }
     if (!ghostTxt) ghostEl.remove();

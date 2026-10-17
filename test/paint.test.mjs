@@ -2054,29 +2054,38 @@ test('Simple のその他（⋯）は、開いたままツールバーを引い�
   await page.close();
 });
 
-test('（お試し）Simple でペンを選んでいるとき、ペンボタンのすぐ下に今の色の下線が出る（縁なし）。色を変えると変わり、文字・消しゴムのときと本家では出ない（T-096・T-098）', async () => {
+test('（お試し）Simple でペンを選んでいるとき、ペンボタンの地が今の色になる（印は明るさで白か黒、重ねても同じ。下線はない）。文字・消しゴムのときと本家では青い地のまま（T-100）', async () => {
   const { page, errors } = await openPage(browser, server.base + '/');
   await runCode(page, withDefaults(CODE, { dev: true, ui: 'cp2' }));
-  const line = () => shadowEval(page, root => {
-    const b = root.querySelector('.bar').children[0], a = getComputedStyle(b, '::after');
-    return { on: b.classList.contains('pc'), color: a.content === 'none' ? null : a.backgroundColor, h: a.height, edge: a.boxShadow, below: a.content === 'none' ? null : parseFloat(a.bottom) < 0 };
+  const chip = () => shadowEval(page, root => {
+    const b = root.querySelector('.bar').children[0], cs = getComputedStyle(b);
+    return { bg: cs.backgroundColor, ink: cs.color, shadow: cs.boxShadow !== 'none', line: getComputedStyle(b, '::after').content };
   });
-  assert.deepEqual(await line(), { on: true, color: 'rgb(229, 57, 53)', h: '3px', edge: 'none', below: true });
-  // その他で色を変えると下線も変わる
+  const BLUE = 'rgb(61, 124, 255)';
+  assert.deepEqual(await chip(), { bg: 'rgb(229, 57, 53)', ink: 'rgb(255, 255, 255)', shadow: true, line: 'none' });
+  // その他で色を変えると地も変わる。明るい色（黄）では印が黒
+  await mouseClick(page, '.bar > [aria-label^="その他"]');
+  await mouseClick(page, '.pn.on [title="色 5"]');
+  assert.deepEqual(await chip(), { bg: 'rgb(253, 216, 53)', ink: 'rgb(17, 17, 17)', shadow: true, line: 'none' });
   await mouseClick(page, '.bar > [aria-label^="その他"]');
   await mouseClick(page, '.pn.on [title="色 7"]');
-  assert.equal((await line()).color, 'rgb(30, 136, 229)');
-  // 文字・消しゴムのときは出ない
+  assert.equal((await chip()).bg, 'rgb(30, 136, 229)');
+  // 重ねても今の色のまま（選んでいるボタンの濃い青にならない）
+  const r = await shadowEval(page, root => { const b = root.querySelector('.bar').children[0].getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; });
+  await page.mouse.move(r[0], r[1]);
+  assert.equal((await chip()).bg, 'rgb(30, 136, 229)');
+  await page.mouse.move(300, 300);
+  // 文字・消しゴムのときは青い地のまま（消しゴム）・地なし（文字）
   await mouseClick(page, '.bar > [aria-label^="文字"]');
-  assert.equal((await line()).on, false);
+  assert.equal((await chip()).shadow, false);
   await page.keyboard.press('e');
-  assert.deepEqual(await line(), { on: false, color: null, h: 'auto', edge: 'none', below: null });
+  assert.deepEqual(await chip(), { bg: BLUE, ink: 'rgb(255, 255, 255)', shadow: false, line: 'none' });
   await page.keyboard.press('p');
-  assert.equal((await line()).on, true);
-  // 本家では出ない
+  assert.equal((await chip()).bg, 'rgb(30, 136, 229)');
+  // 本家では選んでいるペンも青い地
   await click(page, '[title^="本家に戻す"]');
-  const mainPen = await shadowEval(page, root => root.querySelector('.bar [aria-label^="ペン"]').classList.contains('pc'));
-  assert.equal(mainPen, false);
+  const mainPen = await shadowEval(page, root => getComputedStyle(root.querySelector('.bar [aria-label^="ペン"]')).backgroundColor);
+  assert.equal(mainPen, BLUE);
   assert.deepEqual(errors, []);
   await page.close();
 });

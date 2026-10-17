@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.29.6';
+  const VERSION = '1.29.7';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -137,7 +137,6 @@ canvas{position:absolute;left:0;top:0;pointer-events:none}
 .b:disabled{opacity:.3;cursor:default;background:none}
 .b:focus-visible{outline:2px solid #3d7cff;outline-offset:-2px}
 .b.open:not(.on){background:#ffffff2e}
-.pc{position:relative}.pc::after{content:"";position:absolute;left:6px;right:6px;bottom:-4px;height:3px;border-radius:2px;background:var(--pc);pointer-events:none}
 .dd{position:relative}.dd::after{content:"";position:absolute;right:3px;bottom:3px;border:2.5px solid transparent;border-right-color:currentColor;border-bottom-color:currentColor;opacity:.55}
 .dot{width:var(--d);height:var(--d);border-radius:50%;background:var(--c);opacity:var(--a);box-shadow:0 0 0 1px #ffffff59}
 .dot.er{background:none;opacity:1;box-shadow:inset 0 0 0 1.5px #e8e9ee}
@@ -150,6 +149,7 @@ canvas{position:absolute;left:0;top:0;pointer-events:none}
 .light.glass .bar,.light.glass .pn{background:none;border-color:#0000001f;box-shadow:0 6px 24px #0003,inset 0 1px 0 #ffffff99}
 .light .b:hover,.light .t button:hover{background:#0000000f}.light .b:active,.light .b.open:not(.on){background:#0000001c}
 .b.on:not(.c):hover,.light .b.on:not(.c):hover,.light .b.on:not(.c):active{background:#2f6bea}
+.b.on.pc,.b.on.pc:hover,.light .b.on.pc:hover,.light .b.on.pc:active{background:var(--pc);color:var(--pi);box-shadow:0 1px 3px #0000003d}
 .light .dot{box-shadow:0 0 0 1px #0000003a}.light .dot.er{box-shadow:inset 0 0 0 1.5px #1d2026}
 .light .mi kbd{color:#7b7f89}.light .mi .sw{background:#00000024}
 .light .c::before{box-shadow:inset 0 0 0 1px #00000026}.light .c.on::before{box-shadow:0 0 0 2px var(--bb,#fbfbfc),0 0 0 4px #1d2026}
@@ -328,16 +328,21 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 'group' は前の方式（不透明に描き、live と pred をまとめた要素に CSS の opacity）。半透明のときだけ先端がぴょこぴょこ見えていた（ユーザーが実機で確かめた）
   const BLENDS = ['canvas', 'group'];
   let blend = BLENDS.includes(DEF.blend) ? DEF.blend : 'canvas';
+  // 相対輝度が 0.3 を超える（明るい）色か。上に載せる文字や印を黒にする
+  function isLite(hex) {
+    const n = parseInt(hex.slice(1), 16);
+    const L = [n >> 16, n >> 8 & 255, n & 255].map(v => (v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * L[0] + 0.7152 * L[1] + 0.0722 * L[2] > 0.3;
+  }
   function applyLook() {
     const t = look.theme, ws = wrap.style, cl = wrap.classList;
     let lite = t === 'light';
     if (t[0] === '#') {
       // 好きな色: 地と、ガラスの地に使う。文字は相対輝度で黒か白にする
-      const n = parseInt(t.slice(1), 16), c = [n >> 16, n >> 8 & 255, n & 255];
-      const L = c.map(v => (v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
-      lite = 0.2126 * L[0] + 0.7152 * L[1] + 0.0722 * L[2] > 0.3;
+      const n = parseInt(t.slice(1), 16);
+      lite = isLite(t);
       ws.setProperty('--bb', t);
-      ws.setProperty('--gc', c.join(' '));
+      ws.setProperty('--gc', [n >> 16, n >> 8 & 255, n & 255].join(' '));
     } else { ws.removeProperty('--bb'); ws.removeProperty('--gc'); }
     cl.toggle('light', lite);
     cl.toggle('glass', look.glass);
@@ -849,7 +854,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   // CP2: ペンのボタンは、消しゴムのときは消しゴムの印と名前にし、ペンか消しゴムのとき選んだ見た目にする（T-088。CP2 ブランチの T-076）
   function markPen() {
-    // Simple でペンを選んでいるとき、ペンボタンのすぐ下（ツールバーの下の余白）に今の色の下線（T-096・T-098、お試し。縁なし）
+    // Simple でペンを選んでいるとき、ペンボタンの選んでいる地を今の色にする（T-100、お試し。色見本のように。印は色の明るさで白か黒）
     penB.classList.toggle('pc', cp2 && tool === 'pen');
     if (!cp2) return;
     const er = tool === 'eraser', t = er ? TITLES.eraser : PEN_TITLES[penType];
@@ -888,6 +893,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     swBtns.forEach((b, i) => { const on = PALETTE[i] === color; b.classList.toggle('on', on); hit = hit || on; });
     mcBtns.forEach((b, i) => b.classList.toggle('on', PALETTE[i] === color));
     penB.style.setProperty('--pc', color);
+    penB.style.setProperty('--pi', isLite(color) ? '#111' : '#fff');
     customB.classList.toggle('on', !hit);
     customB.style.setProperty('--c', color);
     if (ta) { taC = color; styleTa(); }

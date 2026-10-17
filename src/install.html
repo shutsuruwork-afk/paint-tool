@@ -253,7 +253,7 @@ section > .sub + .sub { margin-top: 20px; }
 
 <main class="page">
   <header>
-    <p class="eyebrow">Bookmarklet · v1.28.1 · %%SIZE%%（gzip %%GZIP%%）</p>
+    <p class="eyebrow">Bookmarklet · v1.29.0 · %%SIZE%%（gzip %%GZIP%%）</p>
     <h1>ペイント<br>ブックマークレット</h1>
     <p class="lead">開いているページの上に、<span class="mark">そのまま描ける<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d="M18 40C8 22 52 6 108 7s92 13 84 30-62 20-112 17S4 38 30 16" vector-effect="non-scaling-stroke"/></svg></span>ペイントツールです。ブックマークを押すだけで起動し、拡張機能もアカウントも要りません。入力から線が画面に出るまでの遅延を減らす仕組みを、ブラウザが対応している限りすべて使います。</p>
     <div class="actions">
@@ -350,7 +350,12 @@ section > .sub + .sub { margin-top: 20px; }
       </fieldset>
       <fieldset>
         <legend>開発用</legend>
-        <label class="check"><span class="ct"><b>開発用の項目をツールの中に出す</b><small>その他（⋯）に「見た目（開発用）」が出て、ツールバーの色（暗い・明るい・好きな色）とガラス、予測の方法、蛍光ペンの予測、半透明の線の描き方をその場で変えられます。気に入ったら「この見た目をデフォルトに」で、このページに持ってこられます。「入力を録る（開発用）」を入れると、ペン・蛍光ペンで描いた線の入力（座標・時刻・筆圧・ブラウザの予測）を録って JSON で書き出せます（予測の精度を、実際に書いた線で測るため。ページの URL は入りません）。</small></span><input type="checkbox" role="switch" id="p-dev"></label>
+        <label class="check"><span class="ct"><b>開発用の項目をツールの中に出す</b><small>その他（⋯）に「見た目（開発用）」と「CP2 を試す（Preview）」が出ます。「見た目（開発用）」では、ツールバーの色（暗い・明るい・好きな色）とガラス、予測の方法、蛍光ペンの予測、半透明の線の描き方をその場で変えられます。気に入ったら「この見た目をデフォルトに」で、このページに持ってこられます。「入力を録る（開発用）」を入れると、ペン・蛍光ペンで描いた線の入力（座標・時刻・筆圧・ブラウザの予測）を録って JSON で書き出せます（予測の精度を、実際に書いた線で測るため。ページの URL は入りません）。「CP2 を試す（Preview）」は、シンプル版（チェックポイント 2）の表示に切り替えます（絵はそのまま。CP2 のその他の「本家に戻す」で戻ります。切り替えるとそのサイトで覚えます）。</small></span><input type="checkbox" role="switch" id="p-dev"></label>
+        <p class="gdev-h">最初に出す版（Preview）</p>
+        <div class="choices" id="p-ui" role="radiogroup" aria-label="最初に出す版">
+          <label><input type="radio" name="ui" value="main">本家</label>
+          <label><input type="radio" name="ui" value="cp2">CP2（シンプル版のチェックポイント 2。バーはペン・文字・元に戻す・その他・閉じるだけ。その他の「本家に戻す」で戻れる）</label>
+        </div>
         <p class="gdev-h">予測の方法（開発用）</p>
         <div class="choices" id="p-ppred" role="radiogroup" aria-label="予測の方法">
           <label><input type="radio" name="ppred" value="own">曲がりに沿う（入力ごとに、直近の点から速さと曲がりを求める）</label>
@@ -486,7 +491,7 @@ function runPaint() {%%INLINE_CODE%%}
   // ---- デフォルトの設定: 選んだ既定をブックマークレットのコードに埋め込む ----
   // 組み込みの既定（src/paint.js の PALETTE と CFG に合わせる。テストで一致を確かめている）
   const PALETTE = ['#111111', '#ffffff', '#e53935', '#fb8c00', '#fdd835', '#43a047', '#1e88e5', '#8e24aa'];
-  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 4, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: false, pickOnce: false, keepPanels: false, glass: true, theme: 'light', blurMode: 'gauss', blur: 18, tint: 80, sat: 200, dev: false, ppred: 'own', mpred: 'full', blend: 'canvas' };
+  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 4, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: false, pickOnce: false, keepPanels: false, glass: true, theme: 'light', blurMode: 'gauss', blur: 18, tint: 80, sat: 200, dev: false, ui: 'main', ppred: 'own', mpred: 'full', blend: 'canvas' };
   const BASE = bm.getAttribute('href'); // 既定の入っていないブックマークレット
   const KEY = 'paint-defaults';
   const $ = id => document.getElementById(id);
@@ -535,6 +540,7 @@ function runPaint() {%%INLINE_CODE%%}
       if (+v.blur >= 0 && +v.blur <= 40) d.blur = +v.blur;
       if (+v.tint >= 30 && +v.tint <= 95) d.tint = +v.tint;
       if (+v.sat >= 100 && +v.sat <= 300) d.sat = +v.sat;
+      if (v.ui === 'main' || v.ui === 'cp2') d.ui = v.ui;
       if (v.ppred === 'own' || v.ppred === 'chrome') d.ppred = v.ppred;
       if (v.mpred === 'need' || v.mpred === 'off' || v.mpred === 'full') d.mpred = v.mpred;
       if (v.blend === 'canvas' || v.blend === 'group') d.blend = v.blend;
@@ -552,7 +558,7 @@ function runPaint() {%%INLINE_CODE%%}
     if (c.calc !== BUILTIN.calc) o.calc = c.calc;
     if (c.pickOnce !== BUILTIN.pickOnce) o.pickOnce = c.pickOnce;
     if (c.keepPanels !== BUILTIN.keepPanels) o.keepPanels = c.keepPanels;
-    for (const k of ['glass', 'theme', 'blurMode', 'blur', 'tint', 'sat', 'dev', 'ppred', 'mpred', 'blend']) if (c[k] !== BUILTIN[k]) o[k] = c[k];
+    for (const k of ['glass', 'theme', 'blurMode', 'blur', 'tint', 'sat', 'dev', 'ui', 'ppred', 'mpred', 'blend']) if (c[k] !== BUILTIN[k]) o[k] = c[k];
     return o;
   }
   const enc = s => s.replace(/[%#\s"]/g, ch => encodeURIComponent(ch));
@@ -575,6 +581,7 @@ function runPaint() {%%INLINE_CODE%%}
     if (cur.theme[0] === '#') $('p-tcolor').value = cur.theme;
     $('p-dev').checked = cur.dev;
     for (const r of document.querySelectorAll('#p-mode input')) r.checked = r.value === cur.blurMode;
+    for (const r of document.querySelectorAll('#p-ui input')) r.checked = r.value === cur.ui;
     for (const r of document.querySelectorAll('#p-ppred input')) r.checked = r.value === cur.ppred;
     for (const r of document.querySelectorAll('#p-mpred input')) r.checked = r.value === cur.mpred;
     for (const r of document.querySelectorAll('#p-blend input')) r.checked = r.value === cur.blend;
@@ -582,6 +589,7 @@ function runPaint() {%%INLINE_CODE%%}
     $('p-gdev').classList.toggle('off', !cur.glass);
     const o = diff(cur);
     bm.setAttribute('href', hrefFor(o));
+    bm.lastChild.textContent = cur.ui === 'cp2' ? 'Paint CP2' : 'Paint'; // ブックマークの名前で版が分かるように
     state.textContent = Object.keys(o).length ? '設定入りのボタンになりました。ドラッグし直すと反映されます。' : '最初の状態です。';
   }
   // 保存も既定との差分だけにする（あとで組み込みの既定を変えたとき、触っていない所には新しい既定が効く）
@@ -603,6 +611,7 @@ function runPaint() {%%INLINE_CODE%%}
   $('p-tcolor').addEventListener('input', e => { cur.theme = e.target.value.toLowerCase(); update(); });
   $('p-dev').addEventListener('change', e => { cur.dev = e.target.checked; update(); });
   $('p-mode').addEventListener('change', e => { cur.blurMode = e.target.value; update(); });
+  $('p-ui').addEventListener('change', e => { cur.ui = e.target.value; update(); });
   $('p-ppred').addEventListener('change', e => { cur.ppred = e.target.value; update(); });
   $('p-mpred').addEventListener('change', e => { cur.mpred = e.target.value; update(); });
   $('p-blend').addEventListener('change', e => { cur.blend = e.target.value; update(); });

@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.28.1';
+  const VERSION = '1.29.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -77,6 +77,7 @@
 
   const I = {
     pen: 'M4 20l1.2-4.4L16 4.8a2 2 0 0 1 2.9 0l.3.3a2 2 0 0 1 0 2.9L8.4 18.8zM14 7l3 3',
+    swap: 'M4 8h15l-4-4M20 16H5l4 4', // 表示の版の切り替え（T-088）
     marker: 'M9.5 10.5L4 16v4h4l5.5-5.5M9.5 10.5l6-6 4 4-6 6zM14 20h6',
     eraser: 'M8 20h12M4.7 14.7l9-9a2 2 0 0 1 2.8 0l2.3 2.3a2 2 0 0 1 0 2.8L11 18.6H8.6zM9 10.3l5 5',
     line: 'M5 19L19 5',
@@ -288,6 +289,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const pickOnce = DEF.pickOnce === true;
   // ツールバーを引いて動かしても閉じないパネル: 色と太さ・見た目（開発用）はいつも。keepPanels（インストールページ）ならすべて（T-066・T-068）
   const keepPanels = DEF.keepPanels === true;
+  // 表示の版（T-088）: 本家と CP2（シンプル版のチェックポイント 2。research/simple-cp2 から移した。お試し〈Preview〉）。切り替えても絵と履歴はそのままで、
+  // ツールバーに出す物といくつかの動きだけが変わる（layout）。CP2 は、バーにペン（押すたびに消しゴムと入れ替わる）・文字・元に戻す・その他（全消去・色）・
+  // 閉じる（× の見た目で、中身は隠す）だけ。押せるボタンのないお知らせは出さず、電卓はいつも入り、ページ操作モードはなく、タッチは 2 本指でスクロールする。
+  // ほかの道具はキーで使える。開発用のときだけその他から CP2 を試せる（CP2 のその他からは、いつでも本家に戻せる）。
+  // 最初の版はインストールページ（DEF.ui）で選び、切り替えるとサイトごとに覚える
+  const UIS = ['main', 'cp2'];
+  let cp2 = false;
   // 見た目（インストールページの設定）: 明るい（白に黒）と、ガラス風（半透明にして下をぼかす）。既定は白いガラス（T-050、ユーザーが決めた）。
   // ガラスの調整は開発用: ぼかし方（gauss は周りも拾う本物のガウス、plain は backdrop-filter そのまま）・強さ・地の濃さ
   // theme は 'dark'・'light'・'#rrggbb'（好きな色。明るさで文字を黒か白にする）。開発用の見た目のパネル（dev）からも変えられる
@@ -413,7 +421,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // ---------- ツールバー ----------
 
   // よく使う物だけをバーに並べ、残りはボタンの下に開くパネル（.pn）に入れる。
-  // パネルはバーの子なのでバーと一緒に動き、absolute なのでバーの幅には入らない
+  // パネルはバーの子なのでバーと一緒に動き、absolute なのでバーの幅には入らない。
+  // ボタンは版（本家・CP2）に関係なく全部作り、バーに並べるのは layout()（T-088）
   const TITLES = {
     select: '選択 (S) — 囲むかクリックで選び、ドラッグで移動・角で拡大縮小',
     pen: 'ペン (P)',
@@ -430,20 +439,21 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const pnl = () => el('div', 'pn');
   const row = (...a) => { const r = el('div', 'row'); r.append(...a); return r; };
   const toolBtns = {};
-  bar.append(toolBtns.select = btn(TITLES.select, I.select, () => setTool('select')));
+  toolBtns.select = btn(TITLES.select, I.select, () => setTool('select'));
   // ペン: ペンでないときに押すとペンになる。ペンのときにもう一度押すと、種類のパネルが開く（pickOnce なら 1 回目から開く）。
-  // ページ操作モードのときは、ペンのままでも押せば描画に戻り、パネルも普段と同じに開く（T-057・T-062）
+  // ページ操作モードのときは、ペンのままでも押せば描画に戻り、パネルも普段と同じに開く（T-057・T-062）。
+  // CP2 では、押すたびにペンと消しゴムが入れ替わる（印と名前も今の道具に変わる。markPen）。種類のパネルは出さない
   const penP = pnl();
   const penB = btn(TITLES.pen, I.pen, () => {
-    if (tool === 'pen') { if (pass) setTool('pen'); togglePanel(penP, penB); }
+    if (cp2) setTool(tool === 'pen' ? 'eraser' : 'pen');
+    else if (tool === 'pen') { if (pass) setTool('pen'); togglePanel(penP, penB); }
     else { setTool('pen'); if (pickOnce) openPanel(penP, penB); }
   }, 'dd');
   const penD = penB.querySelector('path');
   toolBtns.pen = penB;
   const penBtns = {};
   penP.append(row(...PENS.map(k => penBtns[k] = btn(PEN_TITLES[k], I[k === 'pen' ? 'pen' : k], () => { setPen(k); closePanel(); }))));
-  bar.append(penB);
-  for (const t of ['marker', 'eraser']) bar.append(toolBtns[t] = btn(TITLES[t], I[t], () => setTool(t)));
+  for (const t of ['marker', 'eraser']) toolBtns[t] = btn(TITLES[t], I[t], () => setTool(t));
   // 図形: 最後に使った図形を表示する。押すとその図形になり、図形のときにもう一度押すと 4 つの図形のパネルが開く（ペンと同じ）
   let lastShape = 'line';
   const shapeP = pnl();
@@ -453,15 +463,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }, 'dd shp');
   const shapeD = shapeB.querySelector('path');
   shapeP.append(row(...SHAPES.map(t => toolBtns[t] = btn(TITLES[t], I[t], () => { setTool(t); closePanel(); }))));
-  bar.append(shapeB, toolBtns.text = btn(TITLES.text, I.text, () => setTool('text')),
-    toolBtns.fill = btn(TITLES.fill, I.fill, () => setTool('fill')), el('div', 'sep brk')); // 1 段に収まらないときは、ここで段を分ける（.two .brk。T-064・T-067）
+  toolBtns.text = btn(TITLES.text, I.text, () => setTool('text'));
+  toolBtns.fill = btn(TITLES.fill, I.fill, () => setTool('fill'));
 
   // 色と太さ: 今の色・太さ・濃さを点で見せる。パネルにパレット・カスタム色・スポイト・太さ・濃さ
   const styleP = pnl();
   const styleB = btn('色・太さ・濃さ', null, () => togglePanel(styleP, styleB), 'dd');
   const dot = el('span', 'dot');
   styleB.append(dot);
-  bar.append(styleB, sep());
   const swBtns = PALETTE.map((c, i) => {
     const b = btn(`色 ${i + 1}`, null, () => setColor(c), 'c');
     b.style.setProperty('--c', c);
@@ -476,7 +485,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const pal = row(...swBtns, customB);
   if (HAS_ED) pal.append(btn('スポイト (I) — 画面上の色を拾う', I.drop, () => { closePanel(); pickColor(); }));
   styleP.append(pal);
-  bar.append(ci);
 
   const range = (label, title, lo, hi, fn, p = styleP) => {
     const w = el('label', 'r', { title });
@@ -504,7 +512,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const passB = btn('ページ操作モード (V) — 絵を残したままページを操作', I.pass, togglePass);
   // その他: 名前とショートカット付きのメニュー。keep なら押しても閉じない（背景を続けて切り替えられる）
   const moreP = pnl();
-  const moreB = btn('その他（全消去・背景・保存・コピー・電卓・画面に固定・デフォルトの変更）', I.more, () => togglePanel(moreP, moreB));
+  const MORE_T = ['その他（全消去・背景・保存・コピー・電卓・画面に固定・デフォルトの変更）', 'その他（全消去・色・本家に戻す）'];
+  const moreB = btn(MORE_T[0], I.more, () => togglePanel(moreP, moreB));
   // sw なら入り・切りのスイッチ（role="switch"。状態は aria-checked で持ち、つまみは CSS で動かす）
   const item = (title, label, key, d, fn, keep, sw) => {
     const b = btn(title, d, () => { if (!keep) closePanel(); fn(); }, 'mi');
@@ -516,7 +525,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     moreP.append(b);
     return [b, s];
   };
-  item('全消去 (Delete)', '全消去', 'Delete', I.trash, clearAll);
+  const [clrMi] = item('全消去 (Delete)', '全消去', 'Delete', I.trash, clearAll);
   const [bgB, bgL] = item('', '', 'B', I.bg, cycleBg, true);
   item('PNG で保存 (Ctrl/⌘+S)', 'PNG で保存', IS_MAC ? '⌘S' : 'Ctrl+S', I.save, save);
   if (HAS_CLIP) item('画像をクリップボードにコピー', 'クリップボードにコピー', '', I.copy, copyImg);
@@ -626,9 +635,51 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     [recB] = item('入力を録る（開発用） — ペン・蛍光ペンで描いた線の入力（座標・時刻・筆圧・Chrome の予測）を録る。入れると前の録画は消える', '入力を録る（開発用）', '', I.rec, toggleRec, true, true);
     item('録った入力を書き出す（開発用） — JSON をダウンロード', '録った入力を書き出す', '', I.save, recExport);
   }
-  bar.append(undoB, redoB, sep(), passB, moreB, sep(),
-    btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hideHint), closeB,
-    shapeP, penP, styleP, moreP, lookP, lci);
+  const hideB = btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hideHint);
+  // ここまでが本家のその他。CP2 のその他は、全消去・色（選ぶとメニューを閉じ、消しゴムのときはペンに戻す）・本家に戻す
+  const mainMore = [...moreP.children];
+  const [cp2Mi] = item('CP2 を試す（Preview） — シンプル版のチェックポイント 2 の表示に切り替える。絵はそのまま。その他の「本家に戻す」で戻る', 'CP2 を試す（Preview）', '', I.swap, () => setUi(true));
+  const [mainMi] = item('本家に戻す — いつもの表示に戻す。絵はそのまま', '本家に戻す', '', I.swap, () => setUi(false));
+  const mcBtns = PALETTE.map((c, i) => {
+    const b = btn(`色 ${i + 1}`, null, () => { setColor(c); if (tool === 'eraser') setTool('pen'); closePanel(); }, 'c');
+    b.style.setProperty('--c', c);
+    return b;
+  });
+  const mcRow = row(...mcBtns);
+  // CP2 の閉じる（× の見た目）は、中身は隠す（絵は残り、ブックマークレットでまた出る）。お知らせも出さない
+  const hideCB = btn('閉じる — ブックマークレットを再度押すと、絵もそのまま再表示', I.close, hide);
+  // 版に合わせて、バーとその他の中身を並べ直す。パネルと色の入力（ci・lci）はどちらの版でもバーの子に置く
+  function layout() {
+    closePanel();
+    if (cp2) bar.replaceChildren(penB, toolBtns.text, sep(), undoB, sep(), moreB, hideCB);
+    else bar.replaceChildren(toolBtns.select, penB, toolBtns.marker, toolBtns.eraser, shapeB, toolBtns.text, toolBtns.fill,
+      el('div', 'sep brk'), styleB, sep(), undoB, redoB, sep(), passB, moreB, sep(), hideB, closeB); // 1 段に収まらないときは .brk で段を分ける（.two .brk。T-064・T-067）
+    bar.append(shapeP, penP, styleP, moreP, lookP, ci, lci);
+    moreP.replaceChildren(...(cp2 ? [clrMi, mcRow, mainMi] : dev ? [...mainMore, cp2Mi] : mainMore));
+    moreB.title = MORE_T[+cp2];
+    moreB.setAttribute('aria-label', MORE_T[+cp2]);
+    penB.classList.toggle('dd', !cp2);
+    for (const [t, f] of TWO) cp2 ? pad.addEventListener(t, f, true) : pad.removeEventListener(t, f, true);
+    tI0 = tI1 = -1; scr = 0;
+    helpEl.replaceChildren(); // 操作の一覧は次に開いたときに作り直す（CP2 ではページ操作モードの行を出さない）
+    syncPen();
+    syncTool(false);
+  }
+  // 版を切り替える。絵・履歴・道具・色はそのまま。CP2 にはページ操作モードがないので外す
+  function setUi(on) {
+    if (cp2 === on) return;
+    if (act !== -1) endStroke();
+    if (on && pass) togglePass();
+    cp2 = on;
+    layout();
+    layBar();
+    measureBar();
+    if (barMoved) moveBar(barX, barY); else placeBar();
+    updateGhost();
+    remember();
+    if (on) say('CP2（Preview）にしました', 4000, '本家に戻す', () => setUi(false));
+    else say('本家に戻しました');
+  }
 
   // パネルは 1 つだけ開く。描き始め・パネルの外を押す・Esc で閉じる。
   // 開いていなければ pointerdown ごとの仕事は比較 1 回だけ（入力のホットパスには触れない）
@@ -735,6 +786,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       shapeB.setAttribute('aria-label', TITLES[tool]);
     }
     shapeB.classList.toggle('on', shape);
+    markPen();
     const c = CFG[tool];
     if (!fromSlider) {
       sizeR.value = round(sqrt(max(c.size, 1) * 100));
@@ -780,6 +832,16 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     penB.title = PEN_TITLES[penType];
     penB.setAttribute('aria-label', PEN_TITLES[penType]);
     for (const k of PENS) penBtns[k].classList.toggle('on', k === penType);
+    markPen();
+  }
+  // CP2: ペンのボタンは、消しゴムのときは消しゴムの印と名前にし、ペンか消しゴムのとき選んだ見た目にする（T-088。CP2 ブランチの T-076）
+  function markPen() {
+    if (!cp2) return;
+    const er = tool === 'eraser', t = er ? TITLES.eraser : PEN_TITLES[penType];
+    penD.setAttribute('d', I[er ? 'eraser' : penType]);
+    penB.title = t;
+    penB.setAttribute('aria-label', t);
+    penB.classList.toggle('on', er || tool === 'pen');
   }
   // 鉛筆のかすれ: 色ごとに 1 度だけ作る模様（入力のたびには作らない）
   let grainC = '', grainP = null;
@@ -809,6 +871,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     color = c.toLowerCase();
     let hit = false;
     swBtns.forEach((b, i) => { const on = PALETTE[i] === color; b.classList.toggle('on', on); hit = hit || on; });
+    mcBtns.forEach((b, i) => b.classList.toggle('on', PALETTE[i] === color));
     customB.classList.toggle('on', !hit);
     customB.style.setProperty('--c', color);
     if (ta) { taC = color; styleTa(); }
@@ -862,6 +925,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // fn を渡すと、押せるボタン（act）付きで ms だけ出す（閉じるの取り消しに使う）。xfn を渡すと × のボタンも付く。
   // inl ならボタンを文の続きとして間を空けずに置く（「ブックマークレットで再表示」の「再表示」）
   function say(msg, ms = 1800, act, fn, xfn, inl) {
+    if (cp2 && !fn) return; // CP2 は、押せるボタンの付いたお知らせだけを出す（CP2 ブランチの T-074）
     toastM.textContent = msg;
     toastB.textContent = act || '';
     toastFn = fn || null;
@@ -906,7 +970,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const cl = bar.classList;
     cl.remove('two');
     bar.style.removeProperty('width');
-    if (closeB.offsetTop === toolBtns.select.offsetTop) return;
+    if ((cp2 ? hideCB : closeB).offsetTop === (cp2 ? penB : toolBtns.select).offsetTop) return;
     cl.add('two');
     let right = 0;
     for (const b of bar.children) if (b.classList.contains('b')) right = max(right, b.getBoundingClientRect().right);
@@ -1141,6 +1205,49 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     c.lineCap = 'round';
     c.lineJoin = 'round';
   }
+
+  // 2 本指でスクロール（CP2。T-088、CP2 ブランチの T-074）: タッチが 2 本になったら、1 本目で描き始めていた線は捨てて、2 本の中点の動きでページをスクロールする。
+  // 2 本とも離すまでは描かない。CP2 のときだけ pad に capture で登録し（layout）、onDown / onMove / onUp より先に呼ばれて、スクロールの間はそれらに渡さない。
+  // 1 本のときの仕事は、ポインタの番号の比較と座標の代入だけ
+  let tI0 = -1, tX0 = 0, tY0 = 0, tI1 = -1, tX1 = 0, tY1 = 0, scr = 0, scrX = 0, scrY = 0; // scr: 1 = スクロール中、2 = 片方を離した（残りを離すまで描かない）
+  function twoDown(e) {
+    if (e.pointerType !== 'touch') return;
+    const id = e.pointerId;
+    if (e.isPrimary) { tI0 = tI1 = -1; scr = 0; } // 新しいタッチの始まり（離したことを取りこぼしていても数え直す）
+    if (tI0 === -1) { tI0 = id; tX0 = e.clientX; tY0 = e.clientY; }
+    else if (tI1 === -1) { tI1 = id; tX1 = e.clientX; tY1 = e.clientY; }
+    else return;
+    if (tI0 === -1 || tI1 === -1) { if (!scr) return; }
+    else if (act === -1 || aType === 'touch') {
+      if (act !== -1) abortStroke();
+      scr = 1; scrX = (tX0 + tX1) / 2; scrY = (tY0 + tY1) / 2;
+      for (const i of [tI0, tI1]) try { pad.setPointerCapture(i); } catch (_) { }
+    } else return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }
+  function twoMove(e) {
+    const id = e.pointerId;
+    if (id === tI0) { tX0 = e.clientX; tY0 = e.clientY; }
+    else if (id === tI1) { tX1 = e.clientX; tY1 = e.clientY; }
+    else return;
+    if (!scr) return;
+    e.stopImmediatePropagation();
+    if (scr !== 1) return;
+    const mx = (tX0 + tX1) / 2, my = (tY0 + tY1) / 2;
+    win.scrollBy(scrX - mx, scrY - my);
+    scrX = mx; scrY = my;
+  }
+  function twoUp(e) {
+    const id = e.pointerId;
+    if (id === tI0) tI0 = -1;
+    else if (id === tI1) tI1 = -1;
+    else return;
+    if (!scr) return;
+    e.stopImmediatePropagation();
+    scr = tI0 === -1 && tI1 === -1 ? 0 : 2;
+  }
+  const TWO = [['pointerdown', twoDown], ['pointermove', twoMove], ['pointerup', twoUp], ['pointercancel', twoUp]];
 
   function onDown(e) {
     const type = e.pointerType, pen = type === 'pen';
@@ -1816,7 +1923,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     });
     const data = {
       v: 1, app: VERSION, ua: navigator.userAgent, dpr, vw: win.innerWidth, vh: win.innerHeight,
-      desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, inkTrail: !!inkP, ppred, mpred, blend,
+      desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, inkTrail: !!inkP, ui: UIS[+cp2], ppred, mpred, blend,
       cols: ['kind', 't', 'x', 'y', 'pressure', 'handled'], kinds: ['down', 'move', 'rawupdate', 'up', 'coalesced', 'predicted', 'frame'], strokes,
     };
     download(new Blob([JSON.stringify(data)], { type: 'application/json' }), `paint-input-${stamp()}.json`);
@@ -2521,7 +2628,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function updateGhost() {
     ghostTxt = '';
     ghostR = 0;
-    if (ta && calc) {
+    if (ta && (calc || cp2)) { // CP2 は電卓がいつも入り
       const v = ta.value, p = ta.selectionEnd, a = v.lastIndexOf('\n', p - 1) + 1, b = v.indexOf('\n', p), end = b < 0 ? v.length : b;
       const line = v.slice(a, end), r = calcLine(line);
       if (r) {
@@ -2742,7 +2849,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       ["{Ctrl}+{S}", "PNG で保存"]
     ]],
     ["表示", [
-      ["{V}", "ページ操作モード（ツールを選ぶと描画に戻る）"],
+      ["{V}", "ページ操作モード（ツールを選ぶと描画に戻る）", "main"],
       ["{B}", "背景を透明・白・黒に"],
       ["{D}", "計測表示"],
       ["{?}", "この一覧"],
@@ -2775,7 +2882,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         const sec = el('section'), t = el('h3'), g = el('div', 'hg');
         t.textContent = name;
         for (const [k, d, only] of rows) {
-          if (only === 'touch' && !touchText) continue;
+          if ((only === 'touch' && !touchText) || (only === 'main' && cp2)) continue;
           const a = el('span'), b = el('span');
           rich(a, k); rich(b, d);
           g.append(a, b);
@@ -2828,12 +2935,12 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     else if (k >= '1' && k <= '8' && k.length === 1) setColor(PALETTE[k - 1]);
     else if (k === '[') setSize(round(CFG[tool].size / 1.2));
     else if (k === ']') setSize(max(CFG[tool].size + 1, round(CFG[tool].size * 1.2)));
-    else if (k === 'v') togglePass();
+    else if (k === 'v' && !cp2) togglePass(); // CP2 にページ操作モードはない
     else if (k === 'b') cycleBg();
     else if (k === 'd') toggleHud();
     else if (k === 'i' && HAS_ED) pickColor();
     else if (k === 'Delete') clearAll();
-    else if (k === 'Escape') openP ? closePanel() : hideHint();
+    else if (k === 'Escape') openP ? closePanel() : cp2 ? hide() : hideHint(); // CP2 はお知らせを出さずに隠す
     else ok = false;
     if (ok) { e.preventDefault(); e.stopPropagation(); }
   }
@@ -2984,6 +3091,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (typeof p.tool === 'string' && CFG[p.tool]) tool = p.tool;
     if (PENS.includes(p.pen)) penType = p.pen;
     if (typeof p.calc === 'boolean') calc = p.calc;
+    if (UIS.includes(p.ui)) cp2 = p.ui === 'cp2';
     for (const k of PREF_T) {
       const sz = p.size && +p.size[k], al = p.alpha && +p.alpha[k];
       if (k !== 'fill' && sz >= 1 && sz <= 100) CFG[k].size = sz;
@@ -2995,7 +3103,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function snapPrefs() {
     const size = {}, alpha = {};
     for (const k of PREF_T) { size[k] = CFG[k].size; alpha[k] = CFG[k].alpha; }
-    return { color, tool, pen: penType, calc, size, alpha };
+    return { color, tool, pen: penType, calc, ui: UIS[+cp2], size, alpha };
   }
   function remember() {
     if (!ready) return;
@@ -3009,6 +3117,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (cur.tool !== base.tool) d.tool = cur.tool;
     if (cur.pen !== base.pen) d.pen = cur.pen;
     if (cur.calc !== base.calc) d.calc = cur.calc;
+    if (cur.ui !== base.ui) d.ui = cur.ui;
     for (const g of ['size', 'alpha']) {
       for (const k of PREF_T) if (cur[g][k] !== base[g][k]) (d[g] || (d[g] = {}))[k] = cur[g][k];
     }
@@ -3045,6 +3154,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     prefs: { ...snapPrefs(), bar: [barX, barY], touchText, pickOnce, keepPanels, dev, ...look, ppred, mpred, blend },
   });
   win[NS] = { version: VERSION, toggle, show, hide, close, destroy, undo, redo, clear: clearAll, tool: setTool, color: setColor, stats, pixels };
+  layout();
   setColor(color);
   syncPen();
   syncFixed();

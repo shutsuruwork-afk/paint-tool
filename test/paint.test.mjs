@@ -1231,6 +1231,7 @@ test('インストールページで選んだ設定入りのブックマーク�
   assert.equal(p0.dev, await page.isChecked('#p-dev'));
   assert.equal(p0.mpred, await page.evaluate(() => document.querySelector('#p-mpred input:checked').value));
   assert.equal(p0.ppred, await page.evaluate(() => document.querySelector('#p-ppred input:checked').value));
+  assert.equal(p0.ui, await page.evaluate(() => document.querySelector('#p-ui input:checked').value));
   assert.equal(p0.blend, await page.evaluate(() => document.querySelector('#p-blend input:checked').value));
   await page.evaluate(() => window.__paintBookmarklet.destroy());
   // 選ぶと、ボタンの中身が変わる
@@ -1851,6 +1852,145 @@ test('直線・矢印・楕円と Shift 拘束', async () => {
   await drag(page, [[600, 300], [800, 400]], 5);
   assert.ok((await readMain(page, 600, 350))[3] > 200, 'ellipse left');
   assert.equal((await readMain(page, 700, 350))[3], 0, 'ellipse hollow');
+  await page.close();
+});
+
+test('CP2（Preview）: 開発用のときだけその他に出て、押すと絵と履歴はそのままで CP2 の表示になる（ペン ⇄ 消しゴム・文字〈電卓は入り〉・元に戻す・その他〈全消去・色・本家に戻す〉・閉じる〈中身は隠す〉）。本家に戻せ、サイトごとに覚える（T-088）', async () => {
+  const bar = page => shadowEval(page, root => [...root.querySelector('.bar').children].filter(e => e.classList.contains('b'))
+    .map(b => b.title.split(/[ （(]/)[0] + (b.classList.contains('on') ? '*' : '')));
+  const menu = page => shadowEval(page, root => [...root.querySelector('[title^="全消去"]').parentElement.children]
+    .map(e => e.classList.contains('mi') ? e.querySelector('span').textContent : e.querySelectorAll('.c').length + ' 色'));
+  const toast = page => shadowEval(page, root => { const t = root.querySelector('.t'); return t.classList.contains('on') ? t.textContent : ''; });
+  const MAIN = ['選択', 'ペン*', '蛍光ペン', '消しゴム', '直線', '文字', '塗りつぶし', '色・太さ・濃さ', '元に戻す', 'やり直す', 'ページ操作モード', 'その他', '隠す', '閉じる'];
+  // 開発用でなければ、その他に出ない
+  const { page: p0 } = await fresh();
+  assert.ok(!(await menu(p0)).includes('CP2 を試す（Preview）'));
+  await p0.close();
+  const { page, errors } = await openPage(browser, server.base + '/');
+  await runCode(page, withDefaults(CODE, { dev: true }));
+  assert.deepEqual(await bar(page), MAIN);
+  assert.equal((await menu(page)).at(-1), 'CP2 を試す（Preview）');
+  await drag(page, [[100, 300], [400, 320]], 10);
+  const sum = await checksum(page);
+  // 切り替える: 絵と履歴はそのまま。お知らせには「本家に戻す」が付く
+  await click(page, '[title^="CP2 を試す"]');
+  assert.deepEqual(await bar(page), ['ペン*', '文字', '元に戻す', 'その他', '閉じる']);
+  assert.equal((await prefs(page)).ui, 'cp2');
+  assert.equal(await checksum(page), sum);
+  assert.equal((await page.evaluate(() => window.__paintBookmarklet.stats())).history, 1);
+  assert.equal(await toast(page), 'CP2（Preview）にしました本家に戻す');
+  // ペンのボタンを押すたびに消しゴムと入れ替わる
+  await mouseClick(page, '.bar > [aria-label^="ペン"]');
+  assert.deepEqual(await bar(page), ['消しゴム*', '文字', '元に戻す', 'その他', '閉じる']);
+  await mouseClick(page, '.bar > [aria-label^="消しゴム"]');
+  assert.deepEqual(await bar(page), ['ペン*', '文字', '元に戻す', 'その他', '閉じる']);
+  // 文字は電卓が入り（本家の設定は切りのまま）
+  await mouseClick(page, '.bar > [aria-label^="文字"]');
+  await page.mouse.click(300, 450);
+  await page.keyboard.type('12+30');
+  assert.equal(await shadowEval(page, root => root.querySelector('.gh').textContent), '=42');
+  await page.keyboard.press('Tab');
+  assert.equal(await shadowEval(page, root => root.querySelector('textarea').value), '12+30=42');
+  await mouseClick(page, '.bar > [aria-label^="ペン"]');
+  assert.equal((await page.evaluate(() => window.__paintBookmarklet.stats())).texts, 1);
+  assert.equal((await prefs(page)).calc, false);
+  // その他: 全消去・8 色・本家に戻す。色を選ぶとメニューは閉じ、消しゴムのときはペンに戻る
+  await mouseClick(page, '.bar > [aria-label^="ペン"]');
+  await mouseClick(page, '.bar > [aria-label^="その他"]');
+  assert.deepEqual(await menu(page), ['全消去', '8 色', '本家に戻す']);
+  await mouseClick(page, '.pn.on [title="色 7"]');
+  assert.deepEqual([(await prefs(page)).color, (await prefs(page)).tool], ['#1e88e5', 'pen']);
+  assert.equal(await shadowEval(page, root => !!root.querySelector('.pn.on')), false);
+  // ページ操作モードはない（V はページへ）。操作の一覧にも出ない
+  await page.keyboard.press('v');
+  assert.equal(await shadowEval(page, root => root.querySelector('.w').classList.contains('pass')), false);
+  await page.keyboard.press('?');
+  assert.ok(!(await shadowEval(page, root => root.querySelector('.hp').textContent)).includes('ページ操作モード'));
+  await page.keyboard.press('Escape');
+  // 閉じる（× の見た目）と Esc は、お知らせを出さずに隠す。ブックマークレットで絵もそのまま戻る（切り替えのお知らせが消えてから確かめる）
+  await page.waitForFunction(() => !document.querySelector('paint-bookmarklet').shadowRoot.querySelector('.t').classList.contains('on'), null, { timeout: 6000 });
+  await mouseClick(page, '.bar > [aria-label^="閉じる"]');
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('paint-bookmarklet')).display), 'none');
+  assert.equal(await toast(page), '');
+  await runBookmarklet(page);
+  assert.ok((await readMain(page, 250, 310))[3] > 200, 'drawing is back');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('paint-bookmarklet')).display), 'none');
+  assert.equal(await toast(page), '');
+  await runBookmarklet(page);
+  // サイトごとに覚える: 開き直すと CP2 で始まる（起動のお知らせも出さない）
+  await page.waitForTimeout(500);
+  assert.equal(JSON.parse(await lsGet(page)).ui, 'cp2');
+  await page.evaluate(() => window.__paintBookmarklet.destroy());
+  await runCode(page, withDefaults(CODE, { dev: true }));
+  assert.deepEqual(await bar(page), ['ペン*', '文字', '元に戻す', 'その他', '閉じる']);
+  assert.equal(await toast(page), '');
+  // 本家に戻す: 本家の表示とメニューに戻り、覚えた分も消える
+  await click(page, '[title^="本家に戻す"]');
+  assert.deepEqual(await bar(page), MAIN);
+  assert.equal(await toast(page), '本家に戻しました');
+  assert.equal((await menu(page)).at(-1), 'CP2 を試す（Preview）');
+  await page.waitForTimeout(500);
+  assert.equal(JSON.parse(await lsGet(page) || '{}').ui, undefined);
+  assert.deepEqual(errors, []);
+  await page.close();
+  // インストールページで最初の版を CP2 にすると、開発用でなくても CP2 で始まり、本家に戻せる（本家のその他には CP2 は出ない）
+  const { page: p1, errors: e1 } = await openPage(browser, server.base + '/');
+  await runCode(p1, withDefaults(CODE, { ui: 'cp2' }));
+  assert.deepEqual(await bar(p1), ['ペン*', '文字', '元に戻す', 'その他', '閉じる']);
+  assert.deepEqual(await menu(p1), ['全消去', '8 色', '本家に戻す']);
+  await click(p1, '[title^="本家に戻す"]');
+  assert.deepEqual(await bar(p1), MAIN);
+  assert.ok(!(await menu(p1)).includes('CP2 を試す（Preview）'));
+  assert.deepEqual(e1, []);
+  await p1.close();
+  // インストールページ: 最初の版を選ぶと、ボタンの名前と中身が変わる
+  const { page: ip, errors: ie } = await openPage(browser, server.base + '/install');
+  assert.equal((await ip.textContent('#bm')).trim(), 'Paint');
+  assert.ok(await ip.isChecked('#p-ui input[value="main"]'));
+  await ip.check('#p-ui input[value="cp2"]');
+  assert.equal((await ip.textContent('#bm')).trim(), 'Paint CP2');
+  assert.ok(decodeURIComponent(await ip.getAttribute('#bm', 'href')).includes('{\\"ui\\":\\"cp2\\"}'));
+  await ip.click('#try');
+  assert.equal(await ip.evaluate(() => window.__paintBookmarklet.stats().prefs.ui), 'cp2');
+  assert.deepEqual(ie, []);
+  await ip.close();
+});
+
+test('CP2 のスマホ: 2 本指で動かすとページがスクロールし、1 本目で描き始めた線は残らない。1 本指では今まで通り描ける。本家では 2 本指でもスクロールしない（T-088）', async () => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 700 }, isMobile: true, hasTouch: true });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(server.base + '/long');
+  await runCode(page, withDefaults(CODE, { ui: 'cp2' }));
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], id) => ({ x, y, id })) });
+  const hist = () => page.evaluate(() => window.__paintBookmarklet.stats().history);
+  const twoFingers = async () => {
+    // 1 本目を置いて少し動かしてから（線を描き始める）、2 本目を置いて 2 本とも上へ 200px 動かす
+    await touch('touchStart', [[150, 500]]);
+    await touch('touchMove', [[160, 490]]);
+    await touch('touchStart', [[160, 490], [250, 500]]);
+    for (let i = 1; i <= 10; i++) await touch('touchMove', [[160, 490 - i * 20], [250, 500 - i * 20]]);
+    await touch('touchEnd', [[160, 290]]);
+    await touch('touchEnd', []);
+    await page.waitForTimeout(100);
+  };
+  await twoFingers();
+  assert.equal(await page.evaluate(() => scrollY), 200);
+  assert.equal(await hist(), 0, 'the stroke started by the first finger is dropped');
+  // 1 本指は描く（スクロールしない）
+  await touch('touchStart', [[100, 400]]);
+  for (let i = 1; i <= 5; i++) await touch('touchMove', [[100 + i * 20, 400 + i * 10]]);
+  await touch('touchEnd', []);
+  await page.waitForTimeout(100);
+  assert.equal(await page.evaluate(() => scrollY), 200);
+  assert.equal(await hist(), 1);
+  // 本家に戻すと、2 本指ではスクロールしない（今まで通り）
+  await click(page, '[title^="本家に戻す"]');
+  await twoFingers();
+  assert.equal(await page.evaluate(() => scrollY), 200);
+  assert.deepEqual(errors, []);
   await page.close();
 });
 

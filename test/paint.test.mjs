@@ -1872,9 +1872,11 @@ test('CP2（Preview）: 開発用のときだけその他に出て、押すと�
   assert.equal((await menu(page)).at(-1), 'CP2 を試す（Preview）');
   await drag(page, [[100, 300], [400, 320]], 10);
   const sum = await checksum(page);
-  // 切り替える: 絵と履歴はそのまま。お知らせには「本家に戻す」が付く
+  // 切り替える: 絵と履歴はそのまま。お知らせには「本家に戻す」が付く。CP2 にない道具（塗りつぶし）を選んでいたらペンになる（T-089）
+  await mouseClick(page, '.bar > [aria-label^="塗りつぶし"]');
   await click(page, '[title^="CP2 を試す"]');
   assert.deepEqual(await bar(page), ['ペン*', '文字', '元に戻す', 'その他', '閉じる']);
+  assert.equal((await prefs(page)).tool, 'pen');
   assert.equal((await prefs(page)).ui, 'cp2');
   assert.equal(await checksum(page), sum);
   assert.equal((await page.evaluate(() => window.__paintBookmarklet.stats())).history, 1);
@@ -1930,6 +1932,14 @@ test('CP2（Preview）: 開発用のときだけその他に出て、押すと�
   assert.deepEqual(await bar(page), MAIN);
   assert.equal(await toast(page), '本家に戻しました');
   assert.equal((await menu(page)).at(-1), 'CP2 を試す（Preview）');
+  // CP2 にもある道具（消しゴム・文字）は、切り替えてもそのまま
+  for (const [key, want] of [['e', '消しゴム*'], ['t', 'ペン']]) {
+    await page.keyboard.press(key);
+    await click(page, '[title^="CP2 を試す"]');
+    assert.equal((await bar(page))[0], want, key);
+    if (key === 't') assert.equal((await bar(page))[1], '文字*');
+    await click(page, '[title^="本家に戻す"]');
+  }
   await page.waitForTimeout(500);
   assert.equal(JSON.parse(await lsGet(page) || '{}').ui, undefined);
   assert.deepEqual(errors, []);

@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.29.0';
+  const VERSION = '1.29.1';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -294,7 +294,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 閉じる（× の見た目で、中身は隠す）だけ。押せるボタンのないお知らせは出さず、電卓はいつも入り、ページ操作モードはなく、タッチは 2 本指でスクロールする。
   // ほかの道具はキーで使える。開発用のときだけその他から CP2 を試せる（CP2 のその他からは、いつでも本家に戻せる）。
   // 最初の版はインストールページ（DEF.ui）で選び、切り替えるとサイトごとに覚える
-  const UIS = ['main', 'cp2'];
+  const UIS = ['main', 'cp2'], CP2_TOOLS = ['pen', 'eraser', 'text'];
   let cp2 = false;
   // 見た目（インストールページの設定）: 明るい（白に黒）と、ガラス風（半透明にして下をぼかす）。既定は白いガラス（T-050、ユーザーが決めた）。
   // ガラスの調整は開発用: ぼかし方（gauss は周りも拾う本物のガウス、plain は backdrop-filter そのまま）・強さ・地の濃さ
@@ -670,6 +670,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (cp2 === on) return;
     if (act !== -1) endStroke();
     if (on && pass) togglePass();
+    // CP2 のバーにない道具（選択・蛍光ペン・図形・塗りつぶし）のままなら、ペンにする（どのボタンも選ばれていない見た目にしない。T-089）
+    if (on && !CP2_TOOLS.includes(tool)) setTool('pen');
     cp2 = on;
     layout();
     layBar();

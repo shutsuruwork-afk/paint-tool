@@ -4,18 +4,18 @@
 
 ## 現在地
 
-- 最終更新: 2026-10-17、T-095 の完了時
-- ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない。HEAD は T-095 のコミット（`git log --grep T-095`）
-- CI: GitHub Actions「Pages」は main へのプッシュごとに test → deploy。T-092 の run（39019270233）まで test・deploy とも成功。T-093 以降のプッシュの結果は Actions で確かめる
-- 公開: https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）の 2 か所。版は v1.29.4
+- 最終更新: 2026-10-17、T-096 の完了時
+- ブランチ: 作業は `feature/paint-bookmarklet` で行い、終わったら `main` へ fast-forward で取り込んでプッシュしている。`main` へのプッシュで CI（テスト）と Pages のデプロイが走る。PR を使う運用はまだ決めていない。HEAD は T-096 のコミット（`git log --grep T-096`）
+- CI: GitHub Actions「Pages」は main へのプッシュごとに test → deploy。T-095 の run（39020215894）まで test・deploy とも成功。T-096 のプッシュの結果は Actions で確かめる
+- 公開: https://shutsuruwork-afk.github.io/paint-tool/ （GitHub Pages）と Artifact（非公開）の 2 か所。版は v1.29.5
 - 人の操作待ち: なし（R-007 は、重くなったのが勝手に始まったダウンロードのときの出来事で再現できない、との回答で閉じた）。R-004 は C に決まった（インストールページの既定＋サイトごとに覚える）
-- 次の一手: Simple（Preview）の使い心地を聞く（Simple のことは `.claude/HANDOFF-simple.md` にまとめた。Simple を触るときは先に読む）。ユーザーに実機で、開発用の「予測の方法: 曲がりに沿う／ブラウザ」を見比べてもらう（特に蛍光ペンと濃さ 35% のペン。Windows の不透明のペンは Ink Trail なので予測を使わない）。ペンタブ・指などの録画が届いたら `npm run predict` で比べる（T-086）。効率と中身の改善は、トレードオフがあれば先にユーザーに確認する（履歴のメモリ上限・全消去の後のタイルの解放・塗りつぶしを画面の外まで広げる、は今のままでよいと回答済み）。残りの候補は T-086・T-084（全消去を消す物がないときに薄くする。research/simple の T-085 で試した。実機で試してもらってから）・T-018・T-013・T-031・T-020（T-011・T-017 は後回し）。タスクの番号: T-071〜T-083・T-085 は research/simple ブランチで使ったので、次は T-096 から
+- 次の一手: Simple（Preview）の使い心地と、お試しのペンボタンの色の下線（T-096）がよいかを聞く（Simple のことは `.claude/HANDOFF-simple.md` にまとめた。Simple を触るときは先に読む）。ユーザーに実機で、開発用の「予測の方法: 曲がりに沿う／ブラウザ」を見比べてもらう（特に蛍光ペンと濃さ 35% のペン。Windows の不透明のペンは Ink Trail なので予測を使わない）。ペンタブ・指などの録画が届いたら `npm run predict` で比べる（T-086）。効率と中身の改善は、トレードオフがあれば先にユーザーに確認する（履歴のメモリ上限・全消去の後のタイルの解放・塗りつぶしを画面の外まで広げる、は今のままでよいと回答済み）。残りの候補は T-086・T-084（全消去を消す物がないときに薄くする。research/simple の T-085 で試した。実機で試してもらってから）・T-018・T-013・T-031・T-020（T-011・T-017 は後回し）。タスクの番号: T-071〜T-083・T-085 は research/simple ブランチで使ったので、次は T-097 から
 
 ## 始め方
 
 ```sh
 npm install          # terser 5.36.0 と playwright 1.56.1（ブラウザは /opt/pw-browsers にある）
-npm test             # ビルドしてから Playwright のテスト 74 件
+npm test             # ビルドしてから Playwright のテスト 75 件
 npm run bench        # 性能計測（メインスレッドの占有時間）
 npm run pop          # 蛍光ペンの先端の消える画素（ぴょこぴょこ）と、1〜2 フレーム後のペン先との隙間（T-055）
 npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、予測の方法ごとの 1 フレーム後のペン先とのずれ・はみ出し・消える長さを比べる（T-060）。負荷の様子（フレームの間隔・届くまでの遅れ・予測線の点滅）も出す（T-087）
@@ -37,7 +37,7 @@ npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、予�
   - お知らせ（`say(msg, ms, act, fn, xfn, inl)`。fn を渡すとボタン付き、xfn を渡すと × 付き、inl ならボタンを文の続きに置く）、塗りつぶし（floodFill → maskClear / maskColor → scanFill。画面に何も描いていなければ全体の矩形を 1 つ）、選択（settle / showSel / liftSel → liftRaster + beginSel / dropSel / paintSel / selHit / selHover / selDown / selMove / scaleSel / selUp / selAbort / pickSel / nudgeSel。浮かせた画素は selC、選んだ文字の物の組は selT、どちらも入れ物 selIn に入れて transform で拡大縮小。枠は selEl と selB）、文字（物: tlist / tNew / tSnap / tApply / swapText / textHit / paintText（書き出し用）/ eraseText・showErased・takeErased（消しゴム）。入力: textAt / editText / styleTa / fitTa / commitText。電卓: updateGhost（fitTa も呼ぶ）/ lineW / acceptGhost / calcLine（薄い答えは ghostEl、右端は ghostR）。入力欄は `ta`、書き直し中の物は `taObj`）、書き出し（capture / exportBlob / save / copyImg / pixels）、HUD（D キー）、操作の一覧（HELP / openHelp / closeHelp。? キー）、キーボード（onKey）、設定（applyPrefs / snapPrefs / remember → savePrefs / loadSite / placeBar。DEF ＋ サイトの保存）、表示制御（show / hide / hideHint → endHint / toggle / close → endBye / reopen / onByeKey、destroy）、起動
 - `src/install.html`: インストールページのテンプレート（本文のみ）。並びは T-039 で、見出し（Paint ボタン・試す・目次）→ 入れ方 → 試し書き → デフォルトの設定（id="defaults"、動きはスイッチ）→ 使い方（機能の説明と操作の一覧 %%HELP%%）→ できないこと → 仕組みと計測（仕組み・低遅延機能の表・計測の表）にした。機能の説明は「使い方」に、技術の説明は「仕組みと計測」に分ける。`%%BOOKMARKLET_HREF%%` などを build.mjs が置き換える。「デフォルトの設定」のフォームは、選んだ既定（組み込みの既定との差分）を JSON にして、ボタンの href の `'__PAINT_DEFAULTS__'` を置き換える。フォームの状態はインストールページ自身の localStorage（`paint-defaults`）に、組み込みの既定との差分だけを残す（T-046。それより前に保存した人は全体の形のまま）。組み込みの既定（BUILTIN と PALETTE）は src/paint.js と手で合わせる（テストで一致を確かめている）
 - `build.mjs`: src/paint.js の HELP（`/*HELP*/` の間の JSON）を読んで、インストールページの `%%HELP%%` にショートカットの一覧を書き出す。terser で圧縮し、`dist/paint.min.js`、`dist/bookmarklet.txt`、`docs/index.html` を作る。「このページで試す」用の埋め込み版は、既定の目印を `window.__paintBookmarkletDefaults` を読む式に変える（eval を使わない）。目印が 1 つだけあることも確かめる。インストールページのボタンの href がブックマークレットと一致するかを、書き出す前に確かめる
-- `test/paint.test.mjs`（テスト 74 件）、`test/helpers.mjs`（既定を埋め込んだコードを作る `withDefaults` と直接起動する `runCode`、サーバー〈`/install` はビルドしたインストールページ〉〈`/long` は縦 3000px、`/offset` は html に余白〉・起動・画素の読み取り `readMain` / `screenPixel`・`scrollTo`）、`test/bench.mjs`、`test/pop.mjs`（npm run pop）、`test/predict.mjs`（npm run predict。録った入力を処理した順にたどり、そのとき本体が知っている点から、なし・ブラウザ（本体での使い方）・曲がりに沿う（ownPred と同じ計算。値を変えたら両方そろえる）・直線を、1 フレーム後のペン先とのずれ・はみ出し・消える長さで比べる。負荷の様子と、予測線を消す判定の前と今の点滅の数も出す。analyze と ownPred を export している）
+- `test/paint.test.mjs`（テスト 75 件）、`test/helpers.mjs`（既定を埋め込んだコードを作る `withDefaults` と直接起動する `runCode`、サーバー〈`/install` はビルドしたインストールページ〉〈`/long` は縦 3000px、`/offset` は html に余白〉・起動・画素の読み取り `readMain` / `screenPixel`・`scrollTo`）、`test/bench.mjs`、`test/pop.mjs`（npm run pop）、`test/predict.mjs`（npm run predict。録った入力を処理した順にたどり、そのとき本体が知っている点から、なし・ブラウザ（本体での使い方）・曲がりに沿う（ownPred と同じ計算。値を変えたら両方そろえる）・直線を、1 フレーム後のペン先とのずれ・はみ出し・消える長さで比べる。負荷の様子と、予測線を消す判定の前と今の点滅の数も出す。analyze と ownPred を export している）
 - `.github/workflows/pages.yml`: main へのプッシュでテストしてから docs/ を Pages に公開。PR ではテストだけ
 - `.claude/`: CLAUDE.md（概要と読み込み）、`rules/`（tasks / handoff / human）、TASKS.md、HANDOFF.md、HANDOFF-simple.md（Simple だけのこと。T-095）、Stop フック（`hooks/check-handoff.mjs`）
 - `.human/`: ユーザーとの非同期のやりとり。`ideas/`（ユーザーのアイデア、1 件 1 ファイル）、`requests.md`（Claude からの判断・作業のお願い）
@@ -156,6 +156,11 @@ npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、予�
 
 ## 完了ログ（新しい順）
 
+### T-096 （お試し）Simple のペンボタンに、選んでいる色の下線を付ける — 2026-10-17
+- 変更: Simple でペン（と文字）のとき、ペンボタンの下に今の色の下線（3px）を出した。消しゴムのときと本家では出さない。そのままでは青い地に青・白い地に白・暗い見た目で黒が溶けるので、1px の縁（明るい地では薄い黒、青い地と暗い見た目では白）を付けた。README・HANDOFF-simple.md に書いた。版を 1.29.5 にした。ユーザーの「試してみたいこと」（チャット: ペンボタンに、選んでいる色の下線を付けてみる。うまくいきそうな気がしないので、改善を思いつくなら話す）。
+- 確認: テストを 1 件足した（下線の色・色を変えると変わる・文字のときも出る・消しゴムと本家では出ない）。6 色 × 明るい / 暗い × ペン / 文字を選んでいる × 縁なし / 縁ありを並べたスクリーンショットで、縁ありならどの色も見えることを確かめた。`npm test` 75 件が通過。
+- 残課題: お試し。ユーザーが実機で見て、残すか・形を変えるかを決める。
+
 ### T-095 Simple 用の引き継ぎ文書（.claude/HANDOFF-simple.md）を作る — 2026-10-17
 - 変更: Simple の現在地・本家との違い（表）・地図・不変条件・決定事項と理由・研究用ブランチとの関係・落とし穴・経緯を `.claude/HANDOFF-simple.md` にまとめた。HANDOFF.md の Simple の詳しい所（地図・決定事項・落とし穴・検証）は、そこへの案内にした（完了ログは停止フックが見るので HANDOFF.md に残す）。CLAUDE.md に「Simple を触るときは読む」、rules/handoff.md に「Simple のタスクを終えたら更新する」を書いた。自動で読み込むファイルは増やしていない。ユーザーの提案（チャット: Simple 用の Handoff、作ってもいいと思う）。
 - 確認: 停止フックが通ること・HANDOFF.md から Simple の決まりが消えていない（案内が残る）ことを読み直した。コードは変えていない。
@@ -196,17 +201,9 @@ npm run predict -- <paint-input-*.json>  # 録った入力（T-070）で、予�
 - 確認: テストを 2 件足した（CP2 の切り替えと戻し・覚え方・インストールページ。CP2 ブランチのチェックポイント 2 のテストと 2 本指のテストを元にした）。インストールページの組み込みの既定の一致に ui を足した。本家のバー・その他・CP2 のバー・その他をスクリーンショットで確かめた。`npm test` 71 件が通過。
 - 残課題: CP2 ブランチのペンの太さ 6 は移していない（今の太さのまま）。ユーザーの実機での使い心地は未確認。
 
-### T-087 パソコンが重いときに、予測線が点滅しないようにする — 2026-10-17
-- 変更: 予測線を消す判定（止まったとみなす）に、入力が届くまでの遅れ（dl）を足した。止まった点が届き続けている（ペンを止めて押さえている）ときは今まで通り 40 ms で消す。1 フレームの長さ（fi）は、飛んだフレームを何フレーム分かで割ってならすようにした。stats() に pred・frame・inputDelay を足した。`npm run predict` に負荷の様子（フレームの間隔・届くまでの遅れ）と、前の判定と今の判定で予測線が消えたフレームの数を足した。README に書いた。版を 1.28.1 にした。ユーザーの報告（チャット 2026-10-17: 並列でローカルのパソコンを動かしていたら、高負荷時に少し不安定になることがあった。調べられる？）。
-- 確認: ヘッドレスで 3 種類の負荷（ページを止める・ブラウザごと遅れて入力がまとめて届く〈15〜45 ms・15〜75 ms〉）をかけて録画し、点滅の数と止まってから消えるまでの時間を比べた（「決定事項」）。ユーザーの録画（負荷なし）でも点滅が 4 → 0 回ずつ。テストを 1 件足した（前の判定と前の fi の計算では、それぞれ落ちることを確かめた）。`npm test` 69 件が通過。
-- 残課題: ユーザーの環境で同じことが起きていたかは未確認（R-007）。GPU が詰まって desynchronized の canvas の表示が遅れる分は、ヘッドレスでは作れず未確認。
-
-### T-060 人が実際に書く線で、予測の精度を上げる（入力ごとに曲がりに沿って予測する） — 2026-10-17
-- 変更: ペン・蛍光ペンの予測線を、ブラウザの予測（pointermove の getPredictedEvents）から、入力ごと（pointerrawupdate も）に直近の点から求める自前の予測（ownPred。速さ・角速度・減速で 1 フレーム先まで弧に沿う。40px まで、急に曲がるほど短く）にした。止まっている点も予測の点に入れ、止まると予測が縮む。開発用の見た目のパネルとインストールページの開発用に「予測の方法」（曲がりに沿う／ブラウザ）を足した（DEF.ppred。録画の書き出しと stats().prefs にも入る）。`npm run predict` を、本体と同じ計算の自前の予測と、本体での使い方どおりのブラウザの予測で比べる形にし、消える長さを足した。README とインストールページの説明を直した。版を 1.28.0 にした。R-006 を対応済みにした。ユーザーの要望（チャット 2026-10-16: 人が実際に書く線に対する予測精度を上げる取り組みを通して、その改善を取り込みたい）と録画 2 つ（2026-10-17）。
-- 確認: テストを 1 件足した（円を描く途中の予測が接線より内側へ曲がる・止まると縮む。ブラウザの方式では落ちることを確かめた）。開発用の見た目のテストに予測の方法、インストールページの既定の一致に ppred を足した。録画での比べ方と結果は「決定事項」。`npm test` 68 件が通過。`npm run bench` と `npm run pop` の数字は「落とし穴」。
-- 残課題: 録画はマウス 60 Hz の 2 つだけ。ペンタブ・指・Mac などの録画で確かめる（T-086）。ユーザーの実機での見え方は未確認。
-
 ### それより前（1 行に畳んだもの）
+- T-087 パソコンが重いときに予測線が点滅しないようにした（届くまでの遅れ dl を待つ・飛んだフレームで fi を伸ばさない）— 2026-10-17
+- T-060 予測を入力ごとに自前で求め、曲がりに沿って伸ばすようにした（ownPred。ユーザーの録画で、ずれは予測なしの約半分・外れて消える線はブラウザの予測の 4 分の 1。ブラウザの予測は開発用に残した）— 2026-10-17
 - T-070 開発用に、描いた線の入力を録って書き出せるようにした（その他の「入力を録る」「録った入力を書き出す」。`npm run predict`）— 2026-10-16
 - T-069 ガラスの既定を、地の濃さ 80%・彩度 200% にした（ユーザーが見た目〈開発用〉で決めた）— 2026-10-16
 - T-068 ツールバーを引いて動かしても、色と太さのパネルは閉じない（既定）。ほかのパネルは keepPanels（インストールページ）で — 2026-10-16

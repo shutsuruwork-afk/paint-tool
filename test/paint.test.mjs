@@ -2046,6 +2046,33 @@ test('Simple のその他（⋯）は、開いたままツールバーを引い�
   await page.close();
 });
 
+test('（お試し）Simple のペンボタンには今の色の下線が出る。色を変えると変わり、消しゴムのときと本家では出ない（T-096）', async () => {
+  const { page, errors } = await openPage(browser, server.base + '/');
+  await runCode(page, withDefaults(CODE, { dev: true, ui: 'cp2' }));
+  const line = () => shadowEval(page, root => {
+    const b = root.querySelector('.bar').children[0], a = getComputedStyle(b, '::after');
+    return { on: b.classList.contains('pc'), color: a.content === 'none' ? null : a.backgroundColor, h: a.height };
+  });
+  assert.deepEqual(await line(), { on: true, color: 'rgb(229, 57, 53)', h: '3px' });
+  // その他で色を変えると下線も変わる
+  await mouseClick(page, '.bar > [aria-label^="その他"]');
+  await mouseClick(page, '.pn.on [title="色 7"]');
+  assert.equal((await line()).color, 'rgb(30, 136, 229)');
+  // 文字を選んでいても出る（文字の色も同じ）。消しゴムのときは出ない
+  await mouseClick(page, '.bar > [aria-label^="文字"]');
+  assert.equal((await line()).on, true);
+  await page.keyboard.press('e');
+  assert.deepEqual(await line(), { on: false, color: null, h: 'auto' });
+  await page.keyboard.press('p');
+  assert.equal((await line()).on, true);
+  // 本家では出ない
+  await click(page, '[title^="本家に戻す"]');
+  const mainPen = await shadowEval(page, root => root.querySelector('.bar [aria-label^="ペン"]').classList.contains('pc'));
+  assert.equal(mainPen, false);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('文字を入力中に、その上にパネルを開くと、パネルが手前に出る（入力欄の枠・文字・薄い答えはツールバーとパネルの下。T-092）', async () => {
   const { page, errors } = await openPage(browser, server.base + '/');
   await runCode(page, withDefaults(CODE, { ui: 'cp2' }));

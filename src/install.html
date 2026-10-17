@@ -253,7 +253,7 @@ section > .sub + .sub { margin-top: 20px; }
 
 <main class="page">
   <header>
-    <p class="eyebrow">Bookmarklet · v1.29.7 · %%SIZE%%（gzip %%GZIP%%）</p>
+    <p class="eyebrow">Bookmarklet · v1.29.8 · %%SIZE%%（gzip %%GZIP%%）</p>
     <h1>ペイント<br>ブックマークレット</h1>
     <p class="lead">開いているページの上に、<span class="mark">そのまま描ける<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d="M18 40C8 22 52 6 108 7s92 13 84 30-62 20-112 17S4 38 30 16" vector-effect="non-scaling-stroke"/></svg></span>ペイントツールです。ブックマークを押すだけで起動し、拡張機能もアカウントも要りません。入力から線が画面に出るまでの遅延を減らす仕組みを、ブラウザが対応している限りすべて使います。</p>
     <div class="actions">
@@ -289,7 +289,7 @@ section > .sub + .sub { margin-top: 20px; }
 
   <section id="defaults" aria-labelledby="pref-h">
     <h2 id="pref-h">デフォルトの設定</h2>
-    <p>起動したときの色・太さ・ツールバーの位置と、動きを選べます。選ぶと上の「Paint」ボタンの中身が変わるので、選び終えてからブックマークバーへドラッグし直してください（前に入れたブックマークは前の設定のままです）。ツールの「その他 → デフォルトの変更」からも、ここを開けます。</p>
+    <p>起動したときの色・太さ・ツールバーの位置・最初に出す版と、動きを選べます。選ぶと上の「Paint」ボタンの中身が変わるので、選び終えてからブックマークバーへドラッグし直してください（前に入れたブックマークは前の設定のままです）。ツールの「その他 → デフォルトの変更」からも、ここを開けます。</p>
     <form id="prefs" class="prefs" onsubmit="return false">
       <fieldset>
         <legend>色</legend>
@@ -342,6 +342,14 @@ section > .sub + .sub { margin-top: 20px; }
         </div>
       </fieldset>
       <fieldset>
+        <legend>最初に出す版</legend>
+        <div class="choices" id="p-ui" role="radiogroup" aria-label="最初に出す版">
+          <label><input type="radio" name="ui" value="main">本家（すべての道具をツールバーに並べる）</label>
+          <label><input type="radio" name="ui" value="cp2">Simple Preview（バーはペン・文字・元に戻す・その他・閉じるだけ。ペンはいつも普通のペン・太さ 5・濃さ 100%。お試し）</label>
+        </div>
+        <p class="aside">どちらを選んでも、ツールの「その他」でいつでも切り替えられます（本家では「Simple Preview」、Simple Preview では「本家に戻す」）。切り替えると、そのサイトで覚えます。</p>
+      </fieldset>
+      <fieldset>
         <legend>動き</legend>
         <label class="check"><span class="ct"><b>文字に触れる</b><small>ペンなどを選んでいても、文字を押すと選んで動かせ、もう一度押すと書き直せます。切ると、文字の上からでもペンで描けます。</small></span><input type="checkbox" role="switch" id="p-touch"></label>
         <label class="check"><span class="ct"><b>ペンと図形の選択肢を 1 回で出す</b><small>入りにすると、ペンや図形のボタンを 1 回押すだけで種類（ペンの種類・4 つの図形）を選べます。切ると、選んでいるボタンをもう一度押したときに出ます。</small></span><input type="checkbox" role="switch" id="p-once"></label>
@@ -350,12 +358,7 @@ section > .sub + .sub { margin-top: 20px; }
       </fieldset>
       <fieldset>
         <legend>開発用</legend>
-        <label class="check"><span class="ct"><b>開発用の項目をツールの中に出す</b><small>その他（⋯）に「見た目（開発用）」と「Simple（Preview）」が出ます。「見た目（開発用）」では、ツールバーの色（暗い・明るい・好きな色）とガラス、予測の方法、蛍光ペンの予測、半透明の線の描き方をその場で変えられます。気に入ったら「この見た目をデフォルトに」で、このページに持ってこられます。「入力を録る（開発用）」を入れると、ペン・蛍光ペンで描いた線の入力（座標・時刻・筆圧・ブラウザの予測）を録って JSON で書き出せます（予測の精度を、実際に書いた線で測るため。ページの URL は入りません）。「Simple（Preview）」は、シンプル版（チェックポイント 2）の表示に切り替えます（絵はそのまま。Simple のその他の「本家に戻す」で戻ります。切り替えるとそのサイトで覚えます）。</small></span><input type="checkbox" role="switch" id="p-dev"></label>
-        <p class="gdev-h">最初に出す版（Preview）</p>
-        <div class="choices" id="p-ui" role="radiogroup" aria-label="最初に出す版">
-          <label><input type="radio" name="ui" value="main">本家</label>
-          <label><input type="radio" name="ui" value="cp2">Simple（シンプル版〈チェックポイント 2〉。バーはペン・文字・元に戻す・その他・閉じるだけ。ペンはいつも普通のペン・太さ 5・濃さ 100%。その他の「本家に戻す」で戻れる）</label>
-        </div>
+        <label class="check"><span class="ct"><b>開発用の項目をツールの中に出す</b><small>その他（⋯）に「見た目（開発用）」が出ます。「見た目（開発用）」では、ツールバーの色（暗い・明るい・好きな色）とガラス、予測の方法、蛍光ペンの予測、半透明の線の描き方をその場で変えられます。気に入ったら「この見た目をデフォルトに」で、このページに持ってこられます。「入力を録る（開発用）」を入れると、ペン・蛍光ペンで描いた線の入力（座標・時刻・筆圧・ブラウザの予測）を録って JSON で書き出せます（予測の精度を、実際に書いた線で測るため。ページの URL は入りません）。</small></span><input type="checkbox" role="switch" id="p-dev"></label>
         <p class="gdev-h">予測の方法（開発用）</p>
         <div class="choices" id="p-ppred" role="radiogroup" aria-label="予測の方法">
           <label><input type="radio" name="ppred" value="own">曲がりに沿う（入力ごとに、直近の点から速さと曲がりを求める）</label>
@@ -392,6 +395,7 @@ section > .sub + .sub { margin-top: 20px; }
       <li><b>電卓</b>（その他）: 入りにすると、文字に書いた計算式の答えが薄く出て、<kbd>Tab</kbd> で書き込めます。</li>
       <li><b>画面に固定</b>（その他）: 入りにすると、絵はスクロールしても画面の同じ所に留まります（動画や地図の上に描くとき）。切ると、そのとき見えている位置のままページに付き直します。</li>
       <li><b>ページ操作</b>（<kbd>V</kbd>）: 絵を残したまま、下のページをクリック・入力できます。ツールを選ぶと描画に戻ります。</li>
+      <li><b>Simple Preview</b>（その他）: ツールバーをペン・文字・元に戻す・その他・閉じるだけにした、シンプルな表示のお試し版です。ペンのボタンは押すたびに消しゴムと入れ替わり、ペンを選んでいるときは今の色になります。色と全消去はその他にあります。絵はそのままで、その他の「本家に戻す」でいつでも戻れます。</li>
       <li><b>隠す・閉じる</b>: <kbd>−</kbd> か <kbd>Esc</kbd> で絵ごと隠れ、ブックマークレットをもう一度押すと戻ります。<kbd>×</kbd> で閉じると絵も消えますが、8 秒の間は画面の下の「元に戻す」か <kbd>Ctrl</kbd>+<kbd>Z</kbd> で戻せます。</li>
     </ul>
     <div class="sub">

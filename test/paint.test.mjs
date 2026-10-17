@@ -1855,21 +1855,21 @@ test('直線・矢印・楕円と Shift 拘束', async () => {
   await page.close();
 });
 
-test('Simple（Preview。CP2）: 開発用のときだけその他に出て、押すと絵と履歴はそのままで CP2 の表示になる（ペン ⇄ 消しゴム・文字〈電卓は入り〉・元に戻す・その他〈全消去・色・本家に戻す〉・閉じる〈中身は隠す〉）。本家に戻せ、サイトごとに覚える（T-088）', async () => {
+test('Simple Preview（CP2）: 開発用でなくてもその他の最後に出て（T-101）、押すと絵と履歴はそのままで CP2 の表示になる（ペン ⇄ 消しゴム・文字〈電卓は入り〉・元に戻す・その他〈全消去・色・本家に戻す〉・閉じる〈中身は隠す〉）。本家に戻せ、サイトごとに覚える（T-088）', async () => {
   const bar = page => shadowEval(page, root => [...root.querySelector('.bar').children].filter(e => e.classList.contains('b'))
     .map(b => b.title.split(/[ （(]/)[0] + (b.classList.contains('on') ? '*' : '')));
   const menu = page => shadowEval(page, root => [...root.querySelector('[title^="全消去"]').parentElement.children]
     .map(e => e.classList.contains('mi') ? e.querySelector('span').textContent : e.querySelectorAll('.c').length + ' 色'));
   const toast = page => shadowEval(page, root => { const t = root.querySelector('.t'); return t.classList.contains('on') ? t.textContent : ''; });
   const MAIN = ['選択', 'ペン*', '蛍光ペン', '消しゴム', '直線', '文字', '塗りつぶし', '色・太さ・濃さ', '元に戻す', 'やり直す', 'ページ操作モード', 'その他', '隠す', '閉じる'];
-  // 開発用でなければ、その他に出ない
-  const { page: p0 } = await fresh();
-  assert.ok(!(await menu(p0)).includes('Simple（Preview）'));
+  // 開発用でなくても、その他の最後に出る（T-101）。開発用なら開発用の項目の後
+  const { page: p0 } = await openPage(browser, server.base + '/');
+  await runCode(p0, withDefaults(CODE, { dev: true }));
+  assert.equal((await menu(p0)).at(-1), 'Simple Preview');
   await p0.close();
-  const { page, errors } = await openPage(browser, server.base + '/');
-  await runCode(page, withDefaults(CODE, { dev: true }));
+  const { page, errors } = await fresh();
   assert.deepEqual(await bar(page), MAIN);
-  assert.equal((await menu(page)).at(-1), 'Simple（Preview）');
+  assert.equal((await menu(page)).at(-1), 'Simple Preview');
   await drag(page, [[100, 300], [400, 320]], 10);
   const sum = await checksum(page);
   // 切り替える: 絵と履歴はそのまま。お知らせには「本家に戻す」が付く。CP2 にない道具（塗りつぶし）を選んでいたらペンになる（T-089）
@@ -1880,7 +1880,7 @@ test('Simple（Preview。CP2）: 開発用のときだけその他に出て、�
   assert.equal((await prefs(page)).ui, 'cp2');
   assert.equal(await checksum(page), sum);
   assert.equal((await page.evaluate(() => window.__paintBookmarklet.stats())).history, 1);
-  assert.equal(await toast(page), 'Simple（Preview）にしました本家に戻す');
+  assert.equal(await toast(page), 'Simple Preview にしました本家に戻す');
   // ペンのボタンを押すたびに消しゴムと入れ替わる
   await mouseClick(page, '.bar > [aria-label^="ペン"]');
   assert.deepEqual(await bar(page), ['消しゴム*', '文字', '元に戻す', 'その他', '閉じる']);
@@ -1924,14 +1924,14 @@ test('Simple（Preview。CP2）: 開発用のときだけその他に出て、�
   await page.waitForTimeout(500);
   assert.equal(JSON.parse(await lsGet(page)).ui, 'cp2');
   await page.evaluate(() => window.__paintBookmarklet.destroy());
-  await runCode(page, withDefaults(CODE, { dev: true }));
+  await runCode(page, CODE);
   assert.deepEqual(await bar(page), ['ペン*', '文字', '元に戻す', 'その他', '閉じる']);
   assert.equal(await toast(page), '');
   // 本家に戻す: 本家の表示とメニューに戻り、覚えた分も消える
   await click(page, '[title^="本家に戻す"]');
   assert.deepEqual(await bar(page), MAIN);
   assert.equal(await toast(page), '本家に戻しました');
-  assert.equal((await menu(page)).at(-1), 'Simple（Preview）');
+  assert.equal((await menu(page)).at(-1), 'Simple Preview');
   // CP2 にもある道具（消しゴム・文字）は、切り替えてもそのまま
   for (const [key, want] of [['e', '消しゴム*'], ['t', 'ペン']]) {
     await page.keyboard.press(key);
@@ -1944,20 +1944,22 @@ test('Simple（Preview。CP2）: 開発用のときだけその他に出て、�
   assert.equal(JSON.parse(await lsGet(page) || '{}').ui, undefined);
   assert.deepEqual(errors, []);
   await page.close();
-  // インストールページで最初の版を CP2 にすると、開発用でなくても CP2 で始まり、本家に戻せる（本家のその他には CP2 は出ない）
+  // インストールページで最初の版を CP2 にすると CP2 で始まり、本家に戻せる（本家のその他から、また Simple Preview にできる）
   const { page: p1, errors: e1 } = await openPage(browser, server.base + '/');
   await runCode(p1, withDefaults(CODE, { ui: 'cp2' }));
   assert.deepEqual(await bar(p1), ['ペン*', '文字', '元に戻す', 'その他', '閉じる']);
   assert.deepEqual(await menu(p1), ['全消去', '8 色', '本家に戻す']);
   await click(p1, '[title^="本家に戻す"]');
   assert.deepEqual(await bar(p1), MAIN);
-  assert.ok(!(await menu(p1)).includes('Simple（Preview）'));
+  assert.equal((await menu(p1)).at(-1), 'Simple Preview');
   assert.deepEqual(e1, []);
   await p1.close();
   // インストールページ: 最初の版を選ぶと、ボタンの名前と中身が変わる
   const { page: ip, errors: ie } = await openPage(browser, server.base + '/install');
   assert.equal((await ip.textContent('#bm')).trim(), 'Paint');
   assert.ok(await ip.isChecked('#p-ui input[value="main"]'));
+  // 開発用の節ではなく、ふつうの設定の「最初に出す版」にある（T-101）
+  assert.equal(await ip.evaluate(() => document.querySelector('#p-ui').closest('fieldset').querySelector('legend').textContent), '最初に出す版');
   await ip.check('#p-ui input[value="cp2"]');
   assert.equal((await ip.textContent('#bm')).trim(), 'Paint Simple');
   assert.ok(decodeURIComponent(await ip.getAttribute('#bm', 'href')).includes('{\\"ui\\":\\"cp2\\"}'));

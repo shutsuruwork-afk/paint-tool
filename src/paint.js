@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.29.7';
+  const VERSION = '1.29.8';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -290,10 +290,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const pickOnce = DEF.pickOnce === true;
   // ツールバーを引いて動かしても閉じないパネル: 色と太さ・見た目（開発用）はいつも。keepPanels（インストールページ）ならすべて（T-066・T-068）
   const keepPanels = DEF.keepPanels === true;
-  // 表示の版（T-088）: 本家と CP2（シンプル版のチェックポイント 2。research/simple-cp2 から移した。お試し〈Preview〉。画面では「Simple」と呼ぶ。T-090）。切り替えても絵と履歴はそのままで、
+  // 表示の版（T-088）: 本家と CP2（シンプル版のチェックポイント 2。research/simple-cp2 から移した。お試し〈Preview〉。画面では「Simple Preview」と呼ぶ。T-090・T-101）。切り替えても絵と履歴はそのままで、
   // ツールバーに出す物といくつかの動きだけが変わる（layout）。CP2 は、バーにペン（押すたびに消しゴムと入れ替わる）・文字・元に戻す・その他（全消去・色）・
   // 閉じる（× の見た目で、中身は隠す）だけ。押せるボタンのないお知らせは出さず、電卓はいつも入り、ページ操作モードはなく、タッチは 2 本指でスクロールする。
-  // ほかの道具はキーで使える。開発用のときだけその他から CP2 を試せる（CP2 のその他からは、いつでも本家に戻せる）。
+  // ほかの道具はキーで使える。本家のその他からいつでも CP2 を試せる（T-101 で開発用だけでなくした。CP2 のその他からは、いつでも本家に戻せる）。
   // 最初の版はインストールページ（DEF.ui）で選び、切り替えるとサイトごとに覚える
   const UIS = ['main', 'cp2'], CP2_TOOLS = ['pen', 'eraser', 'text'];
   let cp2 = false;
@@ -652,7 +652,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const hideB = btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hideHint);
   // ここまでが本家のその他。CP2 のその他は、全消去・色（選ぶとメニューを閉じ、消しゴムのときはペンに戻す）・本家に戻す
   const mainMore = [...moreP.children];
-  const [cp2Mi] = item('Simple（Preview） — シンプル版（チェックポイント 2）の表示に切り替える。絵はそのまま。その他の「本家に戻す」で戻る', 'Simple（Preview）', '', I.swap, () => setUi(true));
+  const [cp2Mi] = item('Simple Preview — バーをペン・文字・元に戻すだけにしたシンプルな表示に切り替える。絵はそのまま。その他の「本家に戻す」で戻る', 'Simple Preview', '', I.swap, () => setUi(true));
   const [mainMi] = item('本家に戻す — いつもの表示に戻す。絵はそのまま', '本家に戻す', '', I.swap, () => setUi(false));
   const mcBtns = PALETTE.map((c, i) => {
     const b = btn(`色 ${i + 1}`, null, () => { setColor(c); if (tool === 'eraser') setTool('pen'); closePanel(); }, 'c');
@@ -669,7 +669,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     else bar.replaceChildren(toolBtns.select, penB, toolBtns.marker, toolBtns.eraser, shapeB, toolBtns.text, toolBtns.fill,
       el('div', 'sep brk'), styleB, sep(), undoB, redoB, sep(), passB, moreB, sep(), hideB, closeB); // 1 段に収まらないときは .brk で段を分ける（.two .brk。T-064・T-067）
     bar.append(shapeP, penP, styleP, moreP, lookP, ci, lci);
-    moreP.replaceChildren(...(cp2 ? [clrMi, mcRow, mainMi] : dev ? [...mainMore, cp2Mi] : mainMore));
+    moreP.replaceChildren(...(cp2 ? [clrMi, mcRow, mainMi] : [...mainMore, cp2Mi]));
     moreB.title = MORE_T[+cp2];
     moreB.setAttribute('aria-label', MORE_T[+cp2]);
     penB.classList.toggle('dd', !cp2);
@@ -694,7 +694,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (barMoved) moveBar(barX, barY); else placeBar();
     updateGhost();
     remember();
-    if (on) say('Simple（Preview）にしました', 4000, '本家に戻す', () => setUi(false));
+    if (on) say('Simple Preview にしました', 4000, '本家に戻す', () => setUi(false));
     else say('本家に戻しました');
   }
 

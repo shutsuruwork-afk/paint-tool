@@ -2383,7 +2383,8 @@ test('描いている途中に 2 本目の指を置くと、それまでの線�
   await page.goto(server.base + '/long');
   await runCode(page, CODE);
   const cdp = await page.context().newCDPSession(page);
-  const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], id) => ({ x, y, id })) });
+  // 指の番号は、3 つ目に書けばそれ、なければ並びの順。CDP の touchEnd は並べた指を離し、離した番号で touchMove を送ると新しい指が置かれる
+  const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y, id], i) => ({ x, y, id: id ?? i })) });
   const hist = () => page.evaluate(() => window.__paintBookmarklet.stats().history);
   // 1 本指で 300 ms ほど右へ 120px 描いてから、2 本目を置いて 2 本とも上へ 200px
   await touch('touchStart', [[100, 500]]);
@@ -2391,10 +2392,10 @@ test('描いている途中に 2 本目の指を置くと、それまでの線�
   await touch('touchStart', [[220, 500], [300, 500]]);
   for (let i = 1; i <= 10; i++) { await touch('touchMove', [[220, 500 - i * 20], [300, 500 - i * 20]]); await page.waitForTimeout(16); }
   await page.waitForTimeout(150);
-  await touch('touchEnd', [[220, 300]]);
-  // 片方を離しても、残りの指では描かない
-  for (let i = 1; i <= 5; i++) await touch('touchMove', [[220 + i * 10, 300]]);
-  await touch('touchEnd', []);
+  await touch('touchEnd', [[220, 300, 0]]);
+  // 片方を離しても、残りの指（2 本目）では描かない
+  for (let i = 1; i <= 5; i++) await touch('touchMove', [[300 + i * 10, 300, 1]]);
+  await touch('touchEnd', [[350, 300, 1]]);
   await page.waitForTimeout(150);
   assert.equal(await page.evaluate(() => scrollY), 200);
   assert.equal(await hist(), 1, 'the line drawn before the scroll is kept');
@@ -2410,6 +2411,32 @@ test('描いている途中に 2 本目の指を置くと、それまでの線�
   await touch('touchEnd', []);
   await page.waitForTimeout(150);
   assert.equal(await hist(), 1);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('2 本指でスクロールしている間に 3 本目の指（iPad の手のひらなど）が触れても、線を描かない。2 本を離した後に残った 3 本目の指でも描かない（T-122）', async () => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 700 }, isMobile: true, hasTouch: true });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(server.base + '/long');
+  await runCode(page, CODE);
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y, id]) => ({ x, y, id })) });
+  await touch('touchStart', [[150, 500, 0]]);
+  await touch('touchStart', [[150, 500, 0], [250, 500, 1]]);
+  for (let i = 1; i <= 5; i++) await touch('touchMove', [[150, 500 - i * 10, 0], [250, 500 - i * 10, 1]]);
+  // 3 本目の指を置いて、2 本と一緒に動かす
+  await touch('touchStart', [[150, 450, 0], [250, 450, 1], [100, 600, 2]]);
+  for (let i = 1; i <= 8; i++) await touch('touchMove', [[150, 450 - i * 10, 0], [250, 450 - i * 10, 1], [100 + i * 20, 600, 2]]);
+  await page.waitForTimeout(150);
+  // スクロールの 2 本を離してから、残った 3 本目の指を動かして離す（CDP の touchEnd は、並べた指を離す）
+  await touch('touchEnd', [[150, 370, 0], [250, 370, 1]]);
+  for (let i = 1; i <= 5; i++) await touch('touchMove', [[260, 600 - i * 20, 2]]);
+  await touch('touchEnd', [[260, 500, 2]]);
+  await page.waitForTimeout(150);
+  assert.equal(await page.evaluate(() => scrollY), 130);
+  assert.equal(await page.evaluate(() => window.__paintBookmarklet.stats().history), 0, 'the third finger did not draw');
   assert.deepEqual(errors, []);
   await page.close();
 });

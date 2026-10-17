@@ -1309,7 +1309,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (e.isPrimary) { tI0 = tI1 = -1; scr = 0; } // 新しいタッチの始まり（離したことを取りこぼしていても数え直す）
     if (tI0 === -1) { tI0 = id; tX0 = e.clientX; tY0 = e.clientY; }
     else if (tI1 === -1) { tI1 = id; tX1 = e.clientX; tY1 = e.clientY; }
-    else return;
+    else { if (scr) { e.preventDefault(); e.stopImmediatePropagation(); } return; } // 3 本目の指（iPad の手のひらなど）は、スクロールの間は描かない（T-122）
     if (flung && !scr && tI1 === -1) scr = 2; // 滑っているのを止めた指は、離すまで描かない
     if (tI0 === -1 || tI1 === -1) { if (!scr) return; }
     else if (act === -1 || aType === 'touch') {

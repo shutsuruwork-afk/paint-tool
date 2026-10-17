@@ -1358,7 +1358,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   function onDown(e) {
     const type = e.pointerType, pen = type === 'pen';
-    if (pen) lastPen = e.timeStamp;
+    // ペンが触れたら、手のひらで待っているタッチの塗りつぶし・文字は取り消す（離したときに行うので、ペンの後に手のひらで塗っていた。T-123）
+    if (pen) { lastPen = e.timeStamp; tapId = -1; }
     if (act !== -1) {
       // パームリジェクション: タッチで描画中にペンが触れたら、タッチの線を破棄してペンを優先
       if (pen && aType === 'touch') abortStroke();
@@ -1861,7 +1862,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 
   function onUp(e) {
     if (e.pointerType === 'pen') lastPen = e.timeStamp; // ペンを離した直後に手のひらが触れても描かない
-    if (e.pointerId === tapId) { tapId = -1; tapAct(tapT, tapX, tapY, tapCX, tapCY); return; }
+    if (e.pointerId === tapId) { tapId = -1; if (e.timeStamp - lastPen >= 500) tapAct(tapT, tapX, tapY, tapCX, tapCY); return; } // 置いている間にペンが近づいたら手のひら（T-123）
     if (e.pointerId !== act) return;
     onMove(e);
     endStroke();
@@ -2657,6 +2658,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
 
   function textAt(cx, cy, value) {
+    commitText(); // 前の入力欄が残っていれば確定する（別のポインタで出した物が、確定されずに残らないように。T-123）
     if (!value) { taFs = CFG.text.size; taC = color; taA = CFG.text.alpha; }
     ta = el('textarea', 'tx', { spellcheck: 'false', wrap: 'off', rows: '1', 'aria-label': '文字' });
     taX = cx; taCY = cy; // クリックした点が 1 行目の高さの中央になるように置く

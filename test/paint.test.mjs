@@ -1883,6 +1883,45 @@ test('パームリジェクション: タッチ中にペンが触れるとタッ
   await page.close();
 });
 
+test('パームリジェクション（塗りつぶし・文字）: 手のひらが先に触れてからペンで描いても、手のひらを離したときに塗らず、入力欄も 2 つにならない。手のひらを置いている間にペンが近づいても同じ（T-123）', async () => {
+  for (const key of ['f', 't']) {
+    const { page, errors } = await fresh();
+    await page.keyboard.press(key);
+    // 手のひら → ペンで押して離す → 手のひらを離す
+    await firePointer(page, 'pointerdown', { pointerId: 41, pointerType: 'touch', clientX: 200, clientY: 200, button: 0, buttons: 1 });
+    await firePointer(page, 'pointerdown', { pointerId: 42, pointerType: 'pen', pressure: 0.5, clientX: 600, clientY: 400, button: 0, buttons: 1 });
+    await firePointer(page, 'pointerup', { pointerId: 42, pointerType: 'pen', clientX: 600, clientY: 400, button: 0, buttons: 0 });
+    await firePointer(page, 'pointerup', { pointerId: 41, pointerType: 'touch', clientX: 200, clientY: 200, button: 0, buttons: 0 });
+    await page.waitForTimeout(50);
+    const inputs = () => shadowEval(page, root => root.querySelectorAll('.tx').length);
+    if (key === 'f') assert.equal(await hist(page), 1, 'only the pen filled');
+    else {
+      assert.equal(await inputs(), 1, 'one text input (from the pen)');
+      await page.keyboard.press('Escape'); // ペンで出した入力欄を閉じる（空なので何も残らない）
+    }
+    // 手のひらを置いている間に、ペンが触れずに近づく（ホバー）
+    const h0 = await hist(page);
+    await firePointer(page, 'pointerdown', { pointerId: 43, pointerType: 'touch', clientX: 300, clientY: 500, button: 0, buttons: 1 });
+    await firePointer(page, 'pointermove', { pointerId: 44, pointerType: 'pen', clientX: 650, clientY: 450, button: -1, buttons: 0 });
+    await firePointer(page, 'pointerup', { pointerId: 43, pointerType: 'touch', clientX: 300, clientY: 500, button: 0, buttons: 0 });
+    await page.waitForTimeout(50);
+    assert.equal(await hist(page), h0, 'the palm did not fill');
+    assert.equal(await inputs(), 0, 'the palm did not open a text input');
+    if (key === 't') {
+      // 指を置いている間に、別のポインタ（マウス）で入力欄を出して打ってから指を離すと、打った文字は確定し、入力欄は 1 つ
+      await page.waitForTimeout(600); // ペンが離れてから 500 ms 以内のタッチは手のひらとして無視されるので待つ
+      await firePointer(page, 'pointerdown', { pointerId: 45, pointerType: 'touch', clientX: 300, clientY: 300, button: 0, buttons: 1 });
+      await page.mouse.click(600, 200);
+      await page.keyboard.type('ab');
+      await firePointer(page, 'pointerup', { pointerId: 45, pointerType: 'touch', clientX: 300, clientY: 300, button: 0, buttons: 0 });
+      assert.equal(await inputs(), 1);
+      assert.equal(await page.evaluate(() => window.__paintBookmarklet.stats().texts), 1, 'the text typed with the mouse is committed');
+    }
+    assert.deepEqual(errors, []);
+    await page.close();
+  }
+});
+
 test('描画中の入力はページ側のリスナーに伝播しない', async () => {
   const { page } = await fresh();
   await page.evaluate(() => {

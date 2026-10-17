@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.32.2';
+  const VERSION = '1.33.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -58,6 +58,12 @@
   let DEF = null;
   try { DEF = JSON.parse('__PAINT_DEFAULTS__'); } catch (_) { }
   if (!DEF || typeof DEF !== 'object') DEF = {};
+  // iPhone・iPad（WebKit）。iPadOS は Mac と名乗るので、タッチがあるかで見分ける
+  const IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (/Mac/.test(PLAT) && navigator.maxTouchPoints > 1);
+  // スマホ・タブレットで canvas に使ってよい画素数（1 画素 4 バイトで 192 MB）。使いすぎると iOS や Android はページを読み直し（絵は全部消える）、
+  // 新しい canvas が黙って空になることもある。面のタイル・live と pred・プール・履歴の合計をここまでに抑え、超える分は古い手から捨てる（絵そのものは捨てない。T-113）。
+  // DEF.mem（MB）はテスト用で、どの端末でもその値にする。PC は今まで通り（履歴は画面 8 枚分または 200 手）
+  const MEM = +DEF.mem > 0 ? DEF.mem * 25e4 : IOS || /Android/.test(navigator.userAgent) ? 48e6 : 0;
   // 文字に触れる: ペンなどを選んでいても、文字の上を押すと選んで動かし、もう一度押すと書き直せる
   const TOUCH = { pen: 1, marker: 1, line: 1, arrow: 1, rect: 1, ellipse: 1, fill: 1 };
   // ペンの種類。ペンを選んだ状態でペンのボタンをもう一度押すと選べる（あまり使わないので、普段の操作は増やさない）
@@ -358,7 +364,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     ws.setProperty('--gs', look.sat / 100);
   }
   applyLook();
-  let dpr = win.devicePixelRatio || 1, W = 0, H = 0, grpA = 1, pendingFit = false, rz = 0, warmT = 0;
+  let dpr = win.devicePixelRatio || 1, W = 0, H = 0, grpA = 1, pendingFit = false, rz = 0, warmT = 0, shrT = 0;
   let rg = null, rbx = null, rn = 0; // 半透明の線の、描いた部分の形（addPiece）
   // 履歴タイル: ストロークが触れた T×T タイル（面の座標）だけを記録し、確定・undo・消しゴムの退避をその範囲に限定する。
   // 文書は大きいので、印は配列ではなく Set で持つ。番号は 行 × 65536 + 列
@@ -973,19 +979,25 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   toastX.addEventListener('click', () => { if (toastXFn) toastXFn(); });
 
   // ---------- キャンバスのサイズ管理 ----------
-  // live / pred は画面の大きさ。拡大時だけ作り直す（中身は描いている途中の線だけなので引き継がない）
-  function fit() {
+  // live / pred は画面の大きさ。拡大時だけ作り直す（中身は描いている途中の線だけなので引き継がない。引いて大きさを変えている間に何度も作り直さない）。
+  // 回したときなどに面積が 4 分の 3 より小さくなったら、1 秒たってから今の大きさに作り直す（exact。縮めないと、縦横に回すたびに長い辺の正方形になり、
+  // メモリが 2 倍になっていた。T-113）
+  function fit(exact) {
     if (act !== -1) { pendingFit = true; return; }
     pendingFit = false;
     finishHandoff();
     dpr = win.devicePixelRatio || 1;
     const w = ceil(win.innerWidth * dpr), h = ceil(win.innerHeight * dpr);
-    if (w > W || h > H) {
-      W = max(w, W); H = max(h, H);
+    if (exact ? w !== W || h !== H : w > W || h > H) {
+      W = exact ? w : max(w, W); H = exact ? h : max(h, H);
       for (const c of [liveC, predC]) { c.width = W; c.height = H; }
       clearTimeout(warmT);
       warmT = setTimeout(warm, 0);
+      trim();
+      syncHist();
     }
+    clearTimeout(shrT);
+    shrT = w * h > 0 && w * h < W * H * 0.75 ? setTimeout(() => { shrT = 0; fit(true); }, 1000) : 0;
     const cw = W / dpr + 'px', ch = H / dpr + 'px';
     for (const c of [liveC, predC]) { c.style.width = cw; c.style.height = ch; }
     tx0 = ty0 = tx1 = ty1 = 0;
@@ -1050,10 +1062,18 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     hist.push({ R, c, pix, b, t });
     hpos++;
     hpix += pix;
-    // メモリ上限: 画面 8 枚分または 200 手
-    const cap = max(W * H * 8, 3e7);
-    while (hist.length > 1 && (hist.length > 200 || hpix > cap)) { free(hist.shift()); hpos--; }
+    trim();
     syncHist();
+  }
+  // 履歴のほかに canvas が使っている画素数（面のタイル・live と pred・消しゴムの退避のプール）
+  const canvasPix = () => dtiles.size * DT * DT + W * H * 2 + pool.length * T * T;
+  // 履歴の上限: 画面 8 枚分の画素または 200 手。スマホ・タブレットでは、canvas 全体を MEM までに抑えるよう、
+  // MEM からほかの canvas の分を引いた残りまで（絵が大きくても、画面 1 枚分は残す。T-113）。超えたら古い手から捨てる。
+  // 捨てるのは元に戻せる手（hpos より前）だけで、やり直しの並びは崩さない
+  function trim() {
+    let cap = max(W * H * 8, 3e7);
+    if (MEM) cap = max(W * H, min(cap, MEM - canvasPix()));
+    while (hpos > 1 && (hist.length > 200 || hpix > cap)) { free(hist.shift()); hpos--; }
   }
   function free(h) {
     hpix -= h.pix;
@@ -1101,12 +1121,16 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 元に戻すのは新しい手から順なので、入れ替える時はいつも、その場所は全消去の直後と同じ状態になっている
   function swapTiles(h) {
     const D = h.d;
+    let n = 0;
     for (let i = 0; i < D.length; i += 2) {
       const k = D[i], t = D[i + 1], cur = dtiles.get(k) || null;
-      if (cur) cur.c.remove();
+      if (cur) { cur.c.remove(); n++; }
       if (t) { dtiles.set(k, t); sbox.append(t.c); } else dtiles.delete(k);
       D[i + 1] = cur;
     }
+    // 手が持つタイルの数が変わるので、履歴の画素数も合わせる（面に戻したタイルを二重に数えない。T-113）
+    hpix += n * DT * DT - h.pix;
+    h.pix = n * DT * DT;
     grow(h.R);
   }
   // 全消去の手を、ふつうの手（R と 1 枚のアトラス）に直す。画面に固定を切って面をずらすときだけ使う（ずらすとタイルの区切りに合わなくなるため）
@@ -1116,6 +1140,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       const t = D[j + 1];
       if (t) { c.drawImage(t.c, R[i + 4], R[i + 5]); t.c.width = t.c.height = 0; }
     }
+    hpix += R.length / 6 * DT * DT - h.pix;
+    h.pix = R.length / 6 * DT * DT;
     h.c = a;
     h.d = null;
   }
@@ -1155,11 +1181,12 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       if (x < cbx1 && x + DT > cbx0 && y < cby1 && y + DT > cby0) { R.push(x, y, DT, DT, 0, 0); D.push(k, t); }
     }
     if (!R.length && !P.length) return;
+    // 面から外してから積む（積むときの上限の計算で、履歴に移すタイルを二重に数えない。T-113）
+    for (let i = 0; i < D.length; i += 2) { dtiles.delete(D[i]); D[i + 1].c.remove(); }
     push(R, null, null, P.length ? P : null);
     const e = hist[hpos - 1];
     e.clr = true;
     if (D.length) e.d = D;
-    for (let i = 0; i < D.length; i += 2) { dtiles.delete(D[i]); D[i + 1].c.remove(); }
     for (const p of P) tApply(p[0], null);
     cbx0 = cby0 = cbx1 = cby1 = 0;
   }
@@ -2960,7 +2987,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       `入力 ${round(stEv / sec)} ev/s  点 ${((nPts - stP0) / n).toFixed(1)}/ev  予測 ${(stPred / n).toFixed(1)}/ev\n` +
       `処理 ${round(stCost / n * 1000)} µs/ev  入力→描画 ${(stLag / n).toFixed(1)} ms  塗り ${lastFillMs.toFixed(0)} ms\n` +
       `desync ${on(DESYNC)}  rawupdate ${on(HAS_RAW)}  coalesced ${on(HAS_CO)}  予測 ${nativePred ? 'native' : 'fallback'}  ink ${on(inkP)}\n` +
-      `${W}×${H} @${dpr}  面 ${surfW}×${surfH} タイル ${dtiles.size}  履歴 ${hpos}/${hist.length} (${(hpix / 1e6).toFixed(1)} MP)  v${VERSION}`;
+      `${W}×${H} @${dpr}  面 ${surfW}×${surfH} タイル ${dtiles.size}  履歴 ${hpos}/${hist.length} (${(hpix / 1e6).toFixed(1)} MP)  canvas ${round((canvasPix() + hpix) * 4e-6)} MB  v${VERSION}`;
     stEv = stPred = stCost = stLag = 0;
     stT = t;
     stP0 = nPts;
@@ -3094,7 +3121,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // iPhone・iPad（WebKit）では、touch-action: none でもページ自身のスクロールが同時に動くことがあった（LINE の中のブラウザで、2 本指・ツールバー・描く線が震えた。T-107）。
   // 描く面とツールバーの touchmove を止めると、WebKit は Web ビューのなぞる操作（スクロール・拡大）を待たせてから取り消す。タップ（click）は touchend で決まるので押せる。
   // パネルの中（スライダー）は止めない。ほかのブラウザ（Chrome など）では足さない（touch-action で足り、入力の経路を変えないため）
-  if (/iP(hone|ad|od)/.test(navigator.userAgent) || (/Mac/.test(PLAT) && navigator.maxTouchPoints > 1)) {
+  if (IOS) {
     pad.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
     // Safari の拡大縮小の合図（GestureEvent）も止める（2 本指のスクロールが拡大縮小と取り合わないように。T-108）
     for (const t of ['gesturestart', 'gesturechange']) pad.addEventListener(t, e => e.preventDefault(), { passive: false });
@@ -3221,6 +3248,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     finishHandoff();
     // 遅れて動く暖機・リサイズは、キャンバスを 0 にした後で描かないよう止める
     clearTimeout(warmT);
+    clearTimeout(shrT);
     cancelAnimationFrame(rz);
     while (hist.length) free(hist.pop());
     for (const c of [liveC, predC]) c.width = c.height = 0;
@@ -3305,7 +3333,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 
   // ---------- 起動 ----------
   const stats = () => ({
-    width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, selection: sel ? [selX, selY, selW, selH] : null, texts: tlist.length, fixed, history: hist.length, historyPixels: hpix, events: nEv, points: nPts,
+    width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, selection: sel ? [selX, selY, selW, selH] : null, texts: tlist.length, fixed, history: hist.length, historyPixels: hpix, memory: (canvasPix() + hpix) * 4, memoryCap: MEM * 4, events: nEv, points: nPts,
     desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, nativePrediction: nativePred, inkTrail: !!inkP, pred: pn, frame: round(fi * 10) / 10, inputDelay: round(dl * 10) / 10,
     rec: [rec, recS.length, recN],
     prefs: { ...snapPrefs(), bar: [barX, barY], touchText, pickOnce, keepPanels, dev, ...look, ppred, mpred, blend },

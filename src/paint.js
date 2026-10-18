@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.36.1';
+  const VERSION = '1.36.2';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -134,7 +134,7 @@
 .to.gone{opacity:calc(var(--a) * .25)}.to.ed{visibility:hidden}
 .sel i{position:absolute;width:9px;height:9px;margin:-5px 0 0 -5px;box-sizing:border-box;background:#fff;border:1.5px solid #3d7cff;border-radius:2px}
 canvas{position:absolute;left:0;top:0;pointer-events:none}
-.g,.p{position:absolute;inset:0}
+.g,.p{position:absolute;inset:0}.g{will-change:opacity}
 .p{pointer-events:auto;touch-action:none;cursor:crosshair}
 .pass .p{pointer-events:none}
 .bar{position:absolute;left:0;top:0;cursor:grab;display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:4px;max-width:calc(100% - 16px);box-sizing:border-box;background:var(--bb,#202228);border:1px solid #ffffff1f;border-radius:12px;box-shadow:0 6px 24px #0007;pointer-events:auto;touch-action:none;will-change:transform}
@@ -188,7 +188,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 .r output{min-width:30px;color:#e8e9ee;font-variant-numeric:tabular-nums}
 .r.dis{opacity:.3;pointer-events:none}
 .ci{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;border:0;padding:0}
-.t{position:absolute;left:50%;bottom:28px;transform:translateX(-50%);padding:8px 14px;border-radius:8px;background:var(--bb,#202228);box-shadow:0 4px 16px #0007;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap}
+.t{position:absolute;left:50%;bottom:28px;transform:translateX(-50%);padding:8px 14px;border-radius:8px;background:var(--bb,#202228);box-shadow:0 4px 16px #0007;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap;will-change:opacity}
 .t.on{opacity:1}
 .t button{all:unset;display:none;margin:-4px -8px -4px 10px;padding:4px 8px;border-radius:6px;color:#8fb3ff;font-weight:600;cursor:pointer}
 .t button:hover{background:#ffffff1a}.t button:focus-visible{outline:2px solid #3d7cff}

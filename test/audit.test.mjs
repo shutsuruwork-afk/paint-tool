@@ -279,3 +279,35 @@ test('線の終わり（pointerup・pointercancel）が届かずに描いてい�
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('線を確定するたびに（受け渡しで描いている途中の線を隠す・戻す）、ページ全体を描き直さない（T-119）', async () => {
+  const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(server.base + '/');
+  await runCode(page, CODE);
+  await page.waitForTimeout(2300); // the start-up notice fades out first
+  const stroke = async (ox, oy) => {
+    await page.mouse.move(ox, oy); await page.mouse.down();
+    for (let i = 1; i <= 12; i++) await page.mouse.move(ox + i * 6, oy + i * 4);
+    await page.mouse.up();
+    await frames(page, 4);
+  };
+  // the first strokes make the tiles and enable the undo button (those do paint)
+  for (let s = 0; s < 3; s++) await stroke(200 + s * 120, 300);
+  await page.waitForTimeout(200);
+  const cdp = await browser.newBrowserCDPSession();
+  const evs = [];
+  cdp.on('Tracing.dataCollected', d => evs.push(...d.value));
+  const done = new Promise(r => cdp.once('Tracing.tracingComplete', r));
+  await cdp.send('Tracing.start', { traceConfig: { includedCategories: ['devtools.timeline'] } });
+  for (let s = 0; s < 6; s++) await stroke(200 + (s % 3) * 120, 300);
+  await page.waitForTimeout(200);
+  await cdp.send('Tracing.end');
+  await done;
+  const paints = evs.filter(e => e.name === 'Paint' && e.ph === 'X').length;
+  assert.equal(await hist(page), 9);
+  assert.ok(paints <= 1, `Paint events: ${paints} (v1.36.1: 4 per stroke)`);
+  assert.deepEqual(errors, []);
+  await page.close();
+});

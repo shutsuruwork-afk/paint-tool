@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.33.0';
+  const VERSION = '1.34.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -1064,6 +1064,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     hpix += pix;
     trim();
     syncHist();
+    zSoon();
   }
   // 履歴のほかに canvas が使っている画素数（面のタイル・live と pred・消しゴムの退避のプール）
   const canvasPix = () => dtiles.size * DT * DT + W * H * 2 + pool.length * T * T;
@@ -1078,7 +1079,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function free(h) {
     hpix -= h.pix;
     if (h.c) h.c.width = h.c.height = 0;
-    if (h.d) for (let i = 1; i < h.d.length; i += 2) if (h.d[i]) h.d[i].c.width = h.d[i].c.height = 0;
+    if (h.d) for (let i = 1; i < h.d.length; i += 2) if (h.d[i]) { h.d[i].c.width = h.d[i].c.height = 0; h.d[i].z = null; }
+    h.z = null;
   }
   // 矩形群を棚詰め (shelf packing) で 1 枚のアトラスに配置し、その大きさのキャンバスを返す
   function pack(R) {
@@ -1105,6 +1107,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   const rect1 = (x, y, w, h) => [x, y, w, h, 0, 0];
   function swap(h) {
+    // 縮めてある手は、その場で canvas に戻してから入れ替える（T-114）
+    if (h.z) { unz(h, h.zw, h.zh); hpix += rArea(h.R) - h.pix; h.pix = rArea(h.R); }
+    h.nz = 0;
     const R = h.R, src = h.c, cur = gather(R, newCanvas(src.width, src.height));
     grow(R);
     for (let i = 0; i < R.length; i += 6) {
@@ -1124,8 +1129,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     let n = 0;
     for (let i = 0; i < D.length; i += 2) {
       const k = D[i], t = D[i + 1], cur = dtiles.get(k) || null;
-      if (cur) { cur.c.remove(); n++; }
-      if (t) { dtiles.set(k, t); sbox.append(t.c); } else dtiles.delete(k);
+      if (cur) { cur.c.remove(); cur.nz = 0; n++; }
+      if (t) { if (t.z) unz(t, DT, DT); dtiles.set(k, t); sbox.append(t.c); } else dtiles.delete(k);
       D[i + 1] = cur;
     }
     // 手が持つタイルの数が変わるので、履歴の画素数も合わせる（面に戻したタイルを二重に数えない。T-113）
@@ -1138,7 +1143,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const R = h.R, D = h.d, a = pack(R), c = a.getContext('2d');
     for (let i = 0, j = 0; i < R.length; i += 6, j += 2) {
       const t = D[j + 1];
-      if (t) { c.drawImage(t.c, R[i + 4], R[i + 5]); t.c.width = t.c.height = 0; }
+      if (t && t.z) c.putImageData(unzIm(t.z, DT, DT), R[i + 4], R[i + 5]);
+      else if (t) c.drawImage(t.c, R[i + 4], R[i + 5]);
+      if (t) { t.c.width = t.c.height = 0; t.z = null; }
     }
     hpix += R.length / 6 * DT * DT - h.pix;
     h.pix = R.length / 6 * DT * DT;
@@ -1156,6 +1163,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     finishHandoff();
     swapAll(hist[--hpos]);
     syncHist();
+    zSoon();
   }
   function redo() {
     settle();
@@ -1163,6 +1171,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     finishHandoff();
     swapAll(hist[hpos++]);
     syncHist();
+    zSoon();
   }
   // 全消去はページ全体（見えていない所も含む）。元に戻せるように、描いた範囲に掛かるタイルの canvas そのものを履歴に移して面から外す（写さない）。
   // アトラスに写すと、タイルが多いとき（3x の長いページなど）に canvas の大きさの上限（iOS は 8192²）を超えて黙って空になり、元に戻しても絵が戻らなかった。写す GPU とメモリも要らない
@@ -1201,6 +1210,116 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       for (let i = 3; i < d.length; i += 4) if (d[i]) return true;
     }
     return false;
+  }
+
+  // ---------- 履歴の圧縮（T-114） ----------
+  // 元に戻す・やり直すの近く（hpos の前後 ZHOT 手）は canvas のまま持ち、すぐ戻せるようにする。それより遠い手は、1 秒何もしなかったときに
+  // 1 つずつ（アトラスか全消去のタイル 1 枚）画素を読み出し、同じ画素の続きをまとめた形（zEnc）に縮めて canvas の中身を手放す。
+  // 元に戻すときは、その場で canvas に戻す（unz。待ちはなく、数 ms）。画質は変わらない。大きな物は約 1 MB（ZSTRIP）の帯に分け、
+  // 30 ms おきに 1 帯ずつ読むので、描き始めを待たせない。帯は毎回別の canvas に写してから読む（同じ canvas を何度も読むと、
+  // Chrome がページのコンソールに警告を出す）。読み出した画素がそのまま戻らない環境（指紋対策で読み出しに揺らぎを足すブラウザなど）では縮めない（zProbe）
+  const ZHOT = 4, ZSTRIP = 1 << 18;
+  let zT = 0, zOK = -1, zJob = null; // zOK: 読み出しがそのまま戻るか（-1 はまだ調べていない）。zJob: 縮めている途中の物
+  const zSoon = () => { clearTimeout(zT); zT = setTimeout(compact, 1000); };
+  // 縮めてある物の数（アトラスと全消去のタイル）。HUD と stats 用
+  const zipped = () => { let n = 0; for (const h of hist) { if (h.z) n++; if (h.d) for (let j = 1; j < h.d.length; j += 2) if (h.d[j] && h.d[j].z) n++; } return n; };
+  const rArea = R => { let a = 0; for (let i = 0; i < R.length; i += 6) a += R[i + 2] * R[i + 3]; return a; };
+  function compact() {
+    zT = 0;
+    if (act !== -1) return; // 描いている間はしない（描き終わりの stopStroke でまた 1 秒待つ）
+    if (zOK < 0) zOK = zProbe();
+    if (!zOK || !(zJob || (zJob = zNext()))) return;
+    zStep();
+    zT = setTimeout(compact, 30);
+  }
+  // 次に縮める物: 元に戻す・やり直すから遠い手のアトラスか、全消去の手のタイル。小さい物（4096 画素未満）は縮めない
+  function zNext() {
+    for (let i = 0; i < hist.length; i++) {
+      if (i >= hpos - ZHOT && i < hpos + ZHOT) continue;
+      const h = hist[i];
+      if (h.c && !h.z && !h.nz && h.c.width * h.c.height >= 4096) return zJ(h, -1, h, h.c.width, h.c.height);
+      if (h.d) for (let j = 1; j < h.d.length; j += 2) { const t = h.d[j]; if (t && !t.z && !t.nz) return zJ(h, j, t, DT, DT); }
+    }
+    return null;
+  }
+  const zJ = (h, j, o, w, hh) => { o.nz = 1; return { h, j, o, c: o.c, w, hh, y: 0, parts: [], n: 0 }; };
+  // 1 帯を読んで縮める。読み終えたら o.z に持って canvas の中身を手放し、履歴の画素数を合わせる。縮まない物（鉛筆のかすれだらけなど）は canvas のまま（nz）
+  function zStep() {
+    const J = zJob, { h, j, o, c, w, hh } = J;
+    // 途中で入れ替えた（元に戻す・やり直す）・捨てた物はやめる
+    if (o.c !== c || c.width !== w || (j >= 0 && (!h.d || h.d[j] !== o))) { zJob = null; return; }
+    const r = min(max(1, floor(ZSTRIP / w)), hh - J.y), s = newCanvas(w, r), x = s.getContext('2d');
+    x.drawImage(c, 0, J.y, w, r, 0, 0, w, r);
+    const z = zEnc(new Uint32Array(x.getImageData(0, 0, w, r).data.buffer));
+    s.width = s.height = 0;
+    if (!z) { zJob = null; return; }
+    J.parts.push(z);
+    J.n += z.length;
+    if ((J.y += r) < hh) return;
+    zJob = null;
+    const all = new Uint32Array(J.n);
+    for (let i = 0, p = 0; i < J.parts.length; p += J.parts[i++].length) all.set(J.parts[i], p);
+    c.width = c.height = 0;
+    o.z = all; o.zw = w; o.zh = hh; o.nz = 0;
+    const was = j >= 0 ? DT * DT : h.pix;
+    hpix += J.n - was;
+    h.pix += J.n - was;
+  }
+  // 同じ画素が 3 つ以上続く所は [個数 × 2 + 1, 画素]、それ以外は [個数 × 2, 画素…]。元の半分より大きくなるなら null
+  function zEnc(px) {
+    const n = px.length, cap = n >> 1, out = new Uint32Array(cap + 4);
+    let o = 0, i = 0;
+    while (i < n) {
+      if (o > cap) return null;
+      const v = px[i];
+      let j = i + 1;
+      while (j < n && px[j] === v) j++;
+      if (j - i >= 3) { out[o++] = (j - i) * 2 + 1; out[o++] = v; i = j; continue; }
+      const hd = o++;
+      let k = i;
+      while (k < n && o <= cap) {
+        let r = k + 1;
+        while (r < n && r - k < 3 && px[r] === px[k]) r++;
+        if (r - k >= 3) break;
+        out[o++] = px[k++];
+      }
+      out[hd] = (k - i) * 2;
+      i = k;
+    }
+    return o > cap ? null : out.slice(0, o);
+  }
+  function unzIm(z, w, h) {
+    const im = new ImageData(w, h), px = new Uint32Array(im.data.buffer);
+    for (let q = 0, p = 0; q < z.length;) {
+      const v = z[q++], c = v >>> 1;
+      if (v & 1) px.fill(z[q++], p, p + c);
+      else { px.set(z.subarray(q, q + c), p); q += c; }
+      p += c;
+    }
+    return im;
+  }
+  // 縮めた画素を canvas に戻す（同期）
+  function unz(o, w, h) {
+    o.c.width = w; o.c.height = h;
+    o.c.getContext('2d').putImageData(unzIm(o.z, w, h), 0, 0);
+    o.z = null;
+  }
+  // 読み出した画素が、書き戻してもう一度読んでもそのままか（半透明の画素の往復と、不透明の画素に揺らぎが足されないか）。
+  // 同じ canvas を 2 回読むと Chrome が警告を出すので、2 枚に分ける
+  function zProbe() {
+    try {
+      const a = newCanvas(64, 64).getContext('2d'), b = newCanvas(64, 64).getContext('2d'), im = a.createImageData(64, 64), d = im.data;
+      for (let i = 0; i < 4096; i++) {
+        const u = i * 37 & 255;
+        d[i * 4] = u; d[i * 4 + 1] = 255 - u; d[i * 4 + 2] = u * 7 & 255; d[i * 4 + 3] = i < 2048 ? 255 : i % 255 + 1;
+      }
+      a.putImageData(im, 0, 0);
+      const r1 = a.getImageData(0, 0, 64, 64);
+      b.putImageData(r1, 0, 0);
+      const r2 = b.getImageData(0, 0, 64, 64).data;
+      for (let i = 0; i < r2.length; i++) if (r2[i] !== r1.data[i] || (i < 8192 && r1.data[i] !== d[i])) return 0;
+      return 1;
+    } catch (_) { return 0; }
   }
 
   // ---------- 画面に固定（動画や地図の上に描く用。その他のメニューで切り替える） ----------
@@ -1938,6 +2057,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     cancelAnimationFrame(raf);
     raf = 0; pn = 0;
     try { if (pad.hasPointerCapture(id)) pad.releasePointerCapture(id); } catch (_) { }
+    zSoon(); // 履歴の圧縮は、描き終わってから 1 秒待つ（T-114）
   }
 
   function endStroke() {
@@ -2987,7 +3107,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       `入力 ${round(stEv / sec)} ev/s  点 ${((nPts - stP0) / n).toFixed(1)}/ev  予測 ${(stPred / n).toFixed(1)}/ev\n` +
       `処理 ${round(stCost / n * 1000)} µs/ev  入力→描画 ${(stLag / n).toFixed(1)} ms  塗り ${lastFillMs.toFixed(0)} ms\n` +
       `desync ${on(DESYNC)}  rawupdate ${on(HAS_RAW)}  coalesced ${on(HAS_CO)}  予測 ${nativePred ? 'native' : 'fallback'}  ink ${on(inkP)}\n` +
-      `${W}×${H} @${dpr}  面 ${surfW}×${surfH} タイル ${dtiles.size}  履歴 ${hpos}/${hist.length} (${(hpix / 1e6).toFixed(1)} MP)  canvas ${round((canvasPix() + hpix) * 4e-6)} MB  v${VERSION}`;
+      `${W}×${H} @${dpr}  面 ${surfW}×${surfH} タイル ${dtiles.size}  履歴 ${hpos}/${hist.length} (${(hpix / 1e6).toFixed(1)} MP、縮めた ${zipped()})  canvas ${round((canvasPix() + hpix) * 4e-6)} MB  v${VERSION}`;
     stEv = stPred = stCost = stLag = 0;
     stT = t;
     stP0 = nPts;
@@ -3249,6 +3369,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     // 遅れて動く暖機・リサイズは、キャンバスを 0 にした後で描かないよう止める
     clearTimeout(warmT);
     clearTimeout(shrT);
+    clearTimeout(zT);
     cancelAnimationFrame(rz);
     while (hist.length) free(hist.pop());
     for (const c of [liveC, predC]) c.width = c.height = 0;
@@ -3333,7 +3454,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 
   // ---------- 起動 ----------
   const stats = () => ({
-    width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, selection: sel ? [selX, selY, selW, selH] : null, texts: tlist.length, fixed, history: hist.length, historyPixels: hpix, memory: (canvasPix() + hpix) * 4, memoryCap: MEM * 4, events: nEv, points: nPts,
+    width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, selection: sel ? [selX, selY, selW, selH] : null, texts: tlist.length, fixed, history: hist.length, historyPixels: hpix, historyZipped: zipped(), memory: (canvasPix() + hpix) * 4, memoryCap: MEM * 4, events: nEv, points: nPts,
     desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, nativePrediction: nativePred, inkTrail: !!inkP, pred: pn, frame: round(fi * 10) / 10, inputDelay: round(dl * 10) / 10,
     rec: [rec, recS.length, recN],
     prefs: { ...snapPrefs(), bar: [barX, barY], touchText, pickOnce, keepPanels, dev, ...look, ppred, mpred, blend },

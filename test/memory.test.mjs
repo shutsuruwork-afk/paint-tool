@@ -131,3 +131,130 @@ test('画面を回して大きくなった live / pred は、1 秒たつと今�
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+// T-114: 元に戻す・やり直すから遠い手は、何もしていないときに縮める
+const hash = page => page.evaluate(() => {
+  const d = window.__paintBookmarklet.pixels(0, 0, innerWidth, innerHeight).data;
+  let h = 2166136261;
+  for (let i = 0; i < d.length; i++) h = Math.imul(h ^ d[i], 16777619);
+  return h >>> 0;
+});
+// ペンと蛍光ペン（半透明）を重ねて n 本描き、描く前と 1 本ごとの画面の画素の hash を返す
+async function strokes(page, n) {
+  const snaps = [await hash(page)];
+  for (let i = 0; i < n; i++) {
+    await page.evaluate(t => window.__paintBookmarklet.tool(t), i % 3 === 2 ? 'marker' : 'pen');
+    await page.evaluate(c => window.__paintBookmarklet.color(c), COLORS[i % 7]);
+    const pts = [];
+    for (let k = 0; k <= 12; k++) pts.push([40 + k * 25, 120 + i * 30 + 40 * Math.sin(k / 2 + i)]);
+    await page.mouse.move(...pts[0]);
+    await page.mouse.down();
+    for (const p of pts.slice(1)) await page.mouse.move(...p);
+    await page.mouse.up();
+    snaps.push(await hash(page));
+  }
+  return snaps;
+}
+const zipped = async page => (await stats(page)).historyZipped;
+
+test('履歴の圧縮: 新しい 4 手より古い手は、1 秒何もしないと縮む（描いている間は縮めない）。縮めた手まで元に戻す・やり直すと画素単位で一致する', async () => {
+  const { page, errors } = await open({ deviceScaleFactor: 2 });
+  const warns = [];
+  page.on('console', m => { if (m.type() === 'warning') warns.push(m.text()); });
+  await runCode(page, CODE);
+  const snaps = await strokes(page, 10);
+  const before = (await stats(page)).historyPixels;
+  // 押したまま 1.5 秒待っても縮めない
+  await page.mouse.move(30, 650);
+  await page.mouse.down();
+  await page.waitForTimeout(1500);
+  assert.equal(await zipped(page), 0, '描いている間は縮めない');
+  await page.mouse.up();
+  await page.waitForTimeout(1600);
+  const s = await stats(page);
+  assert.equal(s.history, 11);
+  assert.equal(s.historyZipped, 7, '新しい 4 手を除く 7 手が縮む');
+  assert.ok(s.historyPixels < before / 3, `履歴の画素数が減る（${before} → ${s.historyPixels}）`);
+  await page.evaluate(() => window.__paintBookmarklet.undo()); // 押しただけの点
+  for (let i = 10; i >= 1; i--) {
+    await page.evaluate(() => window.__paintBookmarklet.undo());
+    assert.equal(await hash(page), snaps[i - 1], `元に戻す: ${i} 本目の前と同じ`);
+  }
+  for (let i = 1; i <= 10; i++) {
+    await page.evaluate(() => window.__paintBookmarklet.redo());
+    assert.equal(await hash(page), snaps[i], `やり直す: ${i} 本目の後と同じ`);
+  }
+  // 最初まで戻した後も、やり直すの並びから遠い手は縮む
+  for (let i = 0; i < 10; i++) await page.evaluate(() => window.__paintBookmarklet.undo());
+  await page.waitForTimeout(1600);
+  assert.ok(await zipped(page) >= 6, 'やり直すの並びの遠い手も縮む');
+  for (let i = 1; i <= 10; i++) await page.evaluate(() => window.__paintBookmarklet.redo());
+  assert.equal(await hash(page), snaps[10]);
+  assert.deepEqual(warns.filter(w => /readback/i.test(w)), [], 'ページのコンソールに読み出しの警告を出さない');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('履歴の圧縮: 全消去の手が持つタイルも縮み、元に戻すと画素単位で戻る', async () => {
+  const { page, errors } = await open({ deviceScaleFactor: 2 });
+  await runCode(page, CODE);
+  const snaps = await strokes(page, 6);
+  await page.evaluate(() => window.__paintBookmarklet.clear());
+  const tiles = (await stats(page)).historyPixels;
+  await strokes(page, 5);
+  await page.waitForTimeout(1600);
+  const s = await stats(page);
+  assert.ok(s.historyZipped >= 6 + 2, `線の手と全消去のタイルが縮む（${s.historyZipped}）`);
+  for (let i = 0; i < 6; i++) await page.evaluate(() => window.__paintBookmarklet.undo());
+  assert.equal(await hash(page), snaps[6], '全消去を元に戻すと、消す前と同じ');
+  assert.ok((await stats(page)).historyPixels < tiles, '戻したタイルは履歴に数えない');
+  for (let i = 6; i >= 1; i--) {
+    await page.evaluate(() => window.__paintBookmarklet.undo());
+    assert.equal(await hash(page), snaps[i - 1]);
+  }
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('履歴の圧縮: スマホの上限が同じでも、縮めた分だけ多くの手を残せる', async () => {
+  const { page, errors } = await open({ userAgent: IPHONE, deviceScaleFactor: 2 });
+  await runCode(page, withDefaults(CODE, { mem: 45 }));
+  await page.evaluate(() => window.__paintBookmarklet.tool('fill'));
+  for (let i = 0; i < COLORS.length; i++) {
+    await page.evaluate(c => window.__paintBookmarklet.color(c), COLORS[i]);
+    await page.mouse.click(200, 400);
+    if (i >= 4) await page.waitForTimeout(1300);
+  }
+  const s = await stats(page);
+  assert.equal(s.history, 8, `縮めなければ 6 手まで（${s.history} 手）`);
+  assert.ok(s.memory <= 45e6);
+  for (let i = 7; i >= 1; i--) {
+    await page.evaluate(() => window.__paintBookmarklet.undo());
+    assert.deepEqual(await at(page), rgb(COLORS[i - 1]));
+  }
+  await page.evaluate(() => window.__paintBookmarklet.undo());
+  assert.equal((await readMain(page, 200, 400))[3], 0, 'いちばん最初まで戻る');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('履歴の圧縮: 読み出した画素に揺らぎが足される環境（指紋対策）では縮めず、元に戻すはそのまま一致する', async () => {
+  const { page, errors } = await open();
+  await page.evaluate(() => {
+    for (const P of [CanvasRenderingContext2D.prototype, window.OffscreenCanvasRenderingContext2D && OffscreenCanvasRenderingContext2D.prototype]) {
+      if (!P) continue;
+      const g = P.getImageData;
+      P.getImageData = function (...a) { const im = g.apply(this, a); for (let i = 0; i < im.data.length; i += 4) if (im.data[i + 3] === 255) im.data[i] ^= 1; return im; };
+    }
+  });
+  await runCode(page, CODE);
+  const snaps = await strokes(page, 8);
+  await page.waitForTimeout(1600);
+  assert.equal(await zipped(page), 0, '縮めない');
+  for (let i = 8; i >= 1; i--) {
+    await page.evaluate(() => window.__paintBookmarklet.undo());
+    assert.equal(await hash(page), snaps[i - 1]);
+  }
+  assert.deepEqual(errors, []);
+  await page.close();
+});

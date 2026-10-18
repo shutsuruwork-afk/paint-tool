@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.36.0';
+  const VERSION = '1.36.1';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -3266,6 +3266,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     for (const t of ['gesturestart', 'gesturechange']) pad.addEventListener(t, e => e.preventDefault(), { passive: false });
     bar.addEventListener('touchmove', e => { if (!e.target.closest('.pn')) e.preventDefault(); }, { passive: false });
   }
+  // 線の終わり（pointerup・pointercancel）を取りこぼして描いている途中のまま止まっていたら、次にどこかを押したときに確定する（T-118）。
+  // 同じ種類の primary の押下が来たなら、前の指・ペン・マウスはもう離れている（2 本目の指は primary でない）。
+  // iPhone では、アプリや OS のなぞる操作（端からのスワイプなど）が指を取ると、ページに終わりの合図が来ないことがある。止まったままだと、全消去・元に戻す・次の線が黙って効かなかった
+  wrap.addEventListener('pointerdown', e => { if (act !== -1 && e.isPrimary && e.pointerType === aType) endStroke(); }, true);
   pad.addEventListener('pointerdown', onDown);
   pad.addEventListener('pointermove', onMove);
   pad.addEventListener('pointerup', onUp);
@@ -3473,7 +3477,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 
   // ---------- 起動 ----------
   const stats = () => ({
-    width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, selection: sel ? [selX, selY, selW, selH] : null, texts: tlist.length, fixed, history: hist.length, historyPixels: hpix, historyZipped: zipped(), memory: (canvasPix() + hpix) * 4, memoryCap: MEM * 4, events: nEv, points: nPts,
+    width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, selection: sel ? [selX, selY, selW, selH] : null, texts: tlist.length, fixed, history: hist.length, historyPixels: hpix, historyZipped: zipped(), drawing: act !== -1, memory: (canvasPix() + hpix) * 4, memoryCap: MEM * 4, events: nEv, points: nPts,
     desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, nativePrediction: nativePred, inkTrail: !!inkP, pred: pn, frame: round(fi * 10) / 10, inputDelay: round(dl * 10) / 10, inputInterval: round(pdt * 10) / 10,
     rec: [rec, recS.length, recN],
     prefs: { ...snapPrefs(), bar: [barX, barY], touchText, pickOnce, keepPanels, dev, ...look, ppred, plen, mpred, blend },

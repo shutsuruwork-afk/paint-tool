@@ -232,3 +232,50 @@ test('LINE の中で、ページが scroll-behavior: smooth でも、ツール�
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+// Audit (2026-10-18, T-117): found while looking into "全消去 right after drawing does nothing" (T-118). Fails on v1.36.0.
+test('線の終わり（pointerup・pointercancel）が届かずに描いている途中のまま止まっても、次にどこかを押せば確定して、全消去・次の線・元に戻すが効く（T-118）', async () => {
+  const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+  const { page, errors } = await mobile('/long', { userAgent: UA, deviceScaleFactor: 3 });
+  await runCode(page, CODE);
+  await page.waitForTimeout(200);
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], id) => ({ x, y, id })) });
+  const tap = async ([x, y]) => { await touch('touchStart', [[x, y]]); await touch('touchEnd', []); await page.waitForTimeout(30); };
+  const center = sel => shadowEval(page, (root, s) => { const r = root.querySelector(s).getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }, sel);
+  const stats = () => page.evaluate(() => window.__paintBookmarklet.stats());
+  const surfInk = () => page.evaluate(() => { const d = window.__paintBookmarklet.pixels(0, 0, 390, 700).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; });
+  // a touch stroke whose end never reaches the page (iOS: an app or system swipe took the finger)
+  const o = { pointerId: 11, pointerType: 'touch', isPrimary: true, pressure: 0.5 };
+  await fire(page, 'pointerdown', { ...o, clientX: 80, clientY: 300, button: 0, buttons: 1 });
+  for (let i = 1; i <= 12; i++) await fire(page, 'pointermove', { ...o, clientX: 80 + i * 18, clientY: 300 + i * 10, button: -1, buttons: 1 });
+  await frames(page, 3);
+  assert.equal((await stats()).drawing, true, 'stuck mid-stroke');
+  assert.equal(await hist(page), 0);
+  // その他 → 全消去: the tap on the toolbar commits the stuck line first, so the clear works on the first press
+  await tap(await center('.bar > [aria-label^="その他"]'));
+  await tap(await center('.pn.on [aria-label^="全消去"]'));
+  await frames(page, 3);
+  let s = await stats();
+  assert.equal(s.drawing, false);
+  assert.equal(s.history, 2, 'the stuck line was committed, then cleared');
+  assert.equal(await surfInk(), 0, 'nothing is left');
+  // undo brings the line back, and the next stroke draws
+  await page.evaluate(() => window.__paintBookmarklet.undo());
+  assert.ok(await surfInk() > 0, 'undo restores the line');
+  await touch('touchStart', [[80, 520]]);
+  for (let i = 1; i <= 10; i++) { await touch('touchMove', [[80 + i * 20, 520]]); await page.waitForTimeout(8); }
+  await touch('touchEnd', []);
+  await frames(page, 3);
+  s = await stats();
+  assert.equal(s.drawing, false);
+  assert.equal(s.history, 2, 'the new line is a step (the undone clear is dropped)');
+  // a second finger while drawing is not a new primary pointer: the stroke goes on (two-finger scroll rules apply)
+  await fire(page, 'pointerdown', { ...o, pointerId: 21, clientX: 100, clientY: 200, button: 0, buttons: 1 });
+  await fire(page, 'pointerdown', { ...o, pointerId: 22, isPrimary: false, clientX: 300, clientY: 200, button: 0, buttons: 1 });
+  assert.equal(await hist(page), 2, 'a second finger right away does not commit the first one');
+  await fire(page, 'pointerup', { ...o, pointerId: 22, isPrimary: false, clientX: 300, clientY: 200, button: 0, buttons: 0 });
+  await fire(page, 'pointerup', { ...o, pointerId: 21, clientX: 100, clientY: 200, button: 0, buttons: 0 });
+  assert.deepEqual(errors, []);
+  await page.close();
+});

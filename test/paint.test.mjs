@@ -2527,6 +2527,7 @@ test('開発用の計測表示: その他から出し入れでき（キーボー
   assert.match(t, /座標が整数 100%/);
   assert.match(t, /の入力に 1\.0 点・0\.0 ms 先・実入力より古く捨てる 100%/); // 離した入力（pointerup）には予測が付かない
   assert.match(t, /方式 ブラウザ/);
+  assert.ok(t.indexOf('ブラウザの予測') < t.indexOf('入力 '), 'the per-stroke lines come first (T-135: on a phone the bottom was hidden)');
   await stroke(0.5, 8);
   await page.waitForTimeout(600);
   t = await hudText();

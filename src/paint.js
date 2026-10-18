@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.38.2';
+  const VERSION = '1.38.3';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -209,7 +209,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 .hp .hg{display:grid;grid-template-columns:max-content 1fr;gap:3px 12px}
 .hp .hg>:nth-child(odd){color:#c5c8d2;white-space:nowrap}
 .hp kbd{display:inline-block;box-sizing:border-box;min-width:1.6em;margin:0 1px;padding:0 4px;border:1px solid #ffffff38;border-bottom-width:2px;border-radius:4px;text-align:center;font:600 11px/1.45 ui-monospace,Menlo,Consolas,monospace;color:#e8e9ee}
-.hud{position:absolute;left:8px;bottom:8px;padding:6px 8px;border-radius:6px;background:#000c;color:#8f8;font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;white-space:pre;pointer-events:none}
+.hud{position:absolute;left:8px;top:40%;max-width:calc(100% - 32px);padding:6px 8px;border-radius:6px;background:#000c;color:#8f8;font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;pointer-events:none}
 @media (pointer:coarse){.b{width:38px;height:38px}.c{width:30px}.r{height:38px}}
 `;
 
@@ -3192,14 +3192,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function updHud() {
     const t = now(), sec = (t - stT) / 1000, n = stEv || 1;
     const on = v => (v ? 'on' : 'off');
+    // 最後の線（描いている間は今の線）の入力の様子を先に出す。スマホでは下の方がブラウザのバーに隠れ、右が切れていたので、画面の中ほどに置いて折り返す（T-135）
     hud.textContent =
+      `線: 座標が整数 ${pc(sqInt, sqP)}%  まとめた点 ${(sqCo / (sqEv || 1)).toFixed(1)}/ev  間隔 ${pdt.toFixed(1)} ms (${round(1000 / pdt)} Hz)  1 フレーム ${fi.toFixed(1)} ms  遅れ ${dl.toFixed(1)} ms\n` +
+      `ブラウザの予測: ${pc(sqPM, sqEv)}% の入力に ${(sqPN / (sqPM || 1)).toFixed(1)} 点・${(sqPDt / (sqPM || 1)).toFixed(1)} ms 先・実入力より古く捨てる ${pc(sqPOld, sqPN)}%  方式 ${ppred === 'own' ? '曲がりに沿う' : 'ブラウザ'}\n` +
       `入力 ${round(stEv / sec)} ev/s  点 ${((nPts - stP0) / n).toFixed(1)}/ev  予測 ${(stPred / n).toFixed(1)}/ev\n` +
       `処理 ${round(stCost / n * 1000)} µs/ev  入力→描画 ${(stLag / n).toFixed(1)} ms  塗り ${lastFillMs.toFixed(0)} ms\n` +
       `desync ${on(DESYNC)}  rawupdate ${on(HAS_RAW)}  coalesced ${on(HAS_CO)}  予測 ${nativePred ? 'native' : 'fallback'}  ink ${on(inkP)}\n` +
-      `${W}×${H} @${dpr}  面 ${surfW}×${surfH} タイル ${dtiles.size}  履歴 ${hpos}/${hist.length} (${(hpix / 1e6).toFixed(1)} MP、縮めた ${zipped()})  canvas ${round((canvasPix() + hpix) * 4e-6)} MB  v${VERSION}\n` +
-      // 最後の線（描いている間は今の線）の入力の様子
-      `線: 座標が整数 ${pc(sqInt, sqP)}%  まとめた点 ${(sqCo / (sqEv || 1)).toFixed(1)}/ev  間隔 ${pdt.toFixed(1)} ms (${round(1000 / pdt)} Hz)  1 フレーム ${fi.toFixed(1)} ms  遅れ ${dl.toFixed(1)} ms\n` +
-      `ブラウザの予測: ${pc(sqPM, sqEv)}% の入力に ${(sqPN / (sqPM || 1)).toFixed(1)} 点・${(sqPDt / (sqPM || 1)).toFixed(1)} ms 先・実入力より古く捨てる ${pc(sqPOld, sqPN)}%  方式 ${ppred === 'own' ? '曲がりに沿う' : 'ブラウザ'}`;
+      `${W}×${H} @${dpr}  面 ${surfW}×${surfH} タイル ${dtiles.size}  履歴 ${hpos}/${hist.length} (${(hpix / 1e6).toFixed(1)} MP、縮めた ${zipped()})  canvas ${round((canvasPix() + hpix) * 4e-6)} MB  v${VERSION}`;
     stEv = stPred = stCost = stLag = 0;
     stT = t;
     stP0 = nPts;

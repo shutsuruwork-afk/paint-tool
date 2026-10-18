@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.38.0';
+  const VERSION = '1.38.1';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -157,6 +157,8 @@ canvas{position:absolute;left:0;top:0;pointer-events:none}
 .light{color:#1d2026;color-scheme:light;--gc:250 250 252}
 .light .bar,.light .pn,.light .t,.light .hp{background:var(--bb,#fbfbfc);border-color:#0000001a;box-shadow:0 6px 24px #0003}
 .light.glass .bar,.light.glass .pn{background:none;border-color:transparent;outline-color:#0000001a;box-shadow:0 6px 24px #0003,inset 0 1px 0 #ffffff99}
+.glass.gself .bar,.glass.gself .pn,.glass.gscr.scr .bar,.glass.gscr.scr .pn{background:rgb(var(--gc) / var(--gt))}
+.glass.gself .bar::after,.glass.gself .pn::after{content:none}
 .light .b:hover,.light .t button:hover{background:#0000000f}.light .b:active,.light .b.open:not(.on){background:#0000001c}
 .b.on:not(.c):hover,.light .b.on:not(.c):hover,.light .b.on:not(.c):active{background:#2f6bea}
 .b.on.pc,.b.on.pc:hover,.light .b.on.pc:hover,.light .b.on.pc:active{background:var(--pc);color:var(--pi);box-shadow:0 1px 3px #0000003d}
@@ -325,6 +327,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     blur: +DEF.blur >= 0 && +DEF.blur <= 40 ? +DEF.blur : 18,
     tint: +DEF.tint >= 30 && +DEF.tint <= 95 ? +DEF.tint : 80,
     sat: +DEF.sat >= 100 && +DEF.sat <= 300 ? +DEF.sat : 200, // ガラスの彩度（%。T-065）
+    // ガラスの地の置き方（開発用。T-130）: 'pseudo' は ::after（今）、'self' はバーとパネル自身、'scroll' は 2 本指のスクロール・慣性の間だけバーとパネル自身にも敷く
+    gbg: DEF.gbg === 'self' || DEF.gbg === 'scroll' ? DEF.gbg : 'pseudo',
   };
   const dev = DEF.dev === true;
   // 蛍光ペンの予測: 'full'（既定）はペンと同じ。'need' は丸い先端で届かない分だけ（1 フレーム後のペン先まで）、曲がりに沿って予測し、
@@ -362,6 +366,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     cl.toggle('light', lite);
     cl.toggle('glass', look.glass);
     cl.toggle('gauss', look.glass && look.blurMode === 'gauss');
+    cl.toggle('gself', look.glass && look.gbg === 'self');
+    cl.toggle('gscr', look.glass && look.gbg === 'scroll');
+    if (look.gbg !== 'scroll') cl.remove('scr');
     ws.setProperty('--gb', look.blur + 'px');
     ws.setProperty('--gm', look.blur * 2 + 'px');
     ws.setProperty('--gt', look.tint / 100);
@@ -643,9 +650,22 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const blR = el('div', 'r');
   blR.append(blL);
   lookP.append(blR, row(...blBs));
+  // ガラスの地の置き方を切り替えて見比べる（T-130: iPhone で 2 本指で弾いて滑らせている間に、ガラスのツールバーが透明になる）
+  const gbL = el('span');
+  gbL.textContent = 'ガラスの地';
+  const GBGS = ['pseudo', 'self', 'scroll'];
+  const gbBs = [['pseudo', '重ねる'], ['self', 'バー自身'], ['scroll', 'スクロール中は二重']].map(([k, t]) => {
+    const b = btn(`ガラスの地: ${t}`, null, () => setLook('gbg', k), 'sg');
+    b.textContent = t;
+    return b;
+  });
+  const gbR = el('div', 'r');
+  gbR.append(gbL);
+  const gbW = row(...gbBs);
+  lookP.append(gbR, gbW);
   const toDefB = btn('この見た目をデフォルトにする — インストールページを開く（新しいタブ）', I.prefs, () => {
     closePanel();
-    openDefaults({ ...DEF, theme: look.theme, glass: look.glass, blurMode: look.blurMode, blur: look.blur, tint: look.tint, sat: look.sat, ppred, plen, mpred, blend });
+    openDefaults({ ...DEF, theme: look.theme, glass: look.glass, blurMode: look.blurMode, blur: look.blur, tint: look.tint, sat: look.sat, gbg: look.gbg, ppred, plen, mpred, blend });
   }, 'mi');
   const toDefL = el('span');
   toDefL.textContent = 'この見た目をデフォルトに';
@@ -659,7 +679,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (t[0] === '#') lcB.style.setProperty('--c', t); else lcB.style.removeProperty('--c');
     glassSw.setAttribute('aria-checked', look.glass);
     gaussSw.setAttribute('aria-checked', look.blurMode === 'gauss');
-    for (const w of [gaussSw, blurW, tintW, satW]) w.classList.toggle('dis', !look.glass);
+    for (const w of [gaussSw, blurW, tintW, satW, gbW]) w.classList.toggle('dis', !look.glass);
+    gbBs.forEach((b, i) => b.classList.toggle('on', GBGS[i] === look.gbg));
     blurR.value = look.blur; blurO.value = look.blur + 'px';
     tintR.value = look.tint; tintO.value = look.tint + '%';
     satR.value = look.sat; satO.value = look.sat + '%';
@@ -671,7 +692,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const closeB = btn('閉じる（8 秒間は元に戻せます）', I.close, close);
   // 入力の録画（開発用。T-070）: 描いた線の入力を録って JSON で書き出す。予測の精度を、人が実際に書いた線で測るため（T-060）
   let recB = null, hudB = null;
-  if (dev) item('見た目（開発用） — ツールバーの色やガラス、予測の方法と長さ、蛍光ペンの予測、半透明の線の描き方をその場で変える', '見た目（開発用）', '', I.bg, () => openPanel(lookP, moreB));
+  if (dev) item('見た目（開発用） — ツールバーの色やガラス（地の置き方も）、予測の方法と長さ、蛍光ペンの予測、半透明の線の描き方をその場で変える', '見た目（開発用）', '', I.bg, () => openPanel(lookP, moreB));
   if (dev) {
     [recB] = item('入力を録る（開発用） — ペン・蛍光ペンで描いた線の入力（座標・時刻・筆圧・Chrome の予測）を録る。入れると前の録画は消える', '入力を録る（開発用）', '', I.rec, toggleRec, true, true);
     item('録った入力を書き出す（開発用） — JSON をダウンロード', '録った入力を書き出す', '', I.save, recExport);
@@ -1483,7 +1504,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const KN = 8, KF = 0.998, KSTOP = 0.3, kT = new Float64Array(KN), kX = new Float64Array(KN), kY = new Float64Array(KN);
   let kN = 0, kVX = 0, kVY = 0, kAX = 0, kAY = 0, kL = 0, kR = 0;
   const kPush = (t, x, y) => { const i = kN++ % KN; kT[i] = t; kX[i] = x; kY[i] = y; };
-  const stopFling = () => { if (kR) { cancelAnimationFrame(kR); kR = 0; } if (scrR) { cancelAnimationFrame(scrR); scrR = 0; } };
+  // 弾いたときにガラスが透明になる件（T-130）を見比べる開発用の 'scroll' のときだけ、スクロール・慣性の間 .scr を付ける
+  const syncScr = () => { if (look.gbg === 'scroll') wrap.classList.toggle('scr', scr === 1 || !!kR); };
+  const stopFling = () => { if (kR) { cancelAnimationFrame(kR); kR = 0; syncScr(); } if (scrR) { cancelAnimationFrame(scrR); scrR = 0; } };
   function flingStart(t) {
     if (kN < 2) return;
     const j = (kN - 1) % KN, tj = kT[j];
@@ -1498,6 +1521,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (v > 8) { vx *= 8 / v; vy *= 8 / v; }
     kVX = vx; kVY = vy; kAX = kAY = 0; kL = t;
     kR = requestAnimationFrame(fling);
+    syncScr();
   }
   function fling(ts) {
     const dt = min(50, max(0, ts - kL)), k = KF ** dt;
@@ -1509,9 +1533,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       const x0 = win.scrollX, y0 = win.scrollY;
       scrollTo(x0 + dx, y0 + dy);
       offTop();
-      if (win.scrollX === x0 && win.scrollY === y0) { kR = 0; return; } // 端に着いた
+      if (win.scrollX === x0 && win.scrollY === y0) { kR = 0; syncScr(); return; } // 端に着いた
     }
     kR = abs(kVX) + abs(kVY) < 0.03 ? 0 : requestAnimationFrame(fling);
+    if (!kR) syncScr();
   }
   function twoDown(e) {
     const flung = !!kR && hypot(kVX, kVY) >= KSTOP;
@@ -1533,6 +1558,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       if (act !== -1) mode === 1 && e.timeStamp - sDown >= KEEP_MS && max(x1 - x0, y1 - y0) >= KEEP_PX * dpr ? endStroke() : abortStroke();
       tapId = -1;
       scr = 1; scrX = (tX0 + tX1) / 2; scrY = (tY0 + tY1) / 2; sbX = win.scrollX; sbY = win.scrollY;
+      syncScr();
       kN = 0; kPush(e.timeStamp, scrX, scrY);
       for (const i of [tI0, tI1]) try { pad.setPointerCapture(i); } catch (_) { }
     } else return;
@@ -1561,6 +1587,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     e.stopImmediatePropagation();
     if (scr === 1 && e.type === 'pointerup') flingStart(e.timeStamp); // 1 本目を離したところで滑らせる
     scr = tI0 === -1 && tI1 === -1 ? 0 : 2;
+    syncScr();
   }
   const TWO = [['pointerdown', twoDown], ['pointermove', twoMove], ['pointerup', twoUp], ['pointercancel', twoUp]];
 

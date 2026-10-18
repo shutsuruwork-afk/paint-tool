@@ -452,9 +452,9 @@ test('見た目（開発用）: インストールページの開発用を入れ
   assert.equal((await prefs(page)).theme, '#ffd54f');
   // 蛍光ペンの予測を切り替える（既定はそのまま）
   const mpOn = () => shadowEval(page, root => [...root.querySelectorAll('.pn.on .sg')].filter(b => b.classList.contains('on')).map(b => b.textContent));
-  assert.deepEqual(await mpOn(), ['曲がりに沿う', '3/4', 'そのまま', 'キャンバスの中で']);
+  assert.deepEqual(await mpOn(), ['曲がりに沿う', '3/4', 'そのまま', 'キャンバスの中で', '重ねる']);
   await mouseClick(page, '.pn.on [aria-label="蛍光ペンの予測: なし"]');
-  assert.deepEqual(await mpOn(), ['曲がりに沿う', '3/4', 'なし', 'キャンバスの中で']);
+  assert.deepEqual(await mpOn(), ['曲がりに沿う', '3/4', 'なし', 'キャンバスの中で', '重ねる']);
   // 予測の長さを 1 フレーム（前の長さ）に
   await mouseClick(page, '.pn.on [aria-label="予測の長さ: 1 フレーム"]');
   assert.equal((await prefs(page)).plen, 1);
@@ -464,7 +464,7 @@ test('見た目（開発用）: インストールページの開発用を入れ
   assert.equal((await prefs(page)).mpred, 'off');
   // 半透明の線の描き方を前の方式（まとめて）にすると、蛍光ペンを選んだ時点でまとめた要素に濃さがかかる
   await mouseClick(page, '.pn.on [aria-label="半透明の線の描き方: まとめて"]');
-  assert.deepEqual(await mpOn(), ['ブラウザ', '1 フレーム', 'なし', 'まとめて']);
+  assert.deepEqual(await mpOn(), ['ブラウザ', '1 フレーム', 'なし', 'まとめて', '重ねる']);
   assert.equal((await prefs(page)).blend, 'group');
   // この見た目をデフォルトに: 見た目を持ってインストールページを開く
   await page.evaluate(() => { window.__opened = []; window.open = (...a) => { window.__opened.push(a); return null; }; });

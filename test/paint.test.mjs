@@ -2592,6 +2592,111 @@ test('2 本指で弾いた後、ほとんど止まりかけ（0.3 px/ms 未満�
   await page.close();
 });
 
+test('2 本指のスクロールは、動かし始めの向き（縦か横）だけに動く。斜めに動かしても横にずれず、横に動かせば横だけ。慣性も同じ向きだけ（T-137）', async () => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 700 }, hasTouch: true });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(server.base + '/long');
+  await page.evaluate(() => { const d = document.createElement('div'); d.style.cssText = 'width:3000px;height:10px'; document.body.append(d); });
+  await runCode(page, CODE);
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], id) => ({ x, y, id })) });
+  const pos = () => page.evaluate(() => [scrollX, scrollY]);
+  const settle = async () => { let a = String(await pos()), b; for (;;) { await page.waitForTimeout(250); b = String(await pos()); if (b === a) return; a = b; } };
+  // 2 本指を (dx, dy) ずつ n 回動かす。pause なら止まってから離す（慣性なし）
+  const swipe = async (dx, dy, n, pause) => {
+    await touch('touchStart', [[150, 500]]);
+    await touch('touchStart', [[150, 500], [250, 500]]);
+    for (let i = 1; i <= n; i++) { await touch('touchMove', [[150 + i * dx, 500 + i * dy], [250 + i * dx, 500 + i * dy]]); await page.waitForTimeout(16); }
+    if (pause) await page.waitForTimeout(150);
+    await touch('touchEnd', [[150 + n * dx, 500 + n * dy]]);
+    await touch('touchEnd', []);
+    await settle();
+  };
+  // 縦が多い斜め（右へ 30・上へ 120）: 縦だけ
+  await swipe(2.5, -10, 12, true);
+  assert.deepEqual(await pos(), [0, 120]);
+  // 横が多い斜め（左へ 120・上へ 30）: 横だけ
+  await swipe(-10, -2.5, 12, true);
+  assert.deepEqual(await pos(), [120, 120]);
+  // 弾いても、慣性は縦だけ
+  await swipe(4, -20, 10, false);
+  const [x, y] = await pos();
+  assert.equal(x, 120);
+  assert.ok(y > 120 + 200 + 50, 'it slid on: ' + y);
+  // 動かし始めて 8px 未満のうちは動かない（向きを決めてから、置いた所からの指の動きに合わせる）
+  await touch('touchStart', [[150, 500]]);
+  await touch('touchStart', [[150, 500], [250, 500]]);
+  await touch('touchMove', [[150, 495], [250, 495]]);
+  await page.waitForTimeout(100);
+  assert.deepEqual(await pos(), [x, y]);
+  await touch('touchMove', [[150, 480], [250, 480]]);
+  await page.waitForTimeout(150);
+  assert.deepEqual(await pos(), [x, y + 20]);
+  await touch('touchEnd', [[150, 480]]);
+  await touch('touchEnd', []);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('2 本指で拡大したページでも、描いた線は指の所に描かれ、ページの同じ所に付く。iPhone の WebKit のように scrollX・innerWidth・scrollTo が見えている範囲の物でも同じ（T-136）', async () => {
+  for (const webkit of [false, true]) {
+    const page = await browser.newPage({ viewport: { width: 390, height: 700 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.goto(server.base + '/long');
+    await page.evaluate(() => { const m = document.createElement('meta'); m.name = 'viewport'; m.content = 'width=device-width'; document.head.append(m); });
+    await page.waitForTimeout(100);
+    const cdp = await page.context().newCDPSession(page);
+    // 右下寄りを中心に 2 倍に広げ、下へ 400px
+    await cdp.send('Input.synthesizePinchGesture', { x: 300, y: 500, scaleFactor: 2, relativeSpeed: 1200 });
+    await page.waitForTimeout(300);
+    await page.evaluate(() => scrollTo(0, 400));
+    await page.waitForTimeout(200);
+    const vv = await page.evaluate(() => [visualViewport.scale, visualViewport.offsetLeft, visualViewport.offsetTop]);
+    assert.ok(vv[0] > 1.5 && vv[1] > 50 && vv[2] > 50, 'zoomed in and shifted: ' + vv);
+    if (webkit) await page.evaluate(() => {
+      // iPhone の WebKit をまねる（未確認の推測）: scrollX・innerWidth は見えている範囲の物で、scrollTo も見えている範囲を動かす。client 座標はレイアウトの画面が基準のまま
+      const v = visualViewport, d = n => Object.getOwnPropertyDescriptor(window, n).get;
+      const sx = d('scrollX'), sy = d('scrollY'), st = window.scrollTo;
+      const def = (n, f) => Object.defineProperty(window, n, { get: f, configurable: true });
+      def('scrollX', () => sx.call(window) + v.offsetLeft); def('pageXOffset', () => sx.call(window) + v.offsetLeft);
+      def('scrollY', () => sy.call(window) + v.offsetTop); def('pageYOffset', () => sy.call(window) + v.offsetTop);
+      def('innerWidth', () => v.width); def('innerHeight', () => v.height);
+      window.scrollTo = function (a, b) {
+        const o = typeof a === 'object' ? a : { left: a, top: b };
+        st.call(window, { left: (o.left ?? window.scrollX) - v.offsetLeft, top: (o.top ?? window.scrollY) - v.offsetTop, behavior: o.behavior || 'auto' });
+      };
+    });
+    await runCode(page, CODE);
+    await page.waitForTimeout(300);
+    // live / pred はレイアウトの画面全体を覆う
+    const [w, h, cw, ch] = await page.evaluate(() => { const s = window.__paintBookmarklet.stats(); return [s.width, s.height, document.documentElement.clientWidth, document.documentElement.clientHeight]; });
+    assert.ok(w >= cw * 2 && h >= ch * 2, `live covers the layout viewport: ${w}×${h} for ${cw}×${ch}`);
+    // 見えている範囲の (60, 200) から右へ 80px
+    const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y]) => ({ x, y, id: 0 })) });
+    await page.evaluate(() => { window.__ev = null; addEventListener('pointerdown', e => { window.__ev = [e.pageX, e.pageY]; }, { capture: true, once: true }); });
+    await touch('touchStart', [[60, 200]]);
+    for (let i = 1; i <= 10; i++) { await touch('touchMove', [[60 + i * 8, 200]]); await page.waitForTimeout(16); }
+    await touch('touchEnd', []);
+    await page.waitForTimeout(200);
+    const [px, py] = await page.evaluate(() => window.__ev);
+    // 面のタイルの画素から、確定した線の文書での位置を求める
+    const got = await page.evaluate(() => {
+      const xs = [], ys = [];
+      for (const c of document.querySelector('paint-bookmarklet-surface').shadowRoot.querySelectorAll('canvas')) {
+        const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+        for (let i = 3; i < d.length; i += 4 * 3) if (d[i]) { const k = (i - 3) / 4; xs.push(c.offsetLeft + (k % c.width) * c.offsetWidth / c.width); ys.push(c.offsetTop + ((k / c.width) | 0) * c.offsetHeight / c.height); }
+      }
+      return xs.length ? [Math.min(...xs), Math.max(...xs), ys.reduce((a, b) => a + b, 0) / ys.length] : null;
+    });
+    assert.ok(got, 'the line was committed (webkit: ' + webkit + ')');
+    assert.ok(Math.abs(got[0] - px) < 5 && Math.abs(got[1] - (px + 80)) < 5 && Math.abs(got[2] - py) < 3, `webkit ${webkit}: line at ${got.map(Math.round)} for the finger at ${Math.round(px)}〜${Math.round(px + 80)}, ${Math.round(py)}`);
+    assert.deepEqual(errors, []);
+    await page.close();
+  }
+});
+
 test('iPhone・iPad では、描く面とツールバーの touchmove を止める（ページ自身のスクロールが同時に動いて震えないように）。ボタンのタップ・パネルのスライダー・2 本指のスクロールはそのまま。ほかでは止めない（T-107）', async () => {
   const IOS = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
   const open = async ua => {

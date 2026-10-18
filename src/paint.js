@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.38.3';
+  const VERSION = '1.38.4';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -396,9 +396,16 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const DT = T * max(2, round(sdpr * 2));
   // 画面に固定（fixed）の間は、面を入れたときのスクロール位置（fx, fy）で止めて position: fixed にする
   let fixed = false, fx = 0, fy = 0;
+  // 拡大（2 本指で広げた）しているときの基準（T-136）: 入力の client 座標・getBoundingClientRect と、画面に固定した live / pred・ツールバーは
+  // 「レイアウトの画面」（layout viewport）が基準。iPhone の WebKit では scrollX・innerWidth が「見えている範囲」（visual viewport）の物らしく（未確認）、
+  // 拡大して見えている所をずらすと、scrollX で求めた面の位置が指からずれていた。レイアウトの画面の文書での位置は visualViewport の pageLeft − offsetLeft、
+  // 大きさは wrap（host が fixed で上下左右 0）の大きさで求める。Chrome では scrollX・innerWidth と同じになる
+  const VV = win.visualViewport;
+  const lvX = () => (VV ? VV.pageLeft - VV.offsetLeft : win.scrollX), lvY = () => (VV ? VV.pageTop - VV.offsetTop : win.scrollY);
+  const lvW = () => max(win.innerWidth, wrap.clientWidth), lvH = () => max(win.innerHeight, wrap.clientHeight);
   // 画面の左上が S のどこに当たるか
   const origin = () => {
-    const x = fixed ? fx : win.scrollX, y = fixed ? fy : win.scrollY;
+    const x = fixed ? fx : lvX(), y = fixed ? fy : lvY();
     return [round((x - hdx) * sdpr), round((y - hdy) * sdpr)];
   };
   function mapNow() {
@@ -444,12 +451,12 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     surfH = max(de.scrollHeight, de.clientHeight, b ? b.scrollHeight : 0);
     if (fixed) {
       // 固定の間は文書の原点からのずれを測れない（測らなくても変わらない）。見えている範囲が面からはみ出さないようにだけする
-      surfW = max(surfW, ceil(fx - hdx + win.innerWidth));
-      surfH = max(surfH, ceil(fy - hdy + win.innerHeight));
+      surfW = max(surfW, ceil(fx - hdx + lvW()));
+      surfH = max(surfH, ceil(fy - hdy + lvH()));
     } else {
       const r = surf.getBoundingClientRect();
-      hdx = r.left + win.scrollX;
-      hdy = r.top + win.scrollY;
+      hdx = r.left + lvX();
+      hdy = r.top + lvY();
     }
     pin(surf, [['width', surfW + 'px'], ['height', surfH + 'px']]);
   }
@@ -1026,7 +1033,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     pendingFit = false;
     finishHandoff();
     dpr = win.devicePixelRatio || 1;
-    const w = ceil(win.innerWidth * dpr), h = ceil(win.innerHeight * dpr);
+    const lw = lvW(), w = ceil(lw * dpr), h = ceil(lvH() * dpr); // 拡大していても、レイアウトの画面全体を覆う（T-136）
     if (exact ? w !== W || h !== H : w > W || h > H) {
       W = exact ? w : max(w, W); H = exact ? h : max(h, H);
       for (const c of [liveC, predC]) { c.width = W; c.height = H; }
@@ -1041,14 +1048,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     for (const c of [liveC, predC]) { c.style.width = cw; c.style.height = ch; }
     tx0 = ty0 = tx1 = ty1 = 0;
     // 1 段か 2 段かは幅だけで決まるので、組み直すのは幅が変わったときだけ（T-134。LINE などでは、スクロールでブラウザのバーが縮むたびに高さだけが変わる。
-    // そのたびにツールバーの class と幅を外して付け直していて、iPhone ではガラスの層が作り直されて透明に見えていたらしい）
-    if (visible) { sizeSurface(); if (win.innerWidth !== lbW) layBar(); measureBar(); moveBar(barX, barY); }
+    // そのたびにツールバーの class と幅を外して付け直していて、iPhone ではガラスの層が作り直されて透明に見えていたらしい）。幅はレイアウトの画面の幅（拡大では変わらない）
+    if (visible) { sizeSurface(); if (lw !== lbW) layBar(); measureBar(); moveBar(barX, barY); }
   }
   // 1 段に収まらない幅（スマホなど）では、上の段に道具、下の段に色と太さ・元に戻す・その他などの 2 段に整える（T-064・T-067）。
   // 幅は決め打ちせず、折り返すかを測る（タッチの端末はボタンが大きい）。ツールバーの幅は長い方の段に合わせる
   let lbW = -1; // 最後に組み直したときの幅
   function layBar() {
-    lbW = win.innerWidth;
+    lbW = lvW();
     const cl = bar.classList;
     cl.remove('two');
     bar.style.removeProperty('width');
@@ -1391,10 +1398,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     finishHandoff();
     if (!fixed) {
       fixed = true;
-      fx = win.scrollX; fy = win.scrollY;
+      fx = lvX(); fy = lvY();
       pin(surf, [['position', 'fixed'], ['left', hdx - fx + 'px'], ['top', hdy - fy + 'px']]);
     } else {
-      const dx = win.scrollX - fx, dy = win.scrollY - fy;
+      const dx = lvX() - fx, dy = lvY() - fy;
       fixed = false;
       pin(surf, [['position', 'absolute'], ['left', '0'], ['top', '0']]);
       if (dx || dy) shiftAll(round(dx * sdpr), round(dy * sdpr), round(dx) * sdpr, round(dy) * sdpr);
@@ -1453,6 +1460,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   let hud = null, hudT = 0, stEv = 0, stPred = 0, stCost = 0, stLag = 0, stT = 0, stP0 = 0, lastFillMs = 0;
   // 計測表示の入力の様子（T-123。線ごとに数え直す）: 点の数・座標が整数の点の数・まとめられた点の数と入力の数・ブラウザの予測が付いた入力の数と予測点の数・最後の予測点の時刻差の和・実入力が追い越して捨てる予測点の数
   let sqP = 0, sqInt = 0, sqCo = 0, sqEv = 0, sqPM = 0, sqPN = 0, sqPDt = 0, sqPOld = 0;
+  // 押したときの拡大の様子（T-136。iPhone の座標の決まりを確かめる）: 倍率、見えている範囲のずれ（offsetLeft / Top）、scrollX とレイアウトの画面の位置の差、
+  // イベントの pageX − clientX とレイアウトの画面の位置の差（0 なら、client 座標はレイアウトの画面が基準）
+  let zSc = 1, zOX = 0, zOY = 0, zSX = 0, zSY = 0, zEX = 0, zEY = 0;
   let nEv = 0, nPts = 0; // 累計（stats() 用）
   // Delegated Ink Trail: 次フレームまでの隙間を OS が直接描く。OS 描画が確実な Windows に限定し、
   // それ以外では予測線を使う（API が存在しても軌跡が描かれない環境で予測を失わないため）
@@ -1483,6 +1493,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 前の中点からの差を指の動きのたびに scrollBy すると、指 1 本の動きで中点は半分しか動かず端数が出て、iOS が整数に丸めるので 1px と 2px が交互に進んで震え、
   // 指とページも少しずつずれた。behavior: 'instant' で、ページの scroll-behavior: smooth を効かせない。端で止まったら目標を今の位置に合わせ直す（戻すとすぐ動く）
   let sbX = 0, sbY = 0, tgX = 0, tgY = 0, scrR = 0;
+  // 指の位置は、見えている範囲（visual viewport）の左上からの CSS px で持つ（T-136）。拡大していると、スクロールで見えている所がレイアウトの画面の中を動き、
+  // client 座標のままでは止まっている指の座標まで変わってしまう（iPhone の WebKit の決まりから考えた。未確認）。拡大していなければ client 座標と同じ
+  const vpX = e => e.clientX - (VV ? VV.offsetLeft : 0), vpY = e => e.clientY - (VV ? VV.offsetTop : 0);
+  // スクロールの向き（T-137、ユーザーの報告: 斜めに動かすと横にも動く）: 中点が LOCK_PX 動いたところで、動いた量の多い方（縦か横）に決め、離すまでその向きだけに動かす。
+  // 慣性も同じ向きだけ。決まるまでは動かさない
+  const LOCK_PX = 8;
+  let sLk = 0; // 0 = まだ決めていない、1 = 横、2 = 縦
   const INSTANT = { left: 0, top: 0, behavior: 'instant' };
   const scrollTo = (x, y) => {
     INSTANT.left = x; INSTANT.top = y;
@@ -1520,6 +1537,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const dt = tj - kT[i];
     if (dt < 8) return;
     let vx = (kX[i] - kX[j]) / dt, vy = (kY[i] - kY[j]) / dt; // スクロールの向き（指の動きの逆）。px/ms
+    if (sLk !== 1) vx = 0; // 決めた向きだけ（T-137）
+    if (sLk !== 2) vy = 0;
     const v = hypot(vx, vy);
     if (v < 0.15) return;
     if (v > 8) { vx *= 8 / v; vy *= 8 / v; }
@@ -1552,8 +1571,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if ((act !== -1 && aType === 'pen') || e.timeStamp - lastPen < 500) return;
     const id = e.pointerId;
     if (e.isPrimary) { tI0 = tI1 = -1; scr = 0; } // 新しいタッチの始まり（離したことを取りこぼしていても数え直す）
-    if (tI0 === -1) { tI0 = id; tX0 = e.clientX; tY0 = e.clientY; }
-    else if (tI1 === -1) { tI1 = id; tX1 = e.clientX; tY1 = e.clientY; }
+    if (tI0 === -1) { tI0 = id; tX0 = vpX(e); tY0 = vpY(e); }
+    else if (tI1 === -1) { tI1 = id; tX1 = vpX(e); tY1 = vpY(e); }
     else { if (scr) { e.preventDefault(); e.stopImmediatePropagation(); } return; } // スクロールの間の 3 本目以降の指では描かない
     if (flung && !scr && tI1 === -1) scr = 2; // 滑っているのを止めた指は、離すまで描かない
     if (tI0 === -1 || tI1 === -1) { if (!scr) return; }
@@ -1561,7 +1580,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       // 描いていた線（押してから KEEP_MS 以上・大きさ KEEP_PX 以上）は確定して残し、スクロールに移る。置いてすぐの指はスクロールのつもりなので消す（T-109）
       if (act !== -1) mode === 1 && e.timeStamp - sDown >= KEEP_MS && max(x1 - x0, y1 - y0) >= KEEP_PX * dpr ? endStroke() : abortStroke();
       tapId = -1;
-      scr = 1; scrX = (tX0 + tX1) / 2; scrY = (tY0 + tY1) / 2; sbX = win.scrollX; sbY = win.scrollY;
+      scr = 1; scrX = (tX0 + tX1) / 2; scrY = (tY0 + tY1) / 2; sbX = win.scrollX; sbY = win.scrollY; sLk = 0;
       syncScr();
       kN = 0; kPush(e.timeStamp, scrX, scrY);
       for (const i of [tI0, tI1]) try { pad.setPointerCapture(i); } catch (_) { }
@@ -1571,16 +1590,17 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   function twoMove(e) {
     const id = e.pointerId;
-    if (id === tI0) { tX0 = e.clientX; tY0 = e.clientY; }
-    else if (id === tI1) { tX1 = e.clientX; tY1 = e.clientY; }
+    if (id === tI0) { tX0 = vpX(e); tY0 = vpY(e); }
+    else if (id === tI1) { tX1 = vpX(e); tY1 = vpY(e); }
     else return;
     if (!scr) return;
     e.stopImmediatePropagation();
     if (scr !== 1) return;
-    const mx = (tX0 + tX1) / 2, my = (tY0 + tY1) / 2;
-    tgX = sbX + scrX - mx; tgY = sbY + scrY - my;
-    if (!scrR) scrR = requestAnimationFrame(scrollNow);
+    const mx = (tX0 + tX1) / 2, my = (tY0 + tY1) / 2, dx = scrX - mx, dy = scrY - my;
     kPush(e.timeStamp, mx, my);
+    if (!sLk) { if (hypot(dx, dy) < LOCK_PX) return; sLk = abs(dx) > abs(dy) ? 1 : 2; }
+    tgX = sbX + (sLk === 1 ? dx : 0); tgY = sbY + (sLk === 2 ? dy : 0);
+    if (!scrR) scrR = requestAnimationFrame(scrollNow);
   }
   function twoUp(e) {
     const id = e.pointerId;
@@ -1626,6 +1646,11 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if ((win.devicePixelRatio || 1) !== dpr) fit();
     finishHandoff();
     mapNow();
+    if (hud && VV) {
+      const lx = lvX(), ly = lvY();
+      zSc = VV.scale; zOX = VV.offsetLeft; zOY = VV.offsetTop;
+      zSX = win.scrollX - lx; zSY = win.scrollY - ly; zEX = e.pageX - e.clientX - lx; zEY = e.pageY - e.clientY - ly;
+    }
     const t = erase ? 'eraser' : tool;
     const x = e.clientX * dpr, y = e.clientY * dpr, X = x * sk + sox, Y = y * sk + soy;
     // 文字に触れる: 選んでいる物か文字の上を押したら、どの道具でも選択ツールと同じに扱う
@@ -3196,6 +3221,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     hud.textContent =
       `線: 座標が整数 ${pc(sqInt, sqP)}%  まとめた点 ${(sqCo / (sqEv || 1)).toFixed(1)}/ev  間隔 ${pdt.toFixed(1)} ms (${round(1000 / pdt)} Hz)  1 フレーム ${fi.toFixed(1)} ms  遅れ ${dl.toFixed(1)} ms\n` +
       `ブラウザの予測: ${pc(sqPM, sqEv)}% の入力に ${(sqPN / (sqPM || 1)).toFixed(1)} 点・${(sqPDt / (sqPM || 1)).toFixed(1)} ms 先・実入力より古く捨てる ${pc(sqPOld, sqPN)}%  方式 ${ppred === 'own' ? '曲がりに沿う' : 'ブラウザ'}\n` +
+      `拡大: ${zSc.toFixed(2)} 倍  見えている所のずれ ${zOX.toFixed(1)}, ${zOY.toFixed(1)}  scroll の差 ${zSX.toFixed(1)}, ${zSY.toFixed(1)}  指の差 ${zEX.toFixed(1)}, ${zEY.toFixed(1)}\n` +
       `入力 ${round(stEv / sec)} ev/s  点 ${((nPts - stP0) / n).toFixed(1)}/ev  予測 ${(stPred / n).toFixed(1)}/ev\n` +
       `処理 ${round(stCost / n * 1000)} µs/ev  入力→描画 ${(stLag / n).toFixed(1)} ms  塗り ${lastFillMs.toFixed(0)} ms\n` +
       `desync ${on(DESYNC)}  rawupdate ${on(HAS_RAW)}  coalesced ${on(HAS_CO)}  予測 ${nativePred ? 'native' : 'fallback'}  ink ${on(inkP)}\n` +

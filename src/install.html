@@ -253,7 +253,7 @@ section > .sub + .sub { margin-top: 20px; }
 
 <main class="page">
   <header>
-    <p class="eyebrow">Bookmarklet · v1.35.0 · %%SIZE%%（gzip %%GZIP%%）</p>
+    <p class="eyebrow">Bookmarklet · v1.36.0 · %%SIZE%%（gzip %%GZIP%%）</p>
     <h1>ペイント<br>ブックマークレット</h1>
     <p class="lead">開いているページの上に、<span class="mark">そのまま描ける<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d="M18 40C8 22 52 6 108 7s92 13 84 30-62 20-112 17S4 38 30 16" vector-effect="non-scaling-stroke"/></svg></span>ペイントツールです。ブックマークを押すだけで起動し、拡張機能もアカウントも要りません。入力から線が画面に出るまでの遅延を減らす仕組みを、ブラウザが対応している限りすべて使います。</p>
     <div class="actions">
@@ -361,8 +361,8 @@ section > .sub + .sub { margin-top: 20px; }
         <label class="check"><span class="ct"><b>開発用の項目をツールの中に出す</b><small>その他（⋯）に「見た目（開発用）」が出ます。「見た目（開発用）」では、ツールバーの色（暗い・明るい・好きな色）とガラス、予測の方法と長さ、蛍光ペンの予測、半透明の線の描き方をその場で変えられます。気に入ったら「この見た目をデフォルトに」で、このページに持ってこられます。「入力を録る（開発用）」を入れると、ペン・蛍光ペンで描いた線の入力（座標・時刻・筆圧・ブラウザの予測）を録って JSON で書き出せます（予測の精度を、実際に書いた線で測るため。ページの URL は入りません）。</small></span><input type="checkbox" role="switch" id="p-dev"></label>
         <p class="gdev-h">予測の方法（開発用）</p>
         <div class="choices" id="p-ppred" role="radiogroup" aria-label="予測の方法">
-          <label><input type="radio" name="ppred" value="own">曲がりに沿う（入力ごとに、直近の点から速さと曲がりを求める）</label>
-          <label><input type="radio" name="ppred" value="chrome">ブラウザ（pointermove の getPredictedEvents。前の方式）</label>
+          <label><input type="radio" name="ppred" value="own">曲がりに沿う（入力ごとに、直近の点から速さと曲がりを求める。iPhone・iPad 以外の既定）</label>
+          <label><input type="radio" name="ppred" value="chrome">ブラウザ（pointermove の getPredictedEvents。iPhone・iPad では iOS の予測で、こちらが既定）</label>
         </div>
         <p class="gdev-h">予測の長さ（開発用。曲がりに沿うとき）</p>
         <div class="choices" id="p-plen" role="radiogroup" aria-label="予測の長さ">
@@ -667,7 +667,7 @@ function runPaint() {%%INLINE_CODE%%}
   const rows = [
     ['pointerrawupdate', 'onpointerrawupdate' in window, 'フレームの区切りを待たずに入力を受け取り、すぐに描きます。'],
     ['getCoalescedEvents', !!PE && 'getCoalescedEvents' in PE, '1 フレームの間にまとめられた入力点を全部使うので、速く動かしても線が角張りません。'],
-    ['getPredictedEvents', !!PE && 'getPredictedEvents' in PE, 'ブラウザが予測した次の位置です。既定では使わず、入力ごとに直近の点から速さと曲がりを求めて、1 フレームの 4 分の 3 先まで線を伸ばします（開発用の「予測の方法: ブラウザ」で使います）。'],
+    ['getPredictedEvents', !!PE && 'getPredictedEvents' in PE, 'ブラウザが予測した次の位置です。既定では使わず、入力ごとに直近の点から速さと曲がりを求めて、1 フレームの 4 分の 3 先まで線を伸ばします。iPhone・iPad では、iOS が出すこの予測を使います（ほかでは開発用の「予測の方法: ブラウザ」で使います）。'],
     ['desynchronized', desync, 'キャンバスの更新を、画面合成の順番待ちをせずに表示します。'],
     ['Delegated Ink Trail', ink, '次のフレームが出るまでの線を OS が直接描きます。'],
     ['Popover (top layer)', 'showPopover' in HTMLElement.prototype, 'ページのモーダルや z-index に関係なく最前面に表示します。'],

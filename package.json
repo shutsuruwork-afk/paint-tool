@@ -1,6 +1,6 @@
 {
   "name": "paint-bookmarklet",
-  "version": "1.35.0",
+  "version": "1.36.0",
   "description": "どんなページの上にも描ける、低遅延・軽量なブックマークレット製ペイントツール",
   "license": "MIT",
   "private": true,

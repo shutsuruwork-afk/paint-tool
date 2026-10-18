@@ -1634,6 +1634,50 @@ test('予測の先読みは 1 フレームの 4 分の 3（急に止めたとき
   assert.ok(Math.abs(reach.default - reach[0.5] - 4.2) < 1.5, 'half ' + JSON.stringify(reach));
 });
 
+test('iPhone・iPad では、予測の方法の既定がブラウザ（iOS の予測）。予測の付いた入力ではその点まで伸ばし、付かない入力ではすぐ縮める。ブラウザが予測を出さない環境では自前の予測を使う', async () => {
+  const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+  const run = async (ua, withPred) => {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 700 }, ...(ua ? { userAgent: ua } : {}) });
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.goto(server.base + '/');
+    await runCode(page, CODE);
+    const r = await page.evaluate(withPred => {
+      const root = document.querySelector('paint-bookmarklet').shadowRoot, pad = root.querySelector('.p'), q = root.querySelector('canvas.q');
+      const mk = (type, x, ts, pred) => {
+        const o = { bubbles: true, cancelable: true, composed: true, pointerId: 5, pointerType: 'touch', isPrimary: true, clientX: x, clientY: 300, button: type === 'pointermove' ? -1 : 0, buttons: 1 };
+        if (pred) { const p = new PointerEvent('pointermove', { ...o, clientX: x + pred }); Object.defineProperty(p, 'timeStamp', { value: ts + 8 }); o.predictedEvents = [p]; }
+        const e = new PointerEvent(type, o); Object.defineProperty(e, 'timeStamp', { value: ts }); return e;
+      };
+      // 先端（最後の点から右へどこまでインクがあるか）
+      const reach = lx => { const d = q.getContext('2d').getImageData(0, 0, q.width, q.height).data; let m = 0; for (let y = 0; y < q.height; y++) for (let x = 0; x < q.width; x++) if (d[(y * q.width + x) * 4 + 3] >= 100) m = Math.max(m, x / devicePixelRatio - lx); return m - 2; };
+      const T0 = performance.now() + 1000;
+      pad.dispatchEvent(mk('pointerdown', 200, T0));
+      let x = 200;
+      for (let i = 1; i <= 20; i++) { x += 4; pad.dispatchEvent(mk('pointermove', x, T0 + i * 4, withPred ? 10 : 0)); }
+      const moving = reach(x);
+      // 止まりかけ: ブラウザが予測を付けない入力
+      x += 1;
+      pad.dispatchEvent(mk('pointermove', x, T0 + 84, 0));
+      const stopping = reach(x);
+      pad.dispatchEvent(mk('pointerup', x, T0 + 120));
+      return { ppred: window.__paintBookmarklet.stats().prefs.ppred, native: window.__paintBookmarklet.stats().nativePrediction, moving: Math.round(moving), stopping: Math.round(stopping) };
+    }, withPred);
+    assert.deepEqual(errors, []);
+    await page.close();
+    return r;
+  };
+  const ios = await run(IPHONE, true);
+  assert.equal(ios.ppred, 'chrome');
+  assert.equal(ios.native, true);
+  assert.ok(Math.abs(ios.moving - 10) <= 2, 'reaches the predicted point ' + JSON.stringify(ios));
+  assert.ok(ios.stopping <= 1, 'no prediction when the browser gives none ' + JSON.stringify(ios));
+  const old = await run(IPHONE, false);
+  assert.equal(old.native, false);
+  assert.ok(old.moving > 5, 'falls back to the own prediction ' + JSON.stringify(old));
+  assert.equal((await run(undefined, true)).ppred, 'own', 'other devices keep the own prediction');
+});
+
 test('急に止めたとき: 入力の間隔が短いマウスなら、予測線は止まってから入力の間隔の 3 倍（10 ms 以上）と遅れの分で消える（前は 40 ms と遅れの分）。動いている間は消えない', async () => {
   const { page, errors } = await fresh();
   const r = await page.evaluate(async () => {

@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.35.0';
+  const VERSION = '1.36.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -30,7 +30,6 @@
   // desynchronized: コンポジタの描画同期を待たずに表示（低遅延キャンバス。非対応環境では無視される）
   const CTX_OPT = { desynchronized: true };
   const PRED_MAX = 16;  // 保持する予測点の上限
-  const PRED_MS = 12;   // 予測 API が無い環境で外挿する時間 (ms)
   const PRED_TTL = 40;  // 入力が途絶えてから予測線を消すまでの時間 (ms) の上限。入力の間隔の 3 倍（10 ms 以上）を待つ。入力が遅れて届いているときは、その遅れ（dl）を足す
   // 自前の予測（T-060）: 当てはめる直近の時間（ms）、長さの上限（CSS px）、急に曲がるほど短くする強さ。録った人の線で比べて決めた
   const PW = 32, PCAP = 40, PDAMP = 2;
@@ -330,9 +329,11 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const dev = DEF.dev === true;
   // 蛍光ペンの予測: 'full'（既定）はペンと同じ。'need' は丸い先端で届かない分だけ（1 フレーム後のペン先まで）、曲がりに沿って予測し、
   // 点と点を直線でつなぐ（T-055）。'off' は描かない。ぴょこぴょこの主な原因は半透明の描き方だったので（T-056）、既定はペンと同じに戻した（T-059）。開発用のパネルでも切り替えられる
-  // ペンの予測の方法（T-060）: 'own'（既定）は入力ごとに自前で求める（ownPred）。'chrome' は前の方式（pointermove の getPredictedEvents）。開発用で見比べられる
+  // ペンの予測の方法（T-060）: 'own' は入力ごとに自前で求める（ownPred）。'chrome' はブラウザの予測（pointermove の getPredictedEvents）。開発用で見比べられる。
+  // 既定は 'own' で、iPhone・iPad だけ 'chrome'（T-116）: WebKit は iOS が出すタッチの予測（UIKit の predictedTouches）をそのまま入れる。急に止めたときにすぐ縮み、
+  // 自前より目立たなかった（ユーザーが iPhone で見比べた）。pointerrawupdate のない iOS では、Chrome のように古い点からの予測になることもない
   const PPREDS = ['own', 'chrome'];
-  let ppred = PPREDS.includes(DEF.ppred) ? DEF.ppred : 'own';
+  let ppred = PPREDS.includes(DEF.ppred) ? DEF.ppred : IOS ? 'chrome' : 'own';
   // 自前の予測の先読み（1 フレームの何倍。T-115）。既定は 4 分の 3（急に止めたときに予測が止まった所より先へ飛び出す長さを、1 フレーム分より 2〜4 割短くする。ユーザーが選んだ）。開発用で見比べられる
   const PLENS = [1, 0.75, 0.5];
   let plen = PLENS.includes(+DEF.plen) ? +DEF.plen : 0.75;
@@ -1874,16 +1875,11 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       const p = l[i];
       px[k] = p.clientX * dpr; py[k] = p.clientY * dpr; pt[k] = p.timeStamp;
     }
-    if (k) nativePred = true;
-    else if (!nativePred && (vx || vy)) {
-      // 予測 API が無い環境: 直近の速度から短時間だけ等速外挿（行き過ぎを防ぐため距離も制限）
-      let dx = vx * PRED_MS, dy = vy * PRED_MS;
-      const d = hypot(dx, dy), lim = 40 * dpr;
-      if (d > lim) { dx *= lim / d; dy *= lim / d; }
-      px[0] = bx + dx; py[0] = by + dy; pt[0] = lt + PRED_MS;
-      k = 1;
-    }
     pn = k;
+    // ブラウザが予測を出したことがあれば、出さない入力（止まりかけなど）では予測しない（ブラウザの判断に任せる）。
+    // 一度も出さない環境（古い iOS・予測のないブラウザ）では、自前の予測を使う（T-116。前は直近の速さから 12 ms まっすぐ伸ばしていた）
+    if (k) nativePred = true;
+    else if (!nativePred) ownPred();
   }
 
   // 蛍光ペンの予測（必要な分だけ）: 丸い先端は点より太さの半分だけ先まで覆っているので、1 フレーム後のペン先に届かない分だけ伸ばす。

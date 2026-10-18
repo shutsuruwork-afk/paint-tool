@@ -2697,6 +2697,69 @@ test('2 本指で拡大したページでも、描いた線は指の所に描か
   }
 });
 
+test('拡大した iPhone では、描いている途中の線も面の中に描き、画面に固定した層がずれて見えても指の所に出る。拡大をやめると元の層に戻る（T-138）', async () => {
+  const IOS = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+  const page = await browser.newPage({ viewport: { width: 390, height: 700 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, userAgent: IOS });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(server.base + '/long');
+  await page.evaluate(() => { const m = document.createElement('meta'); m.name = 'viewport'; m.content = 'width=device-width'; document.head.append(m); });
+  await page.waitForTimeout(100);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.synthesizePinchGesture', { x: 300, y: 500, scaleFactor: 2, relativeSpeed: 1200 });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => scrollTo(0, 400));
+  await page.waitForTimeout(200);
+  await runCode(page, CODE);
+  await page.waitForTimeout(300);
+  // iPhone で起きたこと（拡大中は、画面に固定した層が指の座標の基準からずれて見える）を、host をずらしてまねる
+  await page.evaluate(() => document.querySelector('paint-bookmarklet').style.setProperty('translate', '30px 20px', 'important'));
+  const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y]) => ({ x, y, id: 0 })) });
+  await page.evaluate(() => { window.__ev = []; addEventListener('pointerdown', e => window.__ev.push([e.clientX, e.clientY]), true); });
+  // 描いている途中の線（live）が、client 座標のどこに見えているか
+  const liveAt = () => page.evaluate(() => {
+    const host = document.querySelector('paint-bookmarklet'), surf = document.querySelector('paint-bookmarklet-surface');
+    const c = surf.shadowRoot.querySelector('canvas.l') || host.shadowRoot.querySelector('canvas.l');
+    const r = c.getBoundingClientRect(), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data, xs = [], ys = [];
+    for (let i = 3; i < d.length; i += 4 * 3) if (d[i]) { const k = (i - 3) / 4; xs.push(r.left + (k % c.width) * r.width / c.width); ys.push(r.top + ((k / c.width) | 0) * r.height / c.height); }
+    return { inSurf: c.getRootNode() === surf.shadowRoot, ink: xs.length ? [Math.min(...xs), Math.max(...xs), ys.reduce((a, b) => a + b, 0) / ys.length] : null };
+  });
+  await touch('touchStart', [[60, 200]]);
+  for (let i = 1; i <= 10; i++) { await touch('touchMove', [[60 + i * 8, 200]]); await page.waitForTimeout(16); }
+  const mid = await liveAt();
+  await touch('touchEnd', []);
+  await page.waitForTimeout(200);
+  const [cx, cy] = await page.evaluate(() => window.__ev[0]);
+  assert.equal(mid.inSurf, true, 'the line being drawn is in the surface while zoomed');
+  assert.ok(mid.ink && Math.abs(mid.ink[0] - cx) < 5 && Math.abs(mid.ink[1] - (cx + 80)) < 5 && Math.abs(mid.ink[2] - cy) < 3,
+    `the line being drawn is under the finger: ${mid.ink && mid.ink.map(Math.round)} for ${Math.round(cx)}〜${Math.round(cx + 80)}, ${Math.round(cy)}`);
+  // 確定した線も同じ所（面の画素を client 座標で読む）
+  const got = await page.evaluate(() => {
+    const xs = [], ys = [];
+    for (const c of document.querySelector('paint-bookmarklet-surface').shadowRoot.querySelectorAll('.s canvas')) {
+      const r = c.getBoundingClientRect(), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      for (let i = 3; i < d.length; i += 4 * 3) if (d[i]) { const k = (i - 3) / 4; xs.push(r.left + (k % c.width) * r.width / c.width); ys.push(r.top + ((k / c.width) | 0) * r.height / c.height); }
+    }
+    return xs.length ? [Math.min(...xs), Math.max(...xs), ys.reduce((a, b) => a + b, 0) / ys.length] : null;
+  });
+  assert.ok(got && Math.abs(got[0] - cx) < 5 && Math.abs(got[1] - (cx + 80)) < 5 && Math.abs(got[2] - cy) < 3, `committed under the finger too: ${got && got.map(Math.round)} (drawn at ${mid.ink.map(Math.round)})`);
+  // 拡大をやめると、次の線から元の層（host）に戻る（指の位置は見えている範囲の CSS px。2 倍なら 195×350 の中）
+  await cdp.send('Input.synthesizePinchGesture', { x: 100, y: 150, scaleFactor: 0.4, relativeSpeed: 1200 });
+  await page.waitForTimeout(300);
+  assert.ok(await page.evaluate(() => visualViewport.scale) < 1.01);
+  await page.evaluate(() => document.querySelector('paint-bookmarklet').style.removeProperty('translate'));
+  await touch('touchStart', [[60, 300]]);
+  for (let i = 1; i <= 5; i++) { await touch('touchMove', [[60 + i * 8, 300]]); await page.waitForTimeout(16); }
+  const back = await liveAt();
+  await touch('touchEnd', []);
+  await page.waitForTimeout(200);
+  assert.equal(back.inSurf, false, 'back in the fixed layer when not zoomed');
+  const [cx2, cy2] = await page.evaluate(() => window.__ev[1]);
+  assert.ok(back.ink && Math.abs(back.ink[0] - cx2) < 5 && Math.abs(back.ink[2] - cy2) < 3, `and under the finger: ${back.ink && back.ink.map(Math.round)} for ${Math.round(cx2)}, ${Math.round(cy2)}`);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('iPhone・iPad では、描く面とツールバーの touchmove を止める（ページ自身のスクロールが同時に動いて震えないように）。ボタンのタップ・パネルのスライダー・2 本指のスクロールはそのまま。ほかでは止めない（T-107）', async () => {
   const IOS = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
   const open = async ua => {

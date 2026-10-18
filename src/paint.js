@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.38.4';
+  const VERSION = '1.38.5';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -134,7 +134,7 @@
 .to.gone{opacity:calc(var(--a) * .25)}.to.ed{visibility:hidden}
 .sel i{position:absolute;width:9px;height:9px;margin:-5px 0 0 -5px;box-sizing:border-box;background:#fff;border:1.5px solid #3d7cff;border-radius:2px}
 canvas{position:absolute;left:0;top:0;pointer-events:none}
-.g,.p{position:absolute;inset:0}.g{will-change:opacity}
+.g,.p{position:absolute;inset:0}.g{will-change:opacity}.g.gz{inset:auto;left:0;top:0}
 .p{pointer-events:auto;touch-action:none;cursor:crosshair}
 .pass .p{pointer-events:none}
 .bar{position:absolute;left:0;top:0;cursor:grab;display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:4px;max-width:calc(100% - 16px);box-sizing:border-box;background:var(--bb,#202228);border:1px solid #ffffff1f;border-radius:12px;box-shadow:0 6px 24px #0007;pointer-events:auto;touch-action:none;will-change:transform}
@@ -411,6 +411,21 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function mapNow() {
     sk = sdpr / dpr;
     [sox, soy] = origin();
+  }
+  // 拡大した iPhone では、描いている途中の線（live / pred の .g）を面の中へ移し、押したときの画面の左上に当たる所（sox, soy）に置く（T-138）。
+  // iPhone の WebKit では、拡大していると画面に固定した層（host）が指の座標の基準からずれて見える（確定した面の線は指の所に付くのに、描いている間の線だけずれた。
+  // R-019 の答え。どの基準でずれるのかは未確認）。面の中なら、確定するときと同じ S の対応で見えるので、固定の層がどこに出ても合う。
+  // 拡大していないときと iPhone・iPad 以外は今まで通り host の中（低遅延の経路を変えない）。押したときに呼ぶ（mapNow の後。live は空のとき）
+  let gIn = false;
+  function placeLive() {
+    const z = IOS && !!VV && VV.scale > 1.01;
+    if (z !== gIn) {
+      gIn = z;
+      grp.classList.toggle('gz', z);
+      if (z) sroot.append(grp);
+      else { pad.before(grp); grp.style.removeProperty('transform'); }
+    }
+    if (z) grp.style.transform = `translate(${sox / sdpr}px,${soy / sdpr}px)`;
   }
   function dtile(tx, ty) {
     const k = ty * 65536 + tx;
@@ -1461,8 +1476,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 計測表示の入力の様子（T-123。線ごとに数え直す）: 点の数・座標が整数の点の数・まとめられた点の数と入力の数・ブラウザの予測が付いた入力の数と予測点の数・最後の予測点の時刻差の和・実入力が追い越して捨てる予測点の数
   let sqP = 0, sqInt = 0, sqCo = 0, sqEv = 0, sqPM = 0, sqPN = 0, sqPDt = 0, sqPOld = 0;
   // 押したときの拡大の様子（T-136。iPhone の座標の決まりを確かめる）: 倍率、見えている範囲のずれ（offsetLeft / Top）、scrollX とレイアウトの画面の位置の差、
-  // イベントの pageX − clientX とレイアウトの画面の位置の差（0 なら、client 座標はレイアウトの画面が基準）
-  let zSc = 1, zOX = 0, zOY = 0, zSX = 0, zSY = 0, zEX = 0, zEY = 0;
+  // イベントの pageX − clientX とレイアウトの画面の位置の差（0 なら、client 座標はレイアウトの画面が基準）、画面に固定した層の client 座標での左上（T-138）
+  let zSc = 1, zOX = 0, zOY = 0, zSX = 0, zSY = 0, zEX = 0, zEY = 0, zHX = 0, zHY = 0;
   let nEv = 0, nPts = 0; // 累計（stats() 用）
   // Delegated Ink Trail: 次フレームまでの隙間を OS が直接描く。OS 描画が確実な Windows に限定し、
   // それ以外では予測線を使う（API が存在しても軌跡が描かれない環境で予測を失わないため）
@@ -1646,10 +1661,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if ((win.devicePixelRatio || 1) !== dpr) fit();
     finishHandoff();
     mapNow();
+    placeLive();
     if (hud && VV) {
       const lx = lvX(), ly = lvY();
       zSc = VV.scale; zOX = VV.offsetLeft; zOY = VV.offsetTop;
       zSX = win.scrollX - lx; zSY = win.scrollY - ly; zEX = e.pageX - e.clientX - lx; zEY = e.pageY - e.clientY - ly;
+      const r = wrap.getBoundingClientRect();
+      zHX = r.left; zHY = r.top;
     }
     const t = erase ? 'eraser' : tool;
     const x = e.clientX * dpr, y = e.clientY * dpr, X = x * sk + sox, Y = y * sk + soy;
@@ -3221,7 +3239,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     hud.textContent =
       `線: 座標が整数 ${pc(sqInt, sqP)}%  まとめた点 ${(sqCo / (sqEv || 1)).toFixed(1)}/ev  間隔 ${pdt.toFixed(1)} ms (${round(1000 / pdt)} Hz)  1 フレーム ${fi.toFixed(1)} ms  遅れ ${dl.toFixed(1)} ms\n` +
       `ブラウザの予測: ${pc(sqPM, sqEv)}% の入力に ${(sqPN / (sqPM || 1)).toFixed(1)} 点・${(sqPDt / (sqPM || 1)).toFixed(1)} ms 先・実入力より古く捨てる ${pc(sqPOld, sqPN)}%  方式 ${ppred === 'own' ? '曲がりに沿う' : 'ブラウザ'}\n` +
-      `拡大: ${zSc.toFixed(2)} 倍  見えている所のずれ ${zOX.toFixed(1)}, ${zOY.toFixed(1)}  scroll の差 ${zSX.toFixed(1)}, ${zSY.toFixed(1)}  指の差 ${zEX.toFixed(1)}, ${zEY.toFixed(1)}\n` +
+      `拡大: ${zSc.toFixed(2)} 倍  見えている所のずれ ${zOX.toFixed(1)}, ${zOY.toFixed(1)}  scroll の差 ${zSX.toFixed(1)}, ${zSY.toFixed(1)}  指の差 ${zEX.toFixed(1)}, ${zEY.toFixed(1)}  固定の層 ${zHX.toFixed(1)}, ${zHY.toFixed(1)}  描く層 ${gIn ? '面' : '固定'}\n` +
       `入力 ${round(stEv / sec)} ev/s  点 ${((nPts - stP0) / n).toFixed(1)}/ev  予測 ${(stPred / n).toFixed(1)}/ev\n` +
       `処理 ${round(stCost / n * 1000)} µs/ev  入力→描画 ${(stLag / n).toFixed(1)} ms  塗り ${lastFillMs.toFixed(0)} ms\n` +
       `desync ${on(DESYNC)}  rawupdate ${on(HAS_RAW)}  coalesced ${on(HAS_CO)}  予測 ${nativePred ? 'native' : 'fallback'}  ink ${on(inkP)}\n` +

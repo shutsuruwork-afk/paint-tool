@@ -2491,6 +2491,51 @@ test('2 本指のスクロールの慣性: 動かしたまま離すと滑って�
   await page.close();
 });
 
+test('2 本指で弾いた後、ほとんど止まりかけ（0.3 px/ms 未満）なら、押すと止まってその指で描ける。速く滑っている間は止めるだけ（T-121）', async () => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 700 }, isMobile: true, hasTouch: true });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(server.base + '/long');
+  await runCode(page, CODE);
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], id) => ({ x, y, id })) });
+  const y = () => page.evaluate(() => scrollY);
+  const hist = () => page.evaluate(() => window.__paintBookmarklet.stats().history);
+  // 約 1.25 px/ms で弾く。1 ms ごとに 0.998 倍なので、0.3 px/ms を切るのは約 0.7 秒後、止まるのは約 1.9 秒後
+  const flick = async () => {
+    await touch('touchStart', [[150, 600]]);
+    await touch('touchStart', [[150, 600], [250, 600]]);
+    for (let i = 1; i <= 10; i++) { await touch('touchMove', [[150, 600 - i * 20], [250, 600 - i * 20]]); await page.waitForTimeout(16); }
+    await touch('touchEnd', [[150, 400]]);
+    await touch('touchEnd', []);
+  };
+  const draw = async (x, yy) => {
+    await touch('touchStart', [[x, yy]]);
+    for (let i = 1; i <= 6; i++) { await touch('touchMove', [[x + i * 20, yy]]); await page.waitForTimeout(16); }
+    await touch('touchEnd', []);
+    await page.waitForTimeout(100);
+  };
+  // 止まりかけ: まだ少しずつ動いているが、押せば止まって描ける
+  await flick();
+  await page.waitForTimeout(1100);
+  const a = await y();
+  await page.waitForTimeout(80);
+  assert.ok(await y() > a, 'still sliding slowly');
+  const h0 = await hist();
+  await draw(80, 300);
+  assert.equal(await hist(), h0 + 1, 'a touch on an almost stopped fling draws');
+  const b = await y();
+  await page.waitForTimeout(200);
+  assert.equal(await y(), b, 'and the fling stopped');
+  // 速く滑っている間は、今まで通り止めるだけ
+  await flick();
+  await page.waitForTimeout(150);
+  await draw(80, 400);
+  assert.equal(await hist(), h0 + 1, 'a touch on a fast fling only stops it');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('iPhone・iPad では、描く面とツールバーの touchmove を止める（ページ自身のスクロールが同時に動いて震えないように）。ボタンのタップ・パネルのスライダー・2 本指のスクロールはそのまま。ほかでは止めない（T-107）', async () => {
   const IOS = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
   const open = async ua => {

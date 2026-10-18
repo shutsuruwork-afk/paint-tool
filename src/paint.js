@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.36.3';
+  const VERSION = '1.36.4';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -1474,8 +1474,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const offTop = () => { if (LINE && !pass && win.scrollY < 1) scrollTo(win.scrollX, 1); }; // instant: ページが smooth でもすぐ動かす（描き始めの mapNow より前に 1px 下がっている）
   // 離した後の慣性（T-106、ユーザーの要望: スクロールの持続性）: 離す前の 100 ms の中点の動き（輪 KN 個）から速さを出し、1 ms ごとに KF 倍に落としながら
   // 毎フレーム scrollBy する（0.998 は iOS の UIScrollView の normal と同じ減り方）。止まってから離したときは滑らない。
-  // 滑っている間に押したら止めるだけ（その指では描かない）。ツールバーを押す・隠す・ページの端に着く、でも止まる
-  const KN = 8, KF = 0.998, kT = new Float64Array(KN), kX = new Float64Array(KN), kY = new Float64Array(KN);
+  // 滑っている間に押したら止めるだけ（その指では描かない）。ただし、ほとんど止まりかけ（KSTOP px/ms 未満。60 Hz で 1 フレーム 5 px 未満）なら止めて、その指で描く（T-121。
+  // 止まって見えるのに 1〜1.5 秒描けなかった）。ツールバーを押す・隠す・ページの端に着く、でも止まる
+  const KN = 8, KF = 0.998, KSTOP = 0.3, kT = new Float64Array(KN), kX = new Float64Array(KN), kY = new Float64Array(KN);
   let kN = 0, kVX = 0, kVY = 0, kAX = 0, kAY = 0, kL = 0, kR = 0;
   const kPush = (t, x, y) => { const i = kN++ % KN; kT[i] = t; kX[i] = x; kY[i] = y; };
   const stopFling = () => { if (kR) { cancelAnimationFrame(kR); kR = 0; } if (scrR) { cancelAnimationFrame(scrR); scrR = 0; } };
@@ -1509,7 +1510,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     kR = abs(kVX) + abs(kVY) < 0.03 ? 0 : requestAnimationFrame(fling);
   }
   function twoDown(e) {
-    const flung = !!kR;
+    const flung = !!kR && hypot(kVX, kVY) >= KSTOP;
     stopFling();
     if (act === -1) offTop();
     // ペンやマウスで押したら、2 本指のスクロールはそこで止める（描いている間にページが動くと、線が本文からずれる）

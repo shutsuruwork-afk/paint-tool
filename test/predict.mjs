@@ -10,7 +10,7 @@
 //       曲がりに沿う（本体の ownPred と同じ計算）/ 直線（速度を半分ずつならして 1 フレーム先へ。40px まで）
 import { readFileSync } from 'node:fs';
 
-const PW = 32, PCAP = 40, PDAMP = 2; // src/paint.js の ownPred と同じ値
+const PW = 32, PCAP = 40, PDAMP = 2, PLEN = 0.75; // src/paint.js の ownPred と同じ値（PLEN は既定の先読み plen。T-115）
 
 const med = a => { if (!a.length) return NaN; const b = [...a].sort((x, y) => x - y); return b[b.length >> 1]; };
 const pct = (a, q) => { if (!a.length) return NaN; const b = [...a].sort((x, y) => x - y); return b[Math.min(b.length - 1, Math.floor(b.length * q))]; };
@@ -60,7 +60,7 @@ function lost(A, B) {
   return n;
 }
 
-// 曲がりに沿う予測（src/paint.js の ownPred と同じ計算。H は先の時間〈1 フレーム〉、点は CSS px）
+// 曲がりに沿う予測（src/paint.js の ownPred と同じ計算。H は先の時間〈1 フレーム × PLEN〉、点は CSS px）
 export function ownPred(hist, H) {
   const L = hist[hist.length - 1];
   let n = 0, s1 = 0, s2 = 0, s3 = 0, s4 = 0, x0 = 0, x1 = 0, x2 = 0, y0 = 0, y1 = 0, y2 = 0;
@@ -170,7 +170,7 @@ export function analyze(data) {
       };
       score('none', []);
       score('chrome', lastPr.filter(q => q.t > L.t));
-      score('own', ownPred(P.slice(Math.max(0, li - 63), li + 1), H));
+      score('own', ownPred(P.slice(Math.max(0, li - 63), li + 1), H * PLEN));
       let dx = vx * H, dy = vy * H;
       const m = Math.hypot(dx, dy);
       if (m > 40) { dx *= 40 / m; dy *= 40 / m; }

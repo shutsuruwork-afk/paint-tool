@@ -452,23 +452,26 @@ test('見た目（開発用）: インストールページの開発用を入れ
   assert.equal((await prefs(page)).theme, '#ffd54f');
   // 蛍光ペンの予測を切り替える（既定はそのまま）
   const mpOn = () => shadowEval(page, root => [...root.querySelectorAll('.pn.on .sg')].filter(b => b.classList.contains('on')).map(b => b.textContent));
-  assert.deepEqual(await mpOn(), ['曲がりに沿う', 'そのまま', 'キャンバスの中で']);
+  assert.deepEqual(await mpOn(), ['曲がりに沿う', '3/4', 'そのまま', 'キャンバスの中で']);
   await mouseClick(page, '.pn.on [aria-label="蛍光ペンの予測: なし"]');
-  assert.deepEqual(await mpOn(), ['曲がりに沿う', 'なし', 'キャンバスの中で']);
+  assert.deepEqual(await mpOn(), ['曲がりに沿う', '3/4', 'なし', 'キャンバスの中で']);
+  // 予測の長さを 1 フレーム（前の長さ）に
+  await mouseClick(page, '.pn.on [aria-label="予測の長さ: 1 フレーム"]');
+  assert.equal((await prefs(page)).plen, 1);
   // 予測の方法をブラウザ（前の方式）に
   await mouseClick(page, '.pn.on [aria-label="予測の方法: ブラウザ"]');
   assert.equal((await prefs(page)).ppred, 'chrome');
   assert.equal((await prefs(page)).mpred, 'off');
   // 半透明の線の描き方を前の方式（まとめて）にすると、蛍光ペンを選んだ時点でまとめた要素に濃さがかかる
   await mouseClick(page, '.pn.on [aria-label="半透明の線の描き方: まとめて"]');
-  assert.deepEqual(await mpOn(), ['ブラウザ', 'なし', 'まとめて']);
+  assert.deepEqual(await mpOn(), ['ブラウザ', '1 フレーム', 'なし', 'まとめて']);
   assert.equal((await prefs(page)).blend, 'group');
   // この見た目をデフォルトに: 見た目を持ってインストールページを開く
   await page.evaluate(() => { window.__opened = []; window.open = (...a) => { window.__opened.push(a); return null; }; });
   await mouseClick(page, '.pn.on [aria-label^="この見た目をデフォルトに"]');
   const [url] = (await page.evaluate(() => window.__opened))[0];
   const d = JSON.parse(decodeURIComponent(url.slice(url.indexOf('#defaults=') + 10)));
-  assert.deepEqual([d.dev, d.theme, d.glass, d.blur, d.sat, d.ppred, d.mpred, d.blend], [true, '#ffd54f', false, 8, 250, 'chrome', 'off', 'group']);
+  assert.deepEqual([d.dev, d.theme, d.glass, d.blur, d.sat, d.ppred, d.plen, d.mpred, d.blend], [true, '#ffd54f', false, 8, 250, 'chrome', 1, 'off', 'group']);
   const { page: ip, errors: ie } = await openPage(browser, server.base + '/install' + url.slice(url.indexOf('#')));
   assert.equal(await ip.isChecked('#p-theme input[value="custom"]'), true);
   assert.equal(await ip.inputValue('#p-tcolor'), '#ffd54f');
@@ -476,6 +479,7 @@ test('見た目（開発用）: インストールページの開発用を入れ
   assert.equal(await ip.inputValue('#p-sat'), '250');
   assert.equal(await ip.isChecked('#p-mpred input[value="off"]'), true);
   assert.equal(await ip.isChecked('#p-ppred input[value="chrome"]'), true);
+  assert.equal(await ip.isChecked('#p-plen input[value="1"]'), true);
   assert.equal(await ip.isChecked('#p-blend input[value="group"]'), true);
   assert.equal(await ip.isChecked('#p-dev'), true);
   assert.deepEqual(ie, []);
@@ -1265,6 +1269,7 @@ test('インストールページで選んだ設定入りのブックマーク�
   assert.equal(p0.dev, await page.isChecked('#p-dev'));
   assert.equal(p0.mpred, await page.evaluate(() => document.querySelector('#p-mpred input:checked').value));
   assert.equal(p0.ppred, await page.evaluate(() => document.querySelector('#p-ppred input:checked').value));
+  assert.equal(String(p0.plen), await page.evaluate(() => document.querySelector('#p-plen input:checked').value));
   assert.equal(p0.ui, await page.evaluate(() => document.querySelector('#p-ui input:checked').value));
   assert.equal(p0.blend, await page.evaluate(() => document.querySelector('#p-blend input:checked').value));
   await page.evaluate(() => window.__paintBookmarklet.destroy());
@@ -1598,6 +1603,69 @@ test('予測（曲がりに沿う）: 円を描いている途中の予測は、
   assert.ok(r.moving.reach > 25 && r.moving.n > 10, 'predicts ahead ' + JSON.stringify(r));
   assert.ok(r.moving.inward > 1, 'curves inward along the circle ' + JSON.stringify(r));
   assert.ok(r.stopped.reach <= 4, 'shrinks when stopped ' + JSON.stringify(r));
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('予測の先読みは 1 フレームの 4 分の 3（急に止めたときの飛び出しを短くする。開発用で 1 フレーム・2 分の 1 も選べる）', async () => {
+  const reach = {};
+  for (const plen of [undefined, 1, 0.5]) {
+    const { page, errors } = await openPage(browser, server.base + '/');
+    await runCode(page, withDefaults(CODE, plen ? { plen, dev: true } : {}));
+    reach[plen || 'default'] = await page.evaluate(() => {
+      const root = document.querySelector('paint-bookmarklet').shadowRoot, pad = root.querySelector('.p'), q = root.querySelector('canvas.q');
+      const ev = (type, x, y, ts) => { const e = new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, pointerId: 9, pointerType: 'mouse', isPrimary: true, clientX: x, clientY: y, button: type === 'pointermove' ? -1 : 0, buttons: 1 }); Object.defineProperty(e, 'timeStamp', { value: ts }); return e; };
+      // 4 ms ごとに 1 px/ms でまっすぐ右へ（1 フレーム 16.7 ms 分なら 16.7 px 先まで）
+      const T0 = performance.now() + 1000;
+      pad.dispatchEvent(ev('pointerdown', 200, 300, T0));
+      for (let i = 1; i <= 30; i++) pad.dispatchEvent(ev('pointermove', 200 + i * 4, 300, T0 + i * 4));
+      const lx = 320 * devicePixelRatio, d = q.getContext('2d').getImageData(0, 0, q.width, q.height).data;
+      let r = 0;
+      for (let y = 0; y < q.height; y++) for (let x = 0; x < q.width; x++) if (d[(y * q.width + x) * 4 + 3] >= 100) r = Math.max(r, x - lx);
+      pad.dispatchEvent(ev('pointerup', 320, 300, T0 + 130));
+      return r / devicePixelRatio - 2; // 線の太さの半分（2px）を除く
+    });
+    assert.deepEqual(errors, []);
+    await page.close();
+  }
+  // 届く所は画素の単位（縁のぼかしで 1px ほど短く出る）なので、長さの差で見る（1 フレームの 4 分の 1 は 4.2px）
+  assert.ok(Math.abs(reach[1] - 16.7) < 1.5, 'one frame ahead ' + JSON.stringify(reach));
+  assert.ok(Math.abs(reach[1] - reach.default - 4.2) < 1.5, 'three quarters by default ' + JSON.stringify(reach));
+  assert.ok(Math.abs(reach.default - reach[0.5] - 4.2) < 1.5, 'half ' + JSON.stringify(reach));
+});
+
+test('急に止めたとき: 入力の間隔が短いマウスなら、予測線は止まってから入力の間隔の 3 倍（10 ms 以上）と遅れの分で消える（前は 40 ms と遅れの分）。動いている間は消えない', async () => {
+  const { page, errors } = await fresh();
+  const r = await page.evaluate(async () => {
+    const api = window.__paintBookmarklet, pad = document.querySelector('paint-bookmarklet').shadowRoot.querySelector('.p');
+    const ev = (type, x, y, ts) => { const e = new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, pointerId: 9, pointerType: 'mouse', isPrimary: true, clientX: x, clientY: y, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1 }); Object.defineProperty(e, 'timeStamp', { value: ts }); return e; };
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    // 1 ms ごとの点（1000 Hz のマウス）を、本物の時刻で 4 ms ごとにまとめて届ける。1 px/ms で右へ
+    const T0 = performance.now();
+    let x = 100, last = T0, moving = 0, off = 0, done = false, cleared = -1, dl = 0, pdt = 0, fi = 0;
+    pad.dispatchEvent(ev('pointerdown', x, 400, T0));
+    // 本体の tick より後に呼ばれるよう、押してから見張る（同じフレームの時刻で比べる）
+    const watch = ts => {
+      const st = api.stats();
+      if (!done) { if (ts - T0 > 100) { moving++; if (!st.pred) off++; } }
+      else if (cleared < 0 && !st.pred) { cleared = ts - last; dl = st.inputDelay; pdt = st.inputInterval; fi = st.frame; }
+      if (cleared < 0) requestAnimationFrame(watch);
+    };
+    requestAnimationFrame(watch);
+    while (performance.now() - T0 < 500) {
+      await sleep(4);
+      const now = performance.now();
+      for (let t = last + 1; t <= now; t += 1) { x += 1; pad.dispatchEvent(ev('pointermove', x, 400, t)); last = t; }
+    }
+    done = true;
+    while (cleared < 0 && performance.now() - last < 600) await sleep(5);
+    pad.dispatchEvent(ev('pointerup', x, 400, performance.now()));
+    return { moving, off, cleared, dl, pdt, fi };
+  });
+  assert.ok(r.moving > 15 && r.off <= 1, 'prediction stays while moving ' + JSON.stringify(r));
+  assert.ok(r.pdt < 2, 'measures the input interval ' + JSON.stringify(r));
+  assert.ok(r.cleared > 0 && r.cleared <= 10 + r.dl + r.fi + 1.5, 'cleared soon after stopping ' + JSON.stringify(r));
+  assert.ok(r.cleared < 40 + r.dl, 'sooner than the old wait (40 ms + delay) ' + JSON.stringify(r));
   assert.deepEqual(errors, []);
   await page.close();
 });

@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.38.1';
+  const VERSION = '1.38.2';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -1040,11 +1040,15 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const cw = W / dpr + 'px', ch = H / dpr + 'px';
     for (const c of [liveC, predC]) { c.style.width = cw; c.style.height = ch; }
     tx0 = ty0 = tx1 = ty1 = 0;
-    if (visible) { sizeSurface(); layBar(); measureBar(); moveBar(barX, barY); }
+    // 1 段か 2 段かは幅だけで決まるので、組み直すのは幅が変わったときだけ（T-134。LINE などでは、スクロールでブラウザのバーが縮むたびに高さだけが変わる。
+    // そのたびにツールバーの class と幅を外して付け直していて、iPhone ではガラスの層が作り直されて透明に見えていたらしい）
+    if (visible) { sizeSurface(); if (win.innerWidth !== lbW) layBar(); measureBar(); moveBar(barX, barY); }
   }
   // 1 段に収まらない幅（スマホなど）では、上の段に道具、下の段に色と太さ・元に戻す・その他などの 2 段に整える（T-064・T-067）。
   // 幅は決め打ちせず、折り返すかを測る（タッチの端末はボタンが大きい）。ツールバーの幅は長い方の段に合わせる
+  let lbW = -1; // 最後に組み直したときの幅
   function layBar() {
+    lbW = win.innerWidth;
     const cl = bar.classList;
     cl.remove('two');
     bar.style.removeProperty('width');

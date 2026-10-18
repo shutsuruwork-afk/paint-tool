@@ -184,7 +184,7 @@
 ```sh
 npm install
 npm run build   # src/paint.js → dist/paint.min.js, dist/bookmarklet.txt, docs/index.html
-npm test        # Playwright（Chromium）で 106 項目の動作テスト
+npm test        # Playwright（Chromium）で 107 項目の動作テスト
 npm run bench   # 性能計測
 npm run pop     # 蛍光ペンの先端の「ぴょこぴょこ」（消える画素）と隙間の計測
 npm run predict -- paint-input-*.json  # 録った入力で、予測の方法（なし・ブラウザ・曲がりに沿う・直線）ごとの、1 フレーム後のペン先とのずれ・外れた予測・消える線の長さを比べる。負荷の様子（フレームの間隔・入力が届くまでの遅れ・予測線の点滅）も出す

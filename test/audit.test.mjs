@@ -354,3 +354,29 @@ test('開発用の「ガラスの地」: 重ねる（今）・バー自身・ス
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('ページの高さだけが変わる（LINE などで、スクロールするとブラウザのバーが縮む）ときは、ツールバーを組み直さない。幅が変われば組み直す（T-134）', async () => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 700 }, hasTouch: true });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(server.base + '/long');
+  await runCode(page, CODE);
+  await page.waitForTimeout(200);
+  const two = () => shadowEval(page, root => root.querySelector('.bar').classList.contains('two'));
+  assert.equal(await two(), true, 'two rows on a phone-width screen');
+  await shadowEval(page, root => {
+    const bar = root.querySelector('.bar');
+    window.__mut = [];
+    new MutationObserver(l => { for (const m of l) window.__mut.push(m.attributeName === 'class' ? 'class' : 'style:' + (bar.style.width || '')); }).observe(bar, { attributes: true, attributeFilter: ['class', 'style'] });
+  });
+  for (const h of [740, 760, 700, 720]) { await page.setViewportSize({ width: 390, height: h }); await page.waitForTimeout(100); }
+  assert.deepEqual(await page.evaluate(() => window.__mut), [], 'height-only changes leave the toolbar alone (v1.38.1: the class and width were removed and set again each time)');
+  await page.setViewportSize({ width: 1000, height: 720 });
+  await page.waitForTimeout(100);
+  assert.equal(await two(), false, 'wider: one row again');
+  await page.setViewportSize({ width: 390, height: 720 });
+  await page.waitForTimeout(100);
+  assert.equal(await two(), true, 'narrow again: two rows');
+  assert.deepEqual(errors, []);
+  await page.close();
+});

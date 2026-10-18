@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.37.0';
+  const VERSION = '1.38.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -670,11 +670,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   const closeB = btn('閉じる（8 秒間は元に戻せます）', I.close, close);
   // 入力の録画（開発用。T-070）: 描いた線の入力を録って JSON で書き出す。予測の精度を、人が実際に書いた線で測るため（T-060）
-  let recB = null;
+  let recB = null, hudB = null;
   if (dev) item('見た目（開発用） — ツールバーの色やガラス、予測の方法と長さ、蛍光ペンの予測、半透明の線の描き方をその場で変える', '見た目（開発用）', '', I.bg, () => openPanel(lookP, moreB));
   if (dev) {
     [recB] = item('入力を録る（開発用） — ペン・蛍光ペンで描いた線の入力（座標・時刻・筆圧・Chrome の予測）を録る。入れると前の録画は消える', '入力を録る（開発用）', '', I.rec, toggleRec, true, true);
     item('録った入力を書き出す（開発用） — JSON をダウンロード', '録った入力を書き出す', '', I.save, recExport);
+    // キーボードのない iPhone でも計測表示（D）を出せるように（T-123）
+    [hudB] = item('計測表示（開発用） — 左下に、入力の数・座標・まとめられた点・ブラウザの予測・遅れを出す（D キーと同じ）', '計測表示（開発用）', 'D', I.prefs, toggleHud, true, true);
   }
   const hideB = btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hideHint);
   // ここまでが本家のその他。CP2 のその他は、全消去・色（選ぶとメニューを閉じ、消しゴムのときはペンに戻す）・本家に戻す
@@ -1424,6 +1426,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   let handoff = 0, hcx = 0, hcy = 0, hcw = 0, hch = 0; // 確定後に live を消すまでの受け渡し（commitLive）
   // 計測（HUD 表示中のみ時間を測る）
   let hud = null, hudT = 0, stEv = 0, stPred = 0, stCost = 0, stLag = 0, stT = 0, stP0 = 0, lastFillMs = 0;
+  // 計測表示の入力の様子（T-123。線ごとに数え直す）: 点の数・座標が整数の点の数・まとめられた点の数と入力の数・ブラウザの予測が付いた入力の数と予測点の数・最後の予測点の時刻差の和・実入力が追い越して捨てる予測点の数
+  let sqP = 0, sqInt = 0, sqCo = 0, sqEv = 0, sqPM = 0, sqPN = 0, sqPDt = 0, sqPOld = 0;
   let nEv = 0, nPts = 0; // 累計（stats() 用）
   // Delegated Ink Trail: 次フレームまでの隙間を OS が直接描く。OS 描画が確実な Windows に限定し、
   // それ以外では予測線を使う（API が存在しても軌跡が描かれない環境で予測を失わないため）
@@ -1648,6 +1652,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         inkS = pctx.strokeStyle;
         // 押した瞬間に点を出す（タップでも点が残る）
         hN = 0; fT = 0; hPush(lt, x, y);
+        if (hud) sqP = sqInt = sqCo = sqEv = sqPM = sqPN = sqPDt = sqPOld = 0;
         lctx.beginPath(); lctx.arc(x, y, bw / 2, 0, TAU);
         if (sTr) { lctx.globalAlpha = sKA; lctx.fill(); lctx.globalAlpha = 1; addPiece(2, x, y, x, y, x, y, bw); } else lctx.fill();
         const p = bw / 2 + 2;
@@ -1704,7 +1709,16 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       drawShape();
     }
     nEv++;
-    if (hud) { stEv++; stPred += pn; stCost += now() - t0; stLag += t0 - e.timeStamp; }
+    if (hud) { stEv++; stPred += pn; stCost += now() - t0; stLag += t0 - e.timeStamp; hudIn(e, list, n, isMove); }
+  }
+  // 計測表示を出している間だけ、入力の様子を数える（iPhone の座標が整数の CSS px か・iOS の予測点の時刻が親の入力より先か。T-123）
+  function hudIn(e, list, n, isMove) {
+    sqEv++; sqCo += n;
+    for (let i = 0, k = n || 1; i < k; i++) { const p = n ? list[i] : e; sqP++; if (p.clientX % 1 === 0 && p.clientY % 1 === 0) sqInt++; }
+    const pl = isMove && e.getPredictedEvents ? e.getPredictedEvents() : EMPTY, m = pl.length;
+    if (!m) return;
+    sqPM++; sqPN += m; sqPDt += pl[m - 1].timeStamp - e.timeStamp;
+    for (let i = 0; i < m; i++) if (pl[i].timeStamp <= lt) sqPOld++; // drawTail が捨てる予測点
   }
 
   // 中点を結ぶ二次ベジエで平滑化しつつ、新しい点の分だけを live レイヤに追記する
@@ -3133,7 +3147,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 
   // ---------- パフォーマンス HUD (D) ----------
   function toggleHud() {
-    if (hud) { clearInterval(hudT); hud.remove(); hud = null; return; }
+    if (hud) { clearInterval(hudT); hud.remove(); hud = null; if (hudB) hudB.setAttribute('aria-checked', false); return; }
+    if (hudB) hudB.setAttribute('aria-checked', true);
     hud = el('div', 'hud');
     wrap.append(hud);
     stEv = stPred = stCost = stLag = 0;
@@ -3142,6 +3157,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     hudT = setInterval(updHud, 500);
     updHud();
   }
+  const pc = (a, b) => (b ? round(a / b * 100) : 0);
   function updHud() {
     const t = now(), sec = (t - stT) / 1000, n = stEv || 1;
     const on = v => (v ? 'on' : 'off');
@@ -3149,7 +3165,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       `入力 ${round(stEv / sec)} ev/s  点 ${((nPts - stP0) / n).toFixed(1)}/ev  予測 ${(stPred / n).toFixed(1)}/ev\n` +
       `処理 ${round(stCost / n * 1000)} µs/ev  入力→描画 ${(stLag / n).toFixed(1)} ms  塗り ${lastFillMs.toFixed(0)} ms\n` +
       `desync ${on(DESYNC)}  rawupdate ${on(HAS_RAW)}  coalesced ${on(HAS_CO)}  予測 ${nativePred ? 'native' : 'fallback'}  ink ${on(inkP)}\n` +
-      `${W}×${H} @${dpr}  面 ${surfW}×${surfH} タイル ${dtiles.size}  履歴 ${hpos}/${hist.length} (${(hpix / 1e6).toFixed(1)} MP、縮めた ${zipped()})  canvas ${round((canvasPix() + hpix) * 4e-6)} MB  v${VERSION}`;
+      `${W}×${H} @${dpr}  面 ${surfW}×${surfH} タイル ${dtiles.size}  履歴 ${hpos}/${hist.length} (${(hpix / 1e6).toFixed(1)} MP、縮めた ${zipped()})  canvas ${round((canvasPix() + hpix) * 4e-6)} MB  v${VERSION}\n` +
+      // 最後の線（描いている間は今の線）の入力の様子
+      `線: 座標が整数 ${pc(sqInt, sqP)}%  まとめた点 ${(sqCo / (sqEv || 1)).toFixed(1)}/ev  間隔 ${pdt.toFixed(1)} ms (${round(1000 / pdt)} Hz)  1 フレーム ${fi.toFixed(1)} ms  遅れ ${dl.toFixed(1)} ms\n` +
+      `ブラウザの予測: ${pc(sqPM, sqEv)}% の入力に ${(sqPN / (sqPM || 1)).toFixed(1)} 点・${(sqPDt / (sqPM || 1)).toFixed(1)} ms 先・実入力より古く捨てる ${pc(sqPOld, sqPN)}%  方式 ${ppred === 'own' ? '曲がりに沿う' : 'ブラウザ'}`;
     stEv = stPred = stCost = stLag = 0;
     stT = t;
     stP0 = nPts;

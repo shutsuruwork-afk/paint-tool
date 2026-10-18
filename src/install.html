@@ -253,7 +253,7 @@ section > .sub + .sub { margin-top: 20px; }
 
 <main class="page">
   <header>
-    <p class="eyebrow">Bookmarklet · v1.37.0 · %%SIZE%%（gzip %%GZIP%%）</p>
+    <p class="eyebrow">Bookmarklet · v1.38.0 · %%SIZE%%（gzip %%GZIP%%）</p>
     <h1>ペイント<br>ブックマークレット</h1>
     <p class="lead">開いているページの上に、<span class="mark">そのまま描ける<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d="M18 40C8 22 52 6 108 7s92 13 84 30-62 20-112 17S4 38 30 16" vector-effect="non-scaling-stroke"/></svg></span>ペイントツールです。ブックマークを押すだけで起動し、拡張機能もアカウントも要りません。入力から線が画面に出るまでの遅延を減らす仕組みを、ブラウザが対応している限りすべて使います。</p>
     <div class="actions">
@@ -358,7 +358,7 @@ section > .sub + .sub { margin-top: 20px; }
       </fieldset>
       <fieldset>
         <legend>開発用</legend>
-        <label class="check"><span class="ct"><b>開発用の項目をツールの中に出す</b><small>その他（⋯）に「見た目（開発用）」が出ます。「見た目（開発用）」では、ツールバーの色（暗い・明るい・好きな色）とガラス、予測の方法と長さ、蛍光ペンの予測、半透明の線の描き方をその場で変えられます。気に入ったら「この見た目をデフォルトに」で、このページに持ってこられます。「入力を録る（開発用）」を入れると、ペン・蛍光ペンで描いた線の入力（座標・時刻・筆圧・ブラウザの予測）を録って JSON で書き出せます（予測の精度を、実際に書いた線で測るため。ページの URL は入りません）。</small></span><input type="checkbox" role="switch" id="p-dev"></label>
+        <label class="check"><span class="ct"><b>開発用の項目をツールの中に出す</b><small>その他（⋯）に「見た目（開発用）」が出ます。「見た目（開発用）」では、ツールバーの色（暗い・明るい・好きな色）とガラス、予測の方法と長さ、蛍光ペンの予測、半透明の線の描き方をその場で変えられます。気に入ったら「この見た目をデフォルトに」で、このページに持ってこられます。「入力を録る（開発用）」を入れると、ペン・蛍光ペンで描いた線の入力（座標・時刻・筆圧・ブラウザの予測）を録って JSON で書き出せます（予測の精度を、実際に書いた線で測るため。ページの URL は入りません）。「計測表示（開発用）」は D キーと同じ計測表示で、キーボードのない iPhone でも、描いた線の入力の様子（座標が整数か・ブラウザの予測など）を見られます。</small></span><input type="checkbox" role="switch" id="p-dev"></label>
         <p class="gdev-h">予測の方法（開発用）</p>
         <div class="choices" id="p-ppred" role="radiogroup" aria-label="予測の方法">
           <label><input type="radio" name="ppred" value="own">曲がりに沿う（入力ごとに、直近の点から速さと曲がりを求める。iPhone・iPad 以外の既定）</label>

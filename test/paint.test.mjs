@@ -2495,6 +2495,57 @@ test('2 本指のスクロールの慣性: 動かしたまま離すと滑って�
   await page.close();
 });
 
+test('開発用の計測表示: その他から出し入れでき（キーボードのない iPhone 用）、線ごとに、座標が整数か・ブラウザの予測点の時刻が実入力より古くて捨てる割合を出す（T-123）', async () => {
+  const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+  const page = await browser.newPage({ viewport: { width: 1000, height: 700 }, userAgent: IPHONE });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(server.base + '/');
+  await runCode(page, withDefaults(CODE, { dev: true }));
+  const item = () => shadowEval(page, root => { const b = root.querySelector('[aria-label^="計測表示"]'); return b && b.getAttribute('aria-checked'); });
+  const hudText = () => shadowEval(page, root => { const h = root.querySelector('.hud'); return h ? h.textContent : null; });
+  assert.equal(await hudText(), null);
+  await shadowEval(page, root => root.querySelector('[aria-label^="計測表示"]').click());
+  assert.equal(await item(), 'true');
+  assert.ok(await hudText(), 'the HUD is shown');
+  // 1 本の線: 座標が frac だけずれた点を 4 ms ごとに。予測点は dt ms 先の時刻（0 なら親と同じ）
+  const stroke = (frac, dt) => shadowEval(page, (root, [frac, dt]) => {
+    const pad = root.querySelector('.p');
+    const mk = (type, x, ts) => {
+      const o = { bubbles: true, cancelable: true, composed: true, pointerId: 5, pointerType: 'touch', isPrimary: true, clientX: x, clientY: 300 + frac, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1 };
+      if (type === 'pointermove') { const p = new PointerEvent('pointermove', { ...o, clientX: x + 10 }); Object.defineProperty(p, 'timeStamp', { value: ts + dt }); o.predictedEvents = [p]; }
+      const e = new PointerEvent(type, o); Object.defineProperty(e, 'timeStamp', { value: ts }); return e;
+    };
+    const T0 = performance.now() + 1000;
+    pad.dispatchEvent(mk('pointerdown', 200 + frac, T0));
+    for (let i = 1; i <= 20; i++) pad.dispatchEvent(mk('pointermove', 200 + frac + i * 4, T0 + i * 4));
+    pad.dispatchEvent(mk('pointerup', 280 + frac, T0 + 90));
+  }, [frac, dt]);
+  await stroke(0, 0);
+  await page.waitForTimeout(600);
+  let t = await hudText();
+  assert.match(t, /座標が整数 100%/);
+  assert.match(t, /の入力に 1\.0 点・0\.0 ms 先・実入力より古く捨てる 100%/); // 離した入力（pointerup）には予測が付かない
+  assert.match(t, /方式 ブラウザ/);
+  await stroke(0.5, 8);
+  await page.waitForTimeout(600);
+  t = await hudText();
+  assert.match(t, /座標が整数 0%/);
+  assert.match(t, /8\.0 ms 先・実入力より古く捨てる 0%/);
+  // もう一度押すと消える
+  await shadowEval(page, root => root.querySelector('[aria-label^="計測表示"]').click());
+  assert.equal(await item(), 'false');
+  assert.equal(await hudText(), null);
+  assert.deepEqual(errors, []);
+  await page.close();
+  // 開発用でなければ、その他に出ない
+  const p2 = await browser.newPage();
+  await p2.goto(server.base + '/');
+  await runCode(p2, CODE);
+  assert.equal(await shadowEval(p2, root => !!root.querySelector('[aria-label^="計測表示"]')), false);
+  await p2.close();
+});
+
 test('2 本指で弾いた後、ほとんど止まりかけ（0.3 px/ms 未満）なら、押すと止まってその指で描ける。速く滑っている間は止めるだけ（T-121）', async () => {
   const page = await browser.newPage({ viewport: { width: 390, height: 700 }, isMobile: true, hasTouch: true });
   const errors = [];

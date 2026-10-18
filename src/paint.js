@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.36.2';
+  const VERSION = '1.36.3';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -1046,6 +1046,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     x.fillRect(0, 0, 1, 1);
     if (!pool.length) pool.push(newTile());
     pool[0].x.drawImage(s, 0, 0, 1, 1, 0, 0, 1, 1);
+    // 履歴の圧縮の初回の重さ（読み出しがそのまま戻るかの確かめと、GPU の canvas からの初めての読み出し）は、描くのを休んだときではなく今払う（T-120）
+    if (MEM) {
+      if (zOK < 0) zOK = zProbe();
+      const z = zCtx();
+      z.drawImage(s, 0, 0, 1, 1, 0, 0, 1, 1); // 履歴のアトラスと同じ種類の canvas から
+      z.getImageData(0, 0, 1, 1);
+    }
   }
   function onResize() {
     if (!rz) rz = requestAnimationFrame(() => { rz = 0; fit(); });
@@ -1087,9 +1094,12 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 履歴の上限: 画面 8 枚分の画素または 200 手。スマホ・タブレットでは、canvas 全体を MEM までに抑えるよう、
   // MEM からほかの canvas の分を引いた残りまで（絵が大きくても、画面 1 枚分は残す。T-113）。超えたら古い手から捨てる。
   // 捨てるのは元に戻せる手（hpos より前）だけで、やり直しの並びは崩さない
+  function hcap() {
+    const cap = max(W * H * 8, 3e7);
+    return MEM ? max(W * H, min(cap, MEM - canvasPix())) : cap;
+  }
   function trim() {
-    let cap = max(W * H * 8, 3e7);
-    if (MEM) cap = max(W * H, min(cap, MEM - canvasPix()));
+    const cap = hcap();
     while (hpos > 1 && (hist.length > 200 || hpix > cap)) { free(hist.shift()); hpos--; }
   }
   function free(h) {
@@ -1232,10 +1242,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 元に戻す・やり直すの近く（hpos の前後 ZHOT 手）は canvas のまま持ち、すぐ戻せるようにする。それより遠い手は、1 秒何もしなかったときに
   // 1 つずつ（アトラスか全消去のタイル 1 枚）画素を読み出し、同じ画素の続きをまとめた形（zEnc）に縮めて canvas の中身を手放す。
   // 元に戻すときは、その場で canvas に戻す（unz。待ちはなく、数 ms）。画質は変わらない。大きな物は約 1 MB（ZSTRIP）の帯に分け、
-  // 30 ms おきに 1 帯ずつ読むので、描き始めを待たせない。帯は毎回別の canvas に写してから読む（同じ canvas を何度も読むと、
-  // Chrome がページのコンソールに警告を出す）。読み出した画素がそのまま戻らない環境（指紋対策で読み出しに揺らぎを足すブラウザなど）では縮めない（zProbe）
-  const ZHOT = 4, ZSTRIP = 1 << 18;
-  let zT = 0, zOK = -1, zJob = null; // zOK: 読み出しがそのまま戻るか（-1 はまだ調べていない）。zJob: 縮めている途中の物
+  // 30 ms おきに 1 帯ずつ読むので、描き始めを待たせない。帯は読み出し用の canvas（zS。willReadFrequently で CPU に置くので、何度読んでも
+  // Chrome がページのコンソールに警告を出さず、帯ごとに GPU の canvas を作らない）に写してから読む。
+  // 読み出した画素がそのまま戻らない環境（指紋対策で読み出しに揺らぎを足すブラウザなど）では縮めない（zProbe）。
+  // 縮めるのは、スマホ・タブレットで履歴が上限（hcap）の半分を超えたときだけで、始めたら遠い手を全部縮めるまで続ける（zRun。T-120。読み出しは描き心地の邪魔になりうるので、要るときだけにする。
+  // PC は上限が大きく、縮めても違いを感じなかった）。2 本指でスクロールしている間・慣性で滑っている間もしない（スクロールは JS が毎フレーム動かしている）
+  const ZHOT = 4, ZSTRIP = 1 << 17;
+  let zT = 0, zOK = -1, zJob = null, zS = null, zRun = false; // zOK: 読み出しがそのまま戻るか（-1 はまだ調べていない）。zJob: 縮めている途中の物。zS: 読み出し用の帯の 2D コンテキスト
+  const zCtx = () => zS || (zS = newCanvas(1, 1).getContext('2d', { willReadFrequently: true }));
   const zSoon = () => { clearTimeout(zT); zT = setTimeout(compact, 1000); };
   // 縮めてある物の数（アトラスと全消去のタイル）。HUD と stats 用
   const zipped = () => { let n = 0; for (const h of hist) { if (h.z) n++; if (h.d) for (let j = 1; j < h.d.length; j += 2) if (h.d[j] && h.d[j].z) n++; } return n; };
@@ -1243,11 +1257,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function compact() {
     zT = 0;
     if (act !== -1) return; // 描いている間はしない（描き終わりの stopStroke でまた 1 秒待つ）
+    if (scr || kR) { zSoon(); return; } // 2 本指でスクロール・慣性で滑っている間は、止まってから 1 秒待つ
+    if (!zRun) { if (!MEM || hpix <= hcap() / 2) return; zRun = true; }
     if (zOK < 0) zOK = zProbe();
-    if (!zOK || !(zJob || (zJob = zNext()))) return;
+    if (!zOK || !(zJob || (zJob = zNext()))) { zRun = false; zFree(); return; }
     zStep();
     zT = setTimeout(compact, 30);
   }
+  const zFree = () => { if (zS) zS.canvas.width = zS.canvas.height = 1; };
   // 次に縮める物: 元に戻す・やり直すから遠い手のアトラスか、全消去の手のタイル。小さい物（4096 画素未満）は縮めない
   function zNext() {
     for (let i = 0; i < hist.length; i++) {
@@ -1264,10 +1281,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const J = zJob, { h, j, o, c, w, hh } = J;
     // 途中で入れ替えた（元に戻す・やり直す）・捨てた物はやめる
     if (o.c !== c || c.width !== w || (j >= 0 && (!h.d || h.d[j] !== o))) { zJob = null; return; }
-    const r = min(max(1, floor(ZSTRIP / w)), hh - J.y), s = newCanvas(w, r), x = s.getContext('2d');
+    const rows = max(1, floor(ZSTRIP / w)), r = min(rows, hh - J.y), x = zCtx(), sc = x.canvas;
+    if (sc.width !== w || sc.height < r) { sc.width = w; sc.height = rows; } else x.clearRect(0, 0, w, r);
     x.drawImage(c, 0, J.y, w, r, 0, 0, w, r);
     const z = zEnc(new Uint32Array(x.getImageData(0, 0, w, r).data.buffer));
-    s.width = s.height = 0;
     if (!z) { zJob = null; return; }
     J.parts.push(z);
     J.n += z.length;

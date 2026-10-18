@@ -157,11 +157,12 @@ async function strokes(page, n) {
 }
 const zipped = async page => (await stats(page)).historyZipped;
 
+// 縮めるのはスマホ・タブレットで、履歴が上限の半分を超えたときだけ（T-120）。上限 20 MB なら、下の 10 本で半分を超える
 test('履歴の圧縮: 新しい 4 手より古い手は、1 秒何もしないと縮む（描いている間は縮めない）。縮めた手まで元に戻す・やり直すと画素単位で一致する', async () => {
-  const { page, errors } = await open({ deviceScaleFactor: 2 });
+  const { page, errors } = await open({ userAgent: IPHONE, deviceScaleFactor: 2 });
   const warns = [];
   page.on('console', m => { if (m.type() === 'warning') warns.push(m.text()); });
-  await runCode(page, CODE);
+  await runCode(page, withDefaults(CODE, { mem: 20 }));
   const snaps = await strokes(page, 10);
   const before = (await stats(page)).historyPixels;
   // 押したまま 1.5 秒待っても縮めない
@@ -196,8 +197,8 @@ test('履歴の圧縮: 新しい 4 手より古い手は、1 秒何もしない�
 });
 
 test('履歴の圧縮: 全消去の手が持つタイルも縮み、元に戻すと画素単位で戻る', async () => {
-  const { page, errors } = await open({ deviceScaleFactor: 2 });
-  await runCode(page, CODE);
+  const { page, errors } = await open({ userAgent: IPHONE, deviceScaleFactor: 2 });
+  await runCode(page, withDefaults(CODE, { mem: 26 }));
   const snaps = await strokes(page, 6);
   await page.evaluate(() => window.__paintBookmarklet.clear());
   const tiles = (await stats(page)).historyPixels;
@@ -239,7 +240,7 @@ test('履歴の圧縮: スマホの上限が同じでも、縮めた分だけ多
 });
 
 test('履歴の圧縮: 読み出した画素に揺らぎが足される環境（指紋対策）では縮めず、元に戻すはそのまま一致する', async () => {
-  const { page, errors } = await open();
+  const { page, errors } = await open({ userAgent: IPHONE, deviceScaleFactor: 2 });
   await page.evaluate(() => {
     for (const P of [CanvasRenderingContext2D.prototype, window.OffscreenCanvasRenderingContext2D && OffscreenCanvasRenderingContext2D.prototype]) {
       if (!P) continue;
@@ -247,14 +248,50 @@ test('履歴の圧縮: 読み出した画素に揺らぎが足される環境（
       P.getImageData = function (...a) { const im = g.apply(this, a); for (let i = 0; i < im.data.length; i += 4) if (im.data[i + 3] === 255) im.data[i] ^= 1; return im; };
     }
   });
-  await runCode(page, CODE);
-  const snaps = await strokes(page, 8);
+  await runCode(page, withDefaults(CODE, { mem: 20 }));
+  const snaps = await strokes(page, 10);
   await page.waitForTimeout(1600);
   assert.equal(await zipped(page), 0, '縮めない');
-  for (let i = 8; i >= 1; i--) {
+  for (let i = 10; i >= 1; i--) {
     await page.evaluate(() => window.__paintBookmarklet.undo());
     assert.equal(await hash(page), snaps[i - 1]);
   }
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('履歴の圧縮は、スマホ・タブレットで履歴が上限の半分を超えたときだけ。PC と、半分に届かないスマホでは縮めない。2 本指でスクロールしている間も縮めず、止めてから縮める（T-120）', async () => {
+  // PC: 上限が大きく、縮めても違いを感じないので縮めない
+  let { page, errors } = await open({ deviceScaleFactor: 2 });
+  await runCode(page, CODE);
+  await strokes(page, 10);
+  await page.waitForTimeout(1600);
+  assert.equal(await zipped(page), 0, 'PC では縮めない');
+  assert.deepEqual(errors, []);
+  await page.close();
+  // スマホでも、履歴が上限の半分に届かなければ縮めない（192 MB の上限）
+  ({ page, errors } = await open({ userAgent: IPHONE, deviceScaleFactor: 2 }));
+  await runCode(page, CODE);
+  await strokes(page, 10);
+  await page.waitForTimeout(1600);
+  assert.equal(await zipped(page), 0, '上限の半分に届かない');
+  assert.deepEqual(errors, []);
+  await page.close();
+  // 2 本指でスクロールしている間は縮めない。離して 1 秒たつと縮める
+  ({ page, errors } = await open({ userAgent: IPHONE, deviceScaleFactor: 2, hasTouch: true }));
+  await runCode(page, withDefaults(CODE, { mem: 20 }));
+  await strokes(page, 10);
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], id) => ({ x, y, id })) });
+  await touch('touchStart', [[150, 600]]);
+  await touch('touchStart', [[150, 600], [250, 600]]);
+  for (let i = 1; i <= 30; i++) { await touch('touchMove', [[150, 600 - i], [250, 600 - i]]); await page.waitForTimeout(50); } // 1.5 秒ゆっくり動かす
+  assert.equal(await zipped(page), 0, 'スクロールしている間は縮めない');
+  await page.waitForTimeout(300);
+  await touch('touchEnd', [[150, 570]]);
+  await touch('touchEnd', []);
+  await page.waitForTimeout(1800);
+  assert.equal(await zipped(page), 6, '止めてから縮める');
   assert.deepEqual(errors, []);
   await page.close();
 });

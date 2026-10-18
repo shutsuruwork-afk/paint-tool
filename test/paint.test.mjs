@@ -1446,7 +1446,11 @@ test('ペンの種類: ペンでないときは押してもペンになるだけ
   const core = await readMain(page, 600, 497, 250, 6);
   let faint = 0, n = 0;
   for (let i = 3; i < core.length; i += 4) { n++; if (core[i] < 200) faint++; }
-  assert.ok(faint / n > 0.08, `鉛筆のかすれ ${faint}/${n}`); // 普通のペンなら 0（つなぎ目は模様が重なって濃くなる）
+  assert.ok(faint / n > 0.08, `鉛筆のかすれ ${faint}/${n}`); // 普通のペンなら 0
+  // つなぎ目で模様が重なって濃くならない: 線の中心の画素は、模様の濃さ（40・150・235）のどれか（T-122。前は入力ごとに丸い先端が重なり、6 割が濃くなっていた）
+  let dbl = 0;
+  for (let i = 3; i < core.length; i += 4) if (![40, 150, 235].some(v => Math.abs(core[i] - v) <= 3)) dbl++;
+  assert.ok(dbl / n < 0.02, `鉛筆のつなぎ目で濃くなった画素 ${dbl}/${n}`);
   const s1 = await checksum(page);
   await page.keyboard.press('Control+z');
   assert.equal(await checksum(page), s0);

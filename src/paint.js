@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.36.4';
+  const VERSION = '1.37.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -1403,7 +1403,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   let sPen = 0, pf = 1, sDist = 0; // ペンの種類（PENS の番号）と、万年筆・筆の太さの係数、書き始めからの距離
   // 予測線を描くか（蛍光ペンは mpred で決める）、点と点を直線でつなぐか（蛍光ペン。描いた所が後から変わらない）、必要な分だけ予測するか（T-055）
   let sPd = true, sPoly = false, sNeed = false;
-  let sTr = false, sCa = 1, inkS = ''; // 半透明の線を canvas の中で濃さにするか（T-056）、確定で面に合成するときの濃さ、線の色（鉛筆は模様）
+  let sTr = false, sCa = 1, sKA = 1, inkS = ''; // 半透明の線を canvas の中で濃さにするか（T-056。鉛筆はいつも。T-122）、確定で面に合成するときの濃さ、抜いてから足すときの濃さ、線の色（鉛筆は模様）
   let pvx = 0, pvy = 0, om = 0, fi = 16.7; // 直前の区間の速度、向きの変わる速さ（rad/ms）、1 フレームの長さ（ms。tick で測る）
   let bx = 0, by = 0, bw = 0, mx = 0, my = 0, ps = 1, lt = 0, lastPen = -1e9;
   let x0 = 0, y0 = 0, x1 = 0, y1 = 0, mW = 0; // ストロークの外接矩形
@@ -1627,12 +1627,15 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       if (t === 'pen' || t === 'marker') {
         mode = 1;
         setInk(pctx);
-        // 半透明の線は live に線の濃さで描く（stk）。pred も線の濃さで描き、live が覆う所を抜く（cutPred）
-        sTr = cv && sA < 1;
-        if (sTr) { ensureR(); rn = 0; pctx.globalAlpha = sA; }
+        // 半透明の線は live に線の濃さで描く（stk）。pred も線の濃さで描き、live が覆う所を抜く（cutPred）。
+        // 鉛筆は濃さ 100% でも同じにする（かすれの模様は半透明の画素なので、入力ごとのつなぎ目で丸い先端が重なって濃くなっていた。T-122）。
+        // まとめた要素の opacity で濃さを付ける前の方式（'group'）では、抜いてから濃さ 1 で足す
+        sPen = t === 'pen' ? PENS.indexOf(penType) : 0;
+        sTr = (cv && sA < 1) || sPen === 3;
+        sKA = cv ? sA : 1;
+        if (sTr) { ensureR(); rn = 0; pctx.globalAlpha = sKA; }
         sP = pen && t === 'pen' && e.pressure > 0;
         ps = sP ? e.pressure : 1;
-        sPen = t === 'pen' ? PENS.indexOf(penType) : 0;
         pf = sPen === 1 ? 0.6 : 1;
         sDist = 0;
         sPd = t === 'pen' || mpred !== 'off';
@@ -1646,7 +1649,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         // 押した瞬間に点を出す（タップでも点が残る）
         hN = 0; fT = 0; hPush(lt, x, y);
         lctx.beginPath(); lctx.arc(x, y, bw / 2, 0, TAU);
-        if (sTr) { lctx.globalAlpha = sA; lctx.fill(); lctx.globalAlpha = 1; addPiece(2, x, y, x, y, x, y, bw); } else lctx.fill();
+        if (sTr) { lctx.globalAlpha = sKA; lctx.fill(); lctx.globalAlpha = 1; addPiece(2, x, y, x, y, x, y, bw); } else lctx.fill();
         const p = bw / 2 + 2;
         markBox(x - p, y - p, x + p, y + p);
       } else {
@@ -1785,9 +1788,11 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function stk(c) {
     if (!sTr) { c.stroke(); return; }
     c.globalCompositeOperation = 'destination-out';
+    if (sPen === 3) c.strokeStyle = '#000'; // 模様のままだと、半透明の画素の所が抜き切れない
     c.stroke();
+    if (sPen === 3) c.strokeStyle = inkS;
     c.globalCompositeOperation = 'lighter';
-    c.globalAlpha = sA;
+    c.globalAlpha = sKA;
     c.stroke();
     c.globalCompositeOperation = 'source-over';
     c.globalAlpha = 1;
@@ -1835,7 +1840,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     }
     if (open) c.stroke();
     c.globalCompositeOperation = 'source-over';
-    c.globalAlpha = sA;
+    c.globalAlpha = sKA;
     c.strokeStyle = inkS;
     c.lineWidth = bw;
   }

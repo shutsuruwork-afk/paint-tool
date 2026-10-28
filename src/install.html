@@ -1,0 +1,690 @@
+<title>ペイント ブックマークレット</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="開いているページの上にそのまま描ける、低遅延のブックマークレット製ペイントツール">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Klee+One:wght@600&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: 方眼ノートの 1 ページ。左寄せの 1 カラムに、赤ペンの書き込みを 1 か所だけ入れる */
+:root {
+  --paper: #f7fafa;
+  --grid: #e0ebed;
+  --ink: #1b2531;
+  --ink-soft: #566272;
+  --line: #cbd7db;
+  --card: #ffffff;
+  --red: #d7362d;
+  --red-deep: #a8241c;
+  --on-red: #ffffff;
+  --ok: #1f7346;
+  --ok-bg: #dff1e6;
+  --off: #66717d;
+  --off-bg: #e9edf0;
+  --font-hand: "Klee One", "Hiragino Maru Gothic ProN", "Yu Gothic", sans-serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic UI", Meiryo, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #12171b; --grid: #1b2328; --ink: #e4eaee; --ink-soft: #9aa6b0; --line: #2b363d; --card: #182027;
+    --red: #ff6b5d; --red-deep: #c4433a; --on-red: #1c0c0a; --ok: #74d9a0; --ok-bg: #163126; --off: #8995a0; --off-bg: #212a30;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #12171b; --grid: #1b2328; --ink: #e4eaee; --ink-soft: #9aa6b0; --line: #2b363d; --card: #182027;
+  --red: #ff6b5d; --red-deep: #c4433a; --on-red: #1c0c0a; --ok: #74d9a0; --ok-bg: #163126; --off: #8995a0; --off-bg: #212a30;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background-color: var(--paper);
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 24px 24px;
+  color: var(--ink);
+  font: 16px/1.85 var(--font-body);
+}
+.page {
+  max-width: 780px;
+  margin: 0 auto;
+  padding-block: 56px 72px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid;
+  gap: 64px;
+}
+section, header { display: grid; gap: 16px; min-width: 0; }
+h1, h2, p, ol, ul, figure, blockquote { margin: 0; }
+h1 {
+  font: 600 clamp(2rem, 8.5vw, 3.75rem)/1.2 var(--font-hand);
+  letter-spacing: 0.02em;
+  text-wrap: balance;
+}
+h2 { font-size: 1.375rem; line-height: 1.4; font-weight: 700; text-wrap: balance; }
+p, li { max-width: 40em; }
+a { color: var(--red-deep); text-underline-offset: 3px; }
+code, .mono { font-family: var(--font-mono); font-size: 0.88em; }
+kbd {
+  display: inline-block;
+  min-width: 1.7em;
+  padding: 0.05em 0.45em;
+  font: 700 0.78em/1.5 var(--font-mono);
+  text-align: center;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+}
+.eyebrow {
+  font: 500 0.8rem/1.4 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.lead { font-size: 1.075rem; }
+.mark { position: relative; white-space: nowrap; }
+.mark svg {
+  position: absolute;
+  left: -10%; top: -32%;
+  width: 120%; height: 168%;
+  overflow: visible;
+  pointer-events: none;
+}
+.mark path {
+  fill: none;
+  stroke: var(--red);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-dasharray: 640;
+  stroke-dashoffset: 0;
+  animation: draw 0.9s 0.3s cubic-bezier(.6,.1,.3,1) backwards;
+}
+@keyframes draw { from { stroke-dashoffset: 640; } }
+@media (prefers-reduced-motion: reduce) { .mark path { animation: none; } }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
+.bm {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px 10px 16px;
+  border-radius: 999px;
+  background: var(--red);
+  color: var(--on-red);
+  font: 600 1.2rem/1 var(--font-hand);
+  text-decoration: none;
+  box-shadow: 0 3px 0 var(--red-deep);
+  cursor: grab;
+}
+.bm:active { cursor: grabbing; transform: translateY(1px); box-shadow: 0 2px 0 var(--red-deep); }
+.bm svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.hint { color: var(--ink-soft); font-size: 0.92rem; }
+.btn {
+  font: 500 0.95rem/1 var(--font-body);
+  padding: 12px 18px;
+  border-radius: 10px;
+  border: 1.5px solid var(--ink);
+  background: var(--card);
+  color: var(--ink);
+  cursor: pointer;
+}
+.btn.primary { background: var(--ink); color: var(--paper); }
+.btn:hover { border-color: var(--red); }
+.btn:focus-visible, .bm:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-offset: 3px; }
+textarea {
+  width: 100%;
+  min-height: 7em;
+  font: 0.75rem/1.5 var(--font-mono);
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  word-break: break-all;
+}
+.proof {
+  padding: 20px 24px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-size: 1.2rem;
+  line-height: 2;
+}
+.steps { padding-left: 1.4em; display: grid; gap: 8px; }
+.steps li::marker { font: 700 1em var(--font-mono); color: var(--red-deep); }
+.aside { color: var(--ink-soft); font-size: 0.92rem; }
+.table-wrap {
+  overflow-x: auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+table { width: 100%; border-collapse: collapse; font-size: 0.93rem; line-height: 1.6; }
+th, td { padding: 11px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+tr:last-child > * { border-bottom: 0; }
+thead th { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.06em; color: var(--ink-soft); white-space: nowrap; }
+tbody th { font-weight: 700; min-width: 8em; }
+.caps tbody th { font: 500 0.82rem/1.6 var(--font-mono); white-space: nowrap; }
+@media (max-width: 560px) {
+  .caps thead { display: none; }
+  .caps tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 2px 12px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .caps tr:last-child { border-bottom: 0; }
+  .caps th, .caps td { padding: 0; border: 0; }
+  .caps tbody th { white-space: normal; overflow-wrap: anywhere; }
+  .caps td:last-child { grid-column: 1 / -1; color: var(--ink-soft); }
+}
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chip {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.chip.on { color: var(--ok); background: var(--ok-bg); }
+.chip.off { color: var(--off); background: var(--off-bg); }
+.keys { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 24px; padding: 0; list-style: none; }
+.keys li { display: flex; gap: 10px; align-items: baseline; min-width: 0; }
+.keys .k { flex: none; min-width: 5.6em; }
+.toc { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 0.92rem; }
+.toc a { color: var(--ink-soft); text-decoration-color: var(--line); }
+.toc a:hover { color: var(--red-deep); }
+h3 { margin: 0; font-size: 1.1rem; line-height: 1.5; font-weight: 700; }
+.sub { display: grid; gap: 12px; min-width: 0; }
+section > .sub + .sub { margin-top: 20px; }
+.ct { display: grid; gap: 2px; }
+.gdev { display: grid; gap: 8px; padding: 12px 14px; border: 1px dashed var(--line); border-radius: 10px; }
+.gdev.off { opacity: 0.55; }
+.gdev-h { font-size: 0.85rem; font-weight: 700; color: var(--ink-soft); }
+.ct small { color: var(--ink-soft); font-size: 0.88rem; line-height: 1.65; }
+.prefs .check + .check { padding-top: 10px; border-top: 1px solid var(--line); }
+.help { display: grid; gap: 18px; }
+.help section { gap: 0; }
+.help h3 { margin: 0 0 6px; font-size: 1rem; font-weight: 700; }
+.help .keys { margin: 0; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); }
+.keys li.t { display: block; }
+.keys li.t .k { font-weight: 700; margin-right: 10px; }
+.stack { display: grid; gap: 6px; max-width: 520px; }
+.layer {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px;
+  padding: 9px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  font: 700 0.85rem/1.5 var(--font-mono);
+}
+.layer small { font: 400 0.82rem/1.5 var(--font-body); color: var(--ink-soft); }
+.layer.page { background: transparent; border-style: dashed; color: var(--ink-soft); }
+.group { display: grid; gap: 6px; padding: 6px; border: 1.5px solid var(--red); border-radius: 11px; position: relative; }
+.group-label { font-size: 0.78rem; color: var(--red-deep); font-weight: 700; padding: 0 6px; }
+.points { display: grid; gap: 10px; padding-left: 1.2em; }
+.foot { color: var(--ink-soft); font-size: 0.88rem; border-top: 1px solid var(--line); padding-top: 20px; }
+.prefs { display: grid; gap: 18px; padding: 20px 24px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+.prefs fieldset { margin: 0; padding: 0; border: 0; min-width: 0; display: grid; gap: 8px; }
+.prefs legend, .prefs .lbl { padding: 0; font-weight: 700; font-size: 0.95rem; }
+.swatches { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.swatches input[type=radio] { appearance: none; -webkit-appearance: none; margin: 0; width: 30px; height: 30px; border-radius: 50%; background: var(--c); box-shadow: inset 0 0 0 1px #0003; cursor: pointer; }
+.swatches input[type=radio]:checked { outline: 3px solid var(--ink); outline-offset: 2px; }
+.swatches input[type=color] { width: 44px; height: 30px; padding: 0 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); cursor: pointer; }
+.swatches .custom { display: inline-flex; align-items: center; gap: 6px; font-size: 0.88rem; color: var(--ink-soft); }
+.sliders { display: grid; gap: 6px; }
+.slider { display: grid; grid-template-columns: 8.5em minmax(0, 1fr) 3.2em; align-items: center; gap: 12px; }
+.slider input { width: 100%; accent-color: var(--red); }
+.slider output { font: 500 0.9rem/1 var(--font-mono); text-align: right; }
+.choices { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.choices label, .check { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.choices input, .check input { accent-color: var(--red); width: 18px; height: 18px; margin: 0; flex: none; }
+.choices input[type=color] { width: 40px; height: 26px; padding: 0 2px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); cursor: pointer; }
+.check { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+/* 入り・切りはスイッチの形にする（チェックボックスのまま見た目だけ。ツールのメニューのスイッチと同じ形） */
+.check input[role=switch] { order: 2; appearance: none; -webkit-appearance: none; position: relative; width: 42px; height: 24px; margin: 0.15em 0 0; border-radius: 12px; background: var(--line); cursor: pointer; transition: background .15s; }
+.check input[role=switch]::before { content: ""; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px #0005; transition: transform .15s; }
+.check input[role=switch]:checked { background: var(--red); }
+.check input[role=switch]:checked::before { transform: translateX(18px); }
+.check input[role=switch]:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.prefs select { font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
+.prefs-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+#p-state { color: var(--ink-soft); font-size: 0.88rem; }
+@media (max-width: 480px) { .prefs { padding: 16px; } .slider { grid-template-columns: 6.2em minmax(0, 1fr) 2.6em; gap: 8px; } }
+</style>
+
+<main class="page">
+  <header>
+    <p class="eyebrow">Bookmarklet · v1.38.5 · %%SIZE%%（gzip %%GZIP%%）</p>
+    <h1>ペイント<br>ブックマークレット</h1>
+    <p class="lead">開いているページの上に、<span class="mark">そのまま描ける<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d="M18 40C8 22 52 6 108 7s92 13 84 30-62 20-112 17S4 38 30 16" vector-effect="non-scaling-stroke"/></svg></span>ペイントツールです。ブックマークを押すだけで起動し、拡張機能もアカウントも要りません。入力から線が画面に出るまでの遅延を減らす仕組みを、ブラウザが対応している限りすべて使います。</p>
+    <div class="actions">
+      <a id="bm" class="bm" href="%%BOOKMARKLET_HREF%%" title="ブックマークバーへドラッグ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1.2-4.4L16 4.8a2 2 0 0 1 2.9 0l.3.3a2 2 0 0 1 0 2.9L8.4 18.8zM14 7l3 3"/></svg>Paint</a>
+      <span class="hint">← このボタンをブックマークバーへドラッグ（色や太さは下の「デフォルトの設定」で選べます）</span>
+    </div>
+    <div class="actions">
+      <button id="try" class="btn primary" type="button">このページで試す</button>
+      <button id="copy" class="btn" type="button">コードをコピー</button>
+    </div>
+    <textarea id="code" readonly hidden aria-label="ブックマークレットのコード"></textarea>
+    <nav class="toc" aria-label="このページの内容">
+      <a href="#install">入れ方</a><a href="#try-it">試し書き</a><a href="#defaults">デフォルトの設定</a><a href="#usage">使い方</a><a href="#limits">できないこと</a><a href="#tech">仕組みと計測</a>
+    </nav>
+  </header>
+
+  <section id="install" aria-labelledby="install-h">
+    <h2 id="install-h">入れ方</h2>
+    <ol class="steps">
+      <li>ブックマークバーを表示します。Chrome・Edge・Firefox では <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>、Mac では <kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> です。</li>
+      <li>赤い「Paint」ボタンを、ブックマークバーへドラッグします。</li>
+      <li>描きたいページで、追加したブックマークを押します。もう一度押すと、絵を残したまま隠れます。</li>
+    </ol>
+    <p class="aside">スマートフォンなどドラッグできない環境では、「コードをコピー」を押してから適当なページをブックマークし、そのブックマークの URL 欄をコピーした内容に書き換えて保存します。</p>
+  </section>
+
+  <section id="try-it" aria-labelledby="try-h">
+    <h2 id="try-h">試し書き</h2>
+    <p>「このページで試す」を押して、下の文の誤字を赤ペンで丸く囲んでみてください。</p>
+    <blockquote class="proof">ブックマークレッドは、ブラウザのブックマークに保存して使う小さなプログラムです。</blockquote>
+    <p class="aside">ツールの中で <kbd>?</kbd> を押すと、操作の一覧が出ます。隠すときは <kbd>Esc</kbd> です。</p>
+  </section>
+
+  <section id="defaults" aria-labelledby="pref-h">
+    <h2 id="pref-h">デフォルトの設定</h2>
+    <p>起動したときの色・太さ・ツールバーの位置・最初に出す版と、動きを選べます。選ぶと上の「Paint」ボタンの中身が変わるので、選び終えてからブックマークバーへドラッグし直してください（前に入れたブックマークは前の設定のままです）。ツールの「その他 → デフォルトの変更」からも、ここを開けます。</p>
+    <form id="prefs" class="prefs" onsubmit="return false">
+      <fieldset>
+        <legend>色</legend>
+        <div class="swatches" id="p-colors">
+          <span class="custom"><input type="color" id="p-custom" aria-label="その他の色">その他の色</span>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>太さと大きさ</legend>
+        <div class="sliders">
+          <label class="slider"><span>ペン</span><input type="range" id="p-pen" min="1" max="40"><output for="p-pen"></output></label>
+          <label class="slider"><span>蛍光ペン</span><input type="range" id="p-marker" min="4" max="80"><output for="p-marker"></output></label>
+          <label class="slider"><span>消しゴム</span><input type="range" id="p-eraser" min="4" max="100"><output for="p-eraser"></output></label>
+          <label class="slider"><span>文字の大きさ</span><input type="range" id="p-text" min="10" max="80"><output for="p-text"></output></label>
+        </div>
+      </fieldset>
+      <label class="slider"><span class="lbl">最初の道具</span>
+        <select id="p-tool">
+          <option value="pen">ペン</option><option value="marker">蛍光ペン</option><option value="text">文字</option><option value="select">選択</option>
+        </select><span></span>
+      </label>
+      <fieldset>
+        <legend>ツールバーの位置</legend>
+        <div class="choices" id="p-bar">
+          <label><input type="radio" name="bar" value="top">上の中央</label>
+          <label><input type="radio" name="bar" value="top-left">左上</label>
+          <label><input type="radio" name="bar" value="top-right">右上</label>
+          <label><input type="radio" name="bar" value="bottom">下の中央</label>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>見た目</legend>
+        <div class="choices" id="p-theme" role="radiogroup" aria-label="ツールバーの色">
+          <label><input type="radio" name="theme" value="dark">暗い（黒地に白）</label>
+          <label><input type="radio" name="theme" value="light">明るい（白地に黒）</label>
+          <label><input type="radio" name="theme" value="custom">好きな色 <input type="color" id="p-tcolor" value="#3a4a5c" aria-label="ツールバーの好きな色"></label>
+        </div>
+        <label class="check"><span class="ct"><b>ガラス風のツールバー</b><small>ツールバーとパネルを半透明にして、下のページをぼかして見せます。「このページで試す」ですぐに見比べられます。</small></span><input type="checkbox" role="switch" id="p-glass"></label>
+        <div class="gdev" id="p-gdev">
+          <p class="gdev-h">ガラスの調整（開発用。ガラス風のときだけ効きます）</p>
+          <div class="choices" id="p-mode" role="radiogroup" aria-label="ぼかし方">
+            <label><input type="radio" name="mode" value="gauss">ガウス（周りも拾ってぼかす）</label>
+            <label><input type="radio" name="mode" value="plain">ふつう（backdrop-filter そのまま）</label>
+          </div>
+          <div class="sliders">
+            <label class="slider"><span>ぼかしの強さ</span><input type="range" id="p-blur" min="0" max="40"><output for="p-blur"></output></label>
+            <label class="slider"><span>地の濃さ</span><input type="range" id="p-tint" min="30" max="95"><output for="p-tint"></output></label>
+            <label class="slider"><span>彩度</span><input type="range" id="p-sat" min="100" max="300"><output for="p-sat"></output></label>
+          </div>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>最初に出す版</legend>
+        <div class="choices" id="p-ui" role="radiogroup" aria-label="最初に出す版">
+          <label><input type="radio" name="ui" value="main">本家（すべての道具をツールバーに並べる）</label>
+          <label><input type="radio" name="ui" value="cp2">Simple Preview（バーはペン・文字・元に戻す・その他・閉じるだけ。ペンはいつも普通のペン・太さ 5・濃さ 100%。お試し）</label>
+        </div>
+        <p class="aside">どちらを選んでも、ツールの「その他」でいつでも切り替えられます（本家では「Simple Preview」、Simple Preview では「本家に戻す」）。切り替えると、そのサイトで覚えます。</p>
+      </fieldset>
+      <fieldset>
+        <legend>動き</legend>
+        <label class="check"><span class="ct"><b>文字に触れる</b><small>ペンなどを選んでいても、文字を押すと選んで動かせ、もう一度押すと書き直せます。切ると、文字の上からでもペンで描けます。</small></span><input type="checkbox" role="switch" id="p-touch"></label>
+        <label class="check"><span class="ct"><b>ペンと図形の選択肢を 1 回で出す</b><small>入りにすると、ペンや図形のボタンを 1 回押すだけで種類（ペンの種類・4 つの図形）を選べます。切ると、選んでいるボタンをもう一度押したときに出ます。</small></span><input type="checkbox" role="switch" id="p-once"></label>
+        <label class="check"><span class="ct"><b>ツールバーを動かしても、ほかのパネルも開いたまま</b><small>色と太さのパネルは、ツールバーを引いて動かしても閉じません。入りにすると、ペンの種類・図形・その他のパネルも閉じなくなります。引かずにツールバーを押したときは閉じます。</small></span><input type="checkbox" role="switch" id="p-keep"></label>
+        <label class="check"><span class="ct"><b>電卓</b><small>文字に計算式（12×3 など）を書くと、答えを薄く出して Tab で書き込めます。ツールの「その他」でも切り替えられます。</small></span><input type="checkbox" role="switch" id="p-calc"></label>
+      </fieldset>
+      <fieldset>
+        <legend>開発用</legend>
+        <label class="check"><span class="ct"><b>開発用の項目をツールの中に出す</b><small>その他（⋯）に「見た目（開発用）」が出ます。「見た目（開発用）」では、ツールバーの色（暗い・明るい・好きな色）とガラス（地の置き方も）、予測の方法と長さ、蛍光ペンの予測、半透明の線の描き方をその場で変えられます。気に入ったら「この見た目をデフォルトに」で、このページに持ってこられます。「入力を録る（開発用）」を入れると、ペン・蛍光ペンで描いた線の入力（座標・時刻・筆圧・ブラウザの予測）を録って JSON で書き出せます（予測の精度を、実際に書いた線で測るため。ページの URL は入りません）。「計測表示（開発用）」は D キーと同じ計測表示で、キーボードのない iPhone でも、描いた線の入力の様子（座標が整数か・ブラウザの予測など）を見られます。</small></span><input type="checkbox" role="switch" id="p-dev"></label>
+        <p class="gdev-h">予測の方法（開発用）</p>
+        <div class="choices" id="p-ppred" role="radiogroup" aria-label="予測の方法">
+          <label><input type="radio" name="ppred" value="own">曲がりに沿う（入力ごとに、直近の点から速さと曲がりを求める。iPhone・iPad 以外の既定）</label>
+          <label><input type="radio" name="ppred" value="chrome">ブラウザ（pointermove の getPredictedEvents。iPhone・iPad では iOS の予測で、こちらが既定）</label>
+        </div>
+        <p class="gdev-h">予測の長さ（開発用。曲がりに沿うとき）</p>
+        <div class="choices" id="p-plen" role="radiogroup" aria-label="予測の長さ">
+          <label><input type="radio" name="plen" value="0.75">3/4 フレーム（急に止めたときの飛び出しが短い）</label>
+          <label><input type="radio" name="plen" value="1">1 フレーム（前の長さ。線の先がいちばん付いてくる）</label>
+          <label><input type="radio" name="plen" value="0.5">1/2 フレーム（飛び出しがもっと短い）</label>
+        </div>
+        <p class="gdev-h">蛍光ペンの予測（開発用）</p>
+        <div class="choices" id="p-mpred" role="radiogroup" aria-label="蛍光ペンの予測">
+          <label><input type="radio" name="mpred" value="full">そのまま（ペンと同じ）</label>
+          <label><input type="radio" name="mpred" value="need">必要な分だけ（丸い先端で届かない分だけ。ゆっくりなら予測しない。点と点を直線でつなぐ）</label>
+          <label><input type="radio" name="mpred" value="off">なし</label>
+        </div>
+        <p class="gdev-h">半透明の線の描き方（開発用）</p>
+        <div class="choices" id="p-blend" role="radiogroup" aria-label="半透明の線の描き方">
+          <label><input type="radio" name="blend" value="canvas">キャンバスの中で（不透明の線と同じ経路）</label>
+          <label><input type="radio" name="blend" value="group">まとめて（前の方式。描いている途中の線に CSS の不透明度をかける）</label>
+        </div>
+      </fieldset>
+      <div class="prefs-foot">
+        <button type="button" id="p-reset" class="btn">最初の状態に戻す</button>
+        <span id="p-state" role="status"></span>
+      </div>
+    </form>
+    <p class="aside">使ったサイトでは、そのサイトで変えた色・太さ・道具・ツールバーの位置を次回も使います（そのサイトの保存領域に、キーを 1 つだけ書きます）。ここで選んだ設定は、そのサイトで変えていない所に効きます。背景とページ操作モードは覚えません。</p>
+  </section>
+
+  <section id="usage" aria-labelledby="usage-h">
+    <h2 id="usage-h">使い方</h2>
+    <p>ツールバーには、よく使う物だけを並べています。左から、選択・ペン・蛍光ペン・消しゴム・図形・文字・塗りつぶし・色と太さ・元に戻す・やり直す・ページ操作・その他（⋯）・隠す（−）・閉じる（×）です。ツールバーは、どこを押しても引けば動かせます。</p>
+    <ul class="points">
+      <li><b>ペンと図形</b>: 選んでいるときにもう一度押すと、ペンの種類（ペン・万年筆・筆・鉛筆）や図形（直線・矢印・四角形・楕円）を選べます。万年筆は線の向きで、筆は速さで太さが変わり、鉛筆は少しかすれます。</li>
+      <li><b>色と太さ</b>: 点のボタンで、パレット・カスタム色・スポイト・太さ・濃さを選べます。点の色と大きさが、今の色と太さです。</li>
+      <li><b>文字</b>: 押した所に書けます。日本語の変換もそのまま使えます。書いた文字は線とは別の「物」なので、ペンを持ったままでも押せば動かせ、もう一度押せば書き直せ、拡大してもぼやけません。</li>
+      <li><b>選択</b>: 囲むか押して選び、引くと移動、角で拡大縮小、<kbd>Delete</kbd> で削除します。どれも元に戻せます。</li>
+      <li><b>電卓</b>（その他）: 入りにすると、文字に書いた計算式の答えが薄く出て、<kbd>Tab</kbd> で書き込めます。</li>
+      <li><b>画面に固定</b>（その他）: 入りにすると、絵はスクロールしても画面の同じ所に留まります（動画や地図の上に描くとき）。切ると、そのとき見えている位置のままページに付き直します。</li>
+      <li><b>2 本指</b>（スマホ・タブレット）: 2 本指で動かすとページがスクロールします。描いている途中に 2 本目の指を置くと、それまでの線は残したままスクロールになります（スクロールの動きでは描きません）。動かしたまま離すと、しばらく滑って止まります（押すと止まります）。</li>
+      <li><b>ページ操作</b>（<kbd>V</kbd>）: 絵を残したまま、下のページをクリック・入力できます。ツールを選ぶと描画に戻ります。</li>
+      <li><b>Simple Preview</b>（その他）: ツールバーをペン・文字・元に戻す・その他・閉じるだけにした、シンプルな表示のお試し版です。ペンのボタンは押すたびに消しゴムと入れ替わり、ペンを選んでいるときは今の色になります。色と全消去はその他にあります。絵はそのままで、その他の「本家に戻す」でいつでも戻れます。</li>
+      <li><b>隠す・閉じる</b>: <kbd>−</kbd> か <kbd>Esc</kbd> で絵ごと隠れ、ブックマークレットをもう一度押すと戻ります。<kbd>×</kbd> で閉じると絵も消えますが、8 秒の間は画面の下の「元に戻す」か <kbd>Ctrl</kbd>+<kbd>Z</kbd> で戻せます。</li>
+    </ul>
+    <div class="sub">
+      <h3 id="keys-h">操作の一覧</h3>
+      <p>ツールの中で <kbd>?</kbd> を押すと、同じ一覧が画面に出ます（もう一度 <kbd>?</kbd> か <kbd>Esc</kbd> で閉じます）。</p>
+      <div class="help">
+%%HELP%%
+      </div>
+      <p class="aside">Mac では <kbd>Ctrl</kbd> の代わりに <kbd>⌘</kbd> も使えます。ページの入力欄に文字を打っている間は、ショートカットは反応しません。</p>
+    </div>
+  </section>
+
+  <section id="limits" aria-labelledby="limits-h">
+    <h2 id="limits-h">できないこと</h2>
+    <ul class="points">
+      <li>スクリプトの実行を厳しく制限している（CSP）サイトでは、ブラウザによってはブックマークレットの実行自体が止められることがあります（Chrome の GitHub では動くことを確かめています）。</li>
+      <li>描いた絵はタブのメモリの中にだけあり、ディスクには保存しません。タブを閉じるかページを移ると消えるので、残したいときは PNG で保存してください。</li>
+      <li>スマホ・タブレットでは、絵と履歴を合わせたメモリが 192 MB を超えないように、元に戻せる手を古い物から減らします（使いすぎると、ブラウザがページを読み直して絵が全部消えるため）。絵そのものは減らしません。</li>
+      <li>ページの一部だけがスクロールするサイト（Gmail、Slack など）では、その部分のスクロールに絵が付いていきません。ページ全体のスクロールにだけ追従します。</li>
+      <li>描いている途中にスクロールすると、線は描き始めた時点の位置に確定します。描いた後で本文の位置が変わる（画像の読み込みで押し出されるなど）と、絵と本文がずれます。</li>
+      <li>線や図形の選択は画素の単位です。囲んだ範囲に重なっている別の線も一緒に動きます。拡大すると少しぼやけます（文字は物なのでぼやけません）。</li>
+      <li>保存される PNG は描いた絵だけです。下にあるページは写りません。</li>
+      <li>埋め込み表示（iframe）のページでは、PNG の保存やクリップボードへのコピーがブロックされることがあります。</li>
+      <li>LINE の中のブラウザは、ページがいちばん上のときに下へなぞると、ブラウザごと小さくします。ページからは止められないので、LINE の中では、ツールを使う間ページを上から 1px 下げておきます。スクロールできないほど短いページでは小さくなることがあります（LINE の「LINE ラボ」→「リンクをデフォルトのブラウザで開く」で避けられます）。</li>
+    </ul>
+  </section>
+
+  <section id="tech" aria-labelledby="tech-h">
+    <h2 id="tech-h">仕組みと計測</h2>
+    <div class="sub">
+      <h3 id="how-h">遅延を減らす仕組み</h3>
+    <figure class="stack" aria-label="レイヤの重なり（上が手前）">
+      <div class="layer">ツールバー</div>
+      <div class="layer">入力レイヤ<small>ページ側のリスナーへは入力を渡さない</small></div>
+      <div class="group">
+        <div class="layer">pred<small>線の未確定の末尾と予測線</small></div>
+        <div class="layer">live<small>描いている途中の線（新しい点の分だけ追記）</small></div>
+        <span class="group-label">半透明の線は、この 2 枚の中で線の濃さにする</span>
+      </div>
+      <div class="layer">面<small>確定した絵。ページに貼り付いたタイルで、スクロールと一緒に動く</small></div>
+      <div class="layer page">元のページ</div>
+    </figure>
+    <ul class="points">
+      <li>入力は <code>pointerrawupdate</code> で受け取った瞬間に描き、<code>pointermove</code> とはタイムスタンプで重複を除きます。間に挟まった点も <code>getCoalescedEvents</code> ですべて拾います。</li>
+      <li>描いている途中の線は、新しい点の分だけを追記します。毎回パス全体を描き直さないので、線が長くなっても重くなりません。</li>
+      <li>半透明の線は、新しい部分の所を先に抜いてから線の濃さで足します。線が自分と重なっても濃くならず、不透明の線と同じ低遅延の経路で画面に出ます。</li>
+      <li>確定した絵は、ページの座標に置いたタイルに描きます。スクロールはブラウザが合成だけで動かすので、スクロール中に JavaScript は動きません。タイルは描いた所にだけ作ります。</li>
+      <li>画面に固定は、面を <code>position: fixed</code> にするだけです。スクロール中に JavaScript が動かないのは同じです。切るときだけ、描いた量に比例した時間で絵をページの位置に付け直します。</li>
+      <li>確定と元に戻すは、線が通った 128px 四方のタイルだけを GPU 上でコピーします。全画面の <code>getImageData</code> は使いません。</li>
+      <li>消しゴムは、削る直前のタイルだけを退避します。消し始めに画面全体をコピーする待ち時間がありません。</li>
+      <li>スマホ・タブレットでは、元に戻すための履歴がメモリの上限の半分を超えたら、新しい 4 手（とやり直しの近く）より古い手を、何もしていないときに、同じ色が続く所をまとめた形に縮めます（画質は変わりません。手書きの線ならふつう 10〜30 分の 1）。大きな物は少しずつ読み、描いている間と 2 本指でスクロールしている間は縮めません。パソコンは上限が大きいので縮めません。</li>
+      <li>キャンバスの確保や合成処理の初回コストは、起動直後のまだ描いていない時間に済ませます。</li>
+      <li>塗りつぶしは描いた範囲と画面が重なる部分だけを読み戻し、塗る範囲を矩形パスにまとめて GPU に 1 回で塗らせます。</li>
+      <li>選択した物は 1 枚のキャンバスに浮かせ、動かしている間は枠の位置と大きさを変えるだけです。描き直さないので、大きな範囲でも軽く動きます。</li>
+      <li>文字は入力中だけ本物の入力欄を重ねるので、日本語の変換がそのまま使えます。確定した文字は面の中の要素として置くので、拡大縮小は文字の大きさを変えて描き直します。</li>
+      <li>筆の大きさを示すカーソルは CSS カーソル画像なので、OS が遅れなく描きます。</li>
+      <li>UI は Shadow DOM と CSSOM だけで組むので、ページの CSS、CSP の style-src、Trusted Types の影響を受けません。</li>
+    </ul>
+    </div>
+    <div class="sub">
+      <h3 id="cap-h">このブラウザで使える低遅延機能</h3>
+    <p>いま開いているブラウザで判定した結果です。使えない機能は、自動的に代わりの方法へ切り替わります。</p>
+    <div class="table-wrap">
+      <table class="caps">
+        <thead><tr><th scope="col">機能</th><th scope="col">状態</th><th scope="col">役割</th></tr></thead>
+        <tbody id="caps"></tbody>
+      </table>
+    </div>
+    </div>
+    <div class="sub">
+      <h3 id="bench-h">計測</h3>
+    <p>3,000 点のペン入力（筆圧あり）を流し込み、メインスレッドが塞がる時間を測りました。この時間が短いほど、次の入力をすぐに受け取れます。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">項目</th><th scope="col">1920×1080 @1x</th><th scope="col">@2x（3840×2160）</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">入力 1 件の処理</th><td class="num">5〜8 µs</td><td class="num">4〜14 µs</td></tr>
+          <tr><th scope="row">ストロークの確定</th><td class="num">4〜9 ms</td><td class="num">8〜22 ms</td></tr>
+          <tr><th scope="row">元に戻す</th><td class="num">2〜5 ms</td><td class="num">2〜18 ms</td></tr>
+          <tr><th scope="row">長い斜め線の履歴メモリ</th><td class="num">外接矩形の 24%</td><td class="num">外接矩形の 12%</td></tr>
+          <tr><th scope="row">背景の塗りつぶし</th><td class="num">50〜75 ms</td><td class="num">170〜180 ms</td></tr>
+          <tr><th scope="row">起動</th><td class="num">19〜33 ms</td><td class="num">15〜27 ms</td></tr>
+          <tr><th scope="row">スクロール中の処理</th><td class="num" colspan="2">なし（ブラウザが動かす）</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="aside">60 Hz の 1 フレームは約 16,700 µs です。毎回パス全体を描き直す素朴な実装は、同じ条件で 1 件あたり 64〜137 µs かかり、点が増えるほど遅くなります。本ツールの処理時間は点の数によらず一定です。計測はヘッドレス Chromium 141 とソフトウェア GPU（SwiftShader）で行いました。確定・元に戻す・塗りつぶしは GPU 処理の比重が大きいので、GPU のある実機ではこれより短くなる見込みです。確定の時間には、初めて描く場所のタイルを作る時間が含まれます。<code>npm run bench</code> で再計測できます。</p>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <p>ソースコードとテスト: <a href="https://github.com/shutsuruwork-afk/paint-tool">github.com/shutsuruwork-afk/paint-tool</a>（MIT ライセンス）</p>
+  </footer>
+</main>
+
+<script>
+function runPaint() {%%INLINE_CODE%%}
+(() => {
+  const bm = document.getElementById('bm');
+  // ---- デフォルトの設定: 選んだ既定をブックマークレットのコードに埋め込む ----
+  // 組み込みの既定（src/paint.js の PALETTE と CFG に合わせる。テストで一致を確かめている）
+  const PALETTE = ['#111111', '#ffffff', '#e53935', '#fb8c00', '#fdd835', '#43a047', '#1e88e5', '#8e24aa'];
+  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 4, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: false, pickOnce: false, keepPanels: false, glass: true, theme: 'light', blurMode: 'gauss', blur: 18, tint: 80, sat: 200, dev: false, ui: 'main', ppred: 'own', plen: 0.75, mpred: 'full', blend: 'canvas' };
+  const BASE = bm.getAttribute('href'); // 既定の入っていないブックマークレット
+  const KEY = 'paint-defaults';
+  const $ = id => document.getElementById(id);
+  const colorsEl = $('p-colors'), custom = $('p-custom'), state = $('p-state');
+  PALETTE.forEach((c, i) => {
+    const r = document.createElement('input');
+    r.type = 'radio'; r.name = 'color'; r.value = c;
+    r.setAttribute('aria-label', '色 ' + (i + 1));
+    r.style.setProperty('--c', c);
+    colorsEl.insertBefore(r, colorsEl.lastElementChild);
+  });
+  const sizes = ['pen', 'marker', 'eraser', 'text'];
+  // ツールの「デフォルトの変更」から開いたときは、そのブックマークの既定が #defaults=… で届くので、それを読み込む
+  let fromTool = false;
+  let cur = fromHash() || load();
+  function fromHash() {
+    const m = /^#defaults=(.*)$/.exec(location.hash);
+    if (!m) return null;
+    let v = null;
+    try { v = JSON.parse(decodeURIComponent(m[1])); } catch (_) { }
+    try { history.replaceState(null, '', '#defaults'); } catch (_) { }
+    if (!v || typeof v !== 'object') return null;
+    fromTool = true;
+    return merge(v);
+  }
+  function load() {
+    let v = null;
+    try { v = JSON.parse(localStorage.getItem(KEY)); } catch (_) { }
+    return merge(v);
+  }
+  function merge(v) {
+    const d = JSON.parse(JSON.stringify(BUILTIN));
+    if (v && typeof v === 'object') {
+      if (typeof v.color === 'string') d.color = v.color;
+      if (typeof v.tool === 'string') d.tool = v.tool;
+      if (v.size) for (const k of sizes) if (+v.size[k] > 0) d.size[k] = +v.size[k];
+      if (typeof v.bar === 'string') d.bar = v.bar;
+      if (typeof v.touchText === 'boolean') d.touchText = v.touchText;
+      if (typeof v.calc === 'boolean') d.calc = v.calc;
+      if (typeof v.pickOnce === 'boolean') d.pickOnce = v.pickOnce;
+      if (typeof v.keepPanels === 'boolean') d.keepPanels = v.keepPanels;
+      if (typeof v.glass === 'boolean') d.glass = v.glass;
+      if (v.theme === 'light' || v.theme === 'dark' || /^#[0-9a-f]{6}$/i.test(v.theme)) d.theme = v.theme.toLowerCase();
+      if (typeof v.dev === 'boolean') d.dev = v.dev;
+      if (v.blurMode === 'gauss' || v.blurMode === 'plain') d.blurMode = v.blurMode;
+      if (+v.blur >= 0 && +v.blur <= 40) d.blur = +v.blur;
+      if (+v.tint >= 30 && +v.tint <= 95) d.tint = +v.tint;
+      if (+v.sat >= 100 && +v.sat <= 300) d.sat = +v.sat;
+      if (v.ui === 'main' || v.ui === 'cp2') d.ui = v.ui;
+      if (v.ppred === 'own' || v.ppred === 'chrome') d.ppred = v.ppred;
+      if ([1, 0.75, 0.5].includes(+v.plen)) d.plen = +v.plen;
+      if (v.mpred === 'need' || v.mpred === 'off' || v.mpred === 'full') d.mpred = v.mpred;
+      if (v.blend === 'canvas' || v.blend === 'group') d.blend = v.blend;
+    }
+    return d;
+  }
+  // 組み込みの既定と違う所だけを渡す（URL を短く保ち、あとで組み込みの既定が変わっても効くように）
+  function diff(c) {
+    const o = {};
+    if (c.color !== BUILTIN.color) o.color = c.color;
+    if (c.tool !== BUILTIN.tool) o.tool = c.tool;
+    for (const k of sizes) if (c.size[k] !== BUILTIN.size[k]) (o.size || (o.size = {}))[k] = c.size[k];
+    if (c.bar !== BUILTIN.bar) o.bar = c.bar;
+    if (c.touchText !== BUILTIN.touchText) o.touchText = c.touchText;
+    if (c.calc !== BUILTIN.calc) o.calc = c.calc;
+    if (c.pickOnce !== BUILTIN.pickOnce) o.pickOnce = c.pickOnce;
+    if (c.keepPanels !== BUILTIN.keepPanels) o.keepPanels = c.keepPanels;
+    for (const k of ['glass', 'theme', 'blurMode', 'blur', 'tint', 'sat', 'dev', 'ui', 'ppred', 'plen', 'mpred', 'blend']) if (c[k] !== BUILTIN[k]) o[k] = c[k];
+    return o;
+  }
+  const enc = s => s.replace(/[%#\s"]/g, ch => encodeURIComponent(ch));
+  function hrefFor(o) {
+    if (!Object.keys(o).length) return BASE;
+    return BASE.replace(/(['"])__PAINT_DEFAULTS__\1/, () => enc(JSON.stringify(JSON.stringify(o))));
+  }
+  function show() {
+    for (const r of colorsEl.querySelectorAll('input[type=radio]')) r.checked = r.value === cur.color;
+    custom.value = cur.color;
+    for (const k of sizes) { const r = $('p-' + k); r.value = cur.size[k]; r.nextElementSibling.value = cur.size[k]; }
+    $('p-tool').value = cur.tool;
+    for (const r of document.querySelectorAll('#p-bar input')) r.checked = r.value === cur.bar;
+    $('p-touch').checked = cur.touchText;
+    $('p-calc').checked = cur.calc;
+    $('p-once').checked = cur.pickOnce;
+    $('p-keep').checked = cur.keepPanels;
+    $('p-glass').checked = cur.glass;
+    for (const r of document.querySelectorAll('#p-theme input[type=radio]')) r.checked = r.value === (cur.theme[0] === '#' ? 'custom' : cur.theme);
+    if (cur.theme[0] === '#') $('p-tcolor').value = cur.theme;
+    $('p-dev').checked = cur.dev;
+    for (const r of document.querySelectorAll('#p-mode input')) r.checked = r.value === cur.blurMode;
+    for (const r of document.querySelectorAll('#p-ui input')) r.checked = r.value === cur.ui;
+    for (const r of document.querySelectorAll('#p-ppred input')) r.checked = r.value === cur.ppred;
+    for (const r of document.querySelectorAll('#p-plen input')) r.checked = +r.value === cur.plen;
+    for (const r of document.querySelectorAll('#p-mpred input')) r.checked = r.value === cur.mpred;
+    for (const r of document.querySelectorAll('#p-blend input')) r.checked = r.value === cur.blend;
+    for (const k of ['blur', 'tint', 'sat']) { const r = $('p-' + k); r.value = cur[k]; r.nextElementSibling.value = k === 'blur' ? cur[k] + 'px' : cur[k] + '%'; }
+    $('p-gdev').classList.toggle('off', !cur.glass);
+    const o = diff(cur);
+    bm.setAttribute('href', hrefFor(o));
+    bm.lastChild.textContent = cur.ui === 'cp2' ? 'Paint Simple' : 'Paint'; // ブックマークの名前で版が分かるように
+    state.textContent = Object.keys(o).length ? '設定入りのボタンになりました。ドラッグし直すと反映されます。' : '最初の状態です。';
+  }
+  // 保存も既定との差分だけにする（あとで組み込みの既定を変えたとき、触っていない所には新しい既定が効く）
+  function update() {
+    try { localStorage.setItem(KEY, JSON.stringify(diff(cur))); } catch (_) { }
+    show();
+  }
+  colorsEl.addEventListener('change', e => { if (e.target.name === 'color') { cur.color = e.target.value; update(); } });
+  custom.addEventListener('input', () => { cur.color = custom.value.toLowerCase(); update(); });
+  for (const k of sizes) $('p-' + k).addEventListener('input', e => { cur.size[k] = +e.target.value; update(); });
+  $('p-tool').addEventListener('change', e => { cur.tool = e.target.value; update(); });
+  $('p-bar').addEventListener('change', e => { cur.bar = e.target.value; update(); });
+  $('p-touch').addEventListener('change', e => { cur.touchText = e.target.checked; update(); });
+  $('p-calc').addEventListener('change', e => { cur.calc = e.target.checked; update(); });
+  $('p-once').addEventListener('change', e => { cur.pickOnce = e.target.checked; update(); });
+  $('p-keep').addEventListener('change', e => { cur.keepPanels = e.target.checked; update(); });
+  $('p-glass').addEventListener('change', e => { cur.glass = e.target.checked; update(); });
+  $('p-theme').addEventListener('change', e => { if (e.target.name === 'theme') { cur.theme = e.target.value === 'custom' ? $('p-tcolor').value : e.target.value; update(); } });
+  $('p-tcolor').addEventListener('input', e => { cur.theme = e.target.value.toLowerCase(); update(); });
+  $('p-dev').addEventListener('change', e => { cur.dev = e.target.checked; update(); });
+  $('p-mode').addEventListener('change', e => { cur.blurMode = e.target.value; update(); });
+  $('p-ui').addEventListener('change', e => { cur.ui = e.target.value; update(); });
+  $('p-ppred').addEventListener('change', e => { cur.ppred = e.target.value; update(); });
+  $('p-plen').addEventListener('change', e => { cur.plen = +e.target.value; update(); });
+  $('p-mpred').addEventListener('change', e => { cur.mpred = e.target.value; update(); });
+  $('p-blend').addEventListener('change', e => { cur.blend = e.target.value; update(); });
+  for (const k of ['blur', 'tint', 'sat']) $('p-' + k).addEventListener('input', e => { cur[k] = +e.target.value; update(); });
+  $('p-reset').addEventListener('click', () => { cur = JSON.parse(JSON.stringify(BUILTIN)); update(); });
+  if (fromTool) {
+    update();
+    state.textContent = '使っているブックマークの設定を読み込みました。変えたら「Paint」ボタンをドラッグし直してください。';
+    $('defaults').scrollIntoView();
+  } else show();
+  // このページで試すときは eval を使わず、埋め込み版が読む変数で既定を渡す
+  const tryPaint = () => {
+    window.__paintBookmarkletDefaults = JSON.stringify(diff(cur));
+    try { runPaint(); } finally { delete window.__paintBookmarkletDefaults; }
+  };
+
+  // このページ上でクリックされたら javascript: URL へ遷移せず、同じコードを直接実行する
+  bm.addEventListener('click', e => { e.preventDefault(); tryPaint(); });
+  document.getElementById('try').addEventListener('click', () => tryPaint());
+
+  const copyBtn = document.getElementById('copy');
+  const area = document.getElementById('code');
+  let t = 0;
+  copyBtn.addEventListener('click', () => {
+    const code = bm.getAttribute('href');
+    const done = msg => { copyBtn.textContent = msg; clearTimeout(t); t = setTimeout(() => { copyBtn.textContent = 'コードをコピー'; }, 2500); };
+    const manual = () => { area.hidden = false; area.value = code; area.focus(); area.select(); done('下の欄からコピーしてください'); };
+    try { navigator.clipboard.writeText(code).then(() => done('コピーしました'), manual); } catch (_) { manual(); }
+  });
+
+  const PE = window.PointerEvent && PointerEvent.prototype;
+  let desync = false;
+  try { desync = !!document.createElement('canvas').getContext('2d', { desynchronized: true }).getContextAttributes().desynchronized; } catch (_) { }
+  const plat = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+  const ink = navigator.ink && navigator.ink.requestPresenter ? (/^Win/i.test(plat) ? true : 'Windows のみ') : false;
+  const rows = [
+    ['pointerrawupdate', 'onpointerrawupdate' in window, 'フレームの区切りを待たずに入力を受け取り、すぐに描きます。'],
+    ['getCoalescedEvents', !!PE && 'getCoalescedEvents' in PE, '1 フレームの間にまとめられた入力点を全部使うので、速く動かしても線が角張りません。'],
+    ['getPredictedEvents', !!PE && 'getPredictedEvents' in PE, 'ブラウザが予測した次の位置です。既定では使わず、入力ごとに直近の点から速さと曲がりを求めて、1 フレームの 4 分の 3 先まで線を伸ばします。iPhone・iPad では、iOS が出すこの予測を使います（ほかでは開発用の「予測の方法: ブラウザ」で使います）。'],
+    ['desynchronized', desync, 'キャンバスの更新を、画面合成の順番待ちをせずに表示します。'],
+    ['Delegated Ink Trail', ink, '次のフレームが出るまでの線を OS が直接描きます。'],
+    ['Popover (top layer)', 'showPopover' in HTMLElement.prototype, 'ページのモーダルや z-index に関係なく最前面に表示します。'],
+    ['OffscreenCanvas', typeof OffscreenCanvas === 'function', '履歴やタイルの退避を、画面に載らないキャンバスで扱います。'],
+    ['EyeDropper', 'EyeDropper' in window, 'スポイトで画面上の色を拾います。'],
+  ];
+  const tb = document.getElementById('caps');
+  for (const [name, state, desc] of rows) {
+    const tr = document.createElement('tr');
+    const th = document.createElement('th'); th.scope = 'row'; th.textContent = name;
+    const td1 = document.createElement('td'), chip = document.createElement('span');
+    chip.className = 'chip ' + (state === true ? 'on' : 'off');
+    chip.textContent = state === true ? '使える' : state || '使えない';
+    td1.append(chip);
+    const td2 = document.createElement('td'); td2.textContent = desc;
+    tr.append(th, td1, td2);
+    tb.append(tr);
+  }
+})();
+</script>

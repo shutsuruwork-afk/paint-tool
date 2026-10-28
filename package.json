@@ -1,0 +1,19 @@
+{
+  "name": "paint-bookmarklet",
+  "version": "1.38.5",
+  "description": "どんなページの上にも描ける、低遅延・軽量なブックマークレット製ペイントツール",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node build.mjs && node --test test/*.test.mjs",
+    "bench": "node build.mjs && node test/bench.mjs",
+    "pop": "node build.mjs && node test/pop.mjs",
+    "predict": "node test/predict.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1",
+    "terser": "5.36.0"
+  }
+}

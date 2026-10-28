@@ -380,3 +380,30 @@ test('ページの高さだけが変わる（LINE などで、スクロールす
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+// Review (2026-10-28, PR #1 /code-review ultra): the iPhone-only default of the prediction method leaked into the bookmark. Fails on v1.38.6.
+test('iPhone で「この見た目をデフォルトに」を押しても、予測の方法は選んだときだけ持っていく（iPhone だけの既定〈ブラウザ〉を PC に広げない。T-140）', async () => {
+  const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+  const page = await browser.newPage({ viewport: { width: 390, height: 700 }, userAgent: UA, hasTouch: true });
+  const errors = [];
+  page.on('pageerror', e => errors.push(String(e)));
+  await page.goto(server.base + '/');
+  await runCode(page, withDefaults(CODE, { dev: true }));
+  await page.evaluate(() => { window.__opened = []; window.open = (...a) => { window.__opened.push(a); return null; }; });
+  const click = sel => shadowEval(page, (root, s) => root.querySelector(s).click(), sel);
+  const exported = async () => {
+    await click('.bar > [aria-label^="その他"]');
+    await click('[aria-label^="見た目（開発用）"]');
+    await click('[aria-label^="この見た目をデフォルトに"]');
+    const url = (await page.evaluate(() => window.__opened.pop()))[0];
+    return JSON.parse(decodeURIComponent(url.slice(url.indexOf('#defaults=') + 10)));
+  };
+  assert.equal((await page.evaluate(() => window.__paintBookmarklet.stats().prefs)).ppred, 'chrome', 'iPhone defaults to the browser prediction');
+  assert.equal('ppred' in await exported(), false, 'not chosen: not written');
+  await click('.bar > [aria-label^="その他"]');
+  await click('[aria-label^="見た目（開発用）"]');
+  await click('[aria-label="予測の方法: 曲がりに沿う"]');
+  assert.equal((await exported()).ppred, 'own', 'chosen: written');
+  assert.deepEqual(errors, []);
+  await page.close();
+});

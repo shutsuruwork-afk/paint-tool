@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.38.6';
+  const VERSION = '1.38.7';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -338,6 +338,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 自前より目立たなかった（ユーザーが iPhone で見比べた）。pointerrawupdate のない iOS では、Chrome のように古い点からの予測になることもない
   const PPREDS = ['own', 'chrome'];
   let ppred = PPREDS.includes(DEF.ppred) ? DEF.ppred : IOS ? 'chrome' : 'own';
+  const ppred0 = ppred; // 起動したときの値。「この見た目をデフォルトに」は、変えたときだけ書く（iPhone だけの既定をブックマークに入れて、PC でもブラウザの予測にしない。T-140）
   // 自前の予測の先読み（1 フレームの何倍。T-115）。既定は 4 分の 3（急に止めたときに予測が止まった所より先へ飛び出す長さを、1 フレーム分より 2〜4 割短くする。ユーザーが選んだ）。開発用で見比べられる
   const PLENS = [1, 0.75, 0.5];
   let plen = PLENS.includes(+DEF.plen) ? +DEF.plen : 0.75;
@@ -687,7 +688,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   lookP.append(gbR, gbW);
   const toDefB = btn('この見た目をデフォルトにする — インストールページを開く（新しいタブ）', I.prefs, () => {
     closePanel();
-    openDefaults({ ...DEF, theme: look.theme, glass: look.glass, blurMode: look.blurMode, blur: look.blur, tint: look.tint, sat: look.sat, gbg: look.gbg, ppred, plen, mpred, blend });
+    openDefaults({ ...DEF, theme: look.theme, glass: look.glass, blurMode: look.blurMode, blur: look.blur, tint: look.tint, sat: look.sat, gbg: look.gbg, ...(ppred !== ppred0 && { ppred }), plen, mpred, blend });
   }, 'mi');
   const toDefL = el('span');
   toDefL.textContent = 'この見た目をデフォルトに';

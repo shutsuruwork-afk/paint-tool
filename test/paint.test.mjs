@@ -466,12 +466,17 @@ test('見た目（開発用）: インストールページの開発用を入れ
   await mouseClick(page, '.pn.on [aria-label="半透明の線の描き方: まとめて"]');
   assert.deepEqual(await mpOn(), ['ブラウザ', '1 フレーム', 'なし', 'まとめて', '重ねる']);
   assert.equal((await prefs(page)).blend, 'group');
+  // ガラスの地をバー自身に（ガラス風を入れてから。T-139 でインストールページにも持っていく）
+  await mouseClick(page, '.pn.on [aria-label^="ガラス風"]');
+  await mouseClick(page, '.pn.on [aria-label="ガラスの地: バー自身"]');
+  assert.equal((await prefs(page)).gbg, 'self');
+  await mouseClick(page, '.pn.on [aria-label^="ガラス風"]');
   // この見た目をデフォルトに: 見た目を持ってインストールページを開く
   await page.evaluate(() => { window.__opened = []; window.open = (...a) => { window.__opened.push(a); return null; }; });
   await mouseClick(page, '.pn.on [aria-label^="この見た目をデフォルトに"]');
   const [url] = (await page.evaluate(() => window.__opened))[0];
   const d = JSON.parse(decodeURIComponent(url.slice(url.indexOf('#defaults=') + 10)));
-  assert.deepEqual([d.dev, d.theme, d.glass, d.blur, d.sat, d.ppred, d.plen, d.mpred, d.blend], [true, '#ffd54f', false, 8, 250, 'chrome', 1, 'off', 'group']);
+  assert.deepEqual([d.dev, d.theme, d.glass, d.blur, d.sat, d.ppred, d.plen, d.mpred, d.blend, d.gbg], [true, '#ffd54f', false, 8, 250, 'chrome', 1, 'off', 'group', 'self']);
   const { page: ip, errors: ie } = await openPage(browser, server.base + '/install' + url.slice(url.indexOf('#')));
   assert.equal(await ip.isChecked('#p-theme input[value="custom"]'), true);
   assert.equal(await ip.inputValue('#p-tcolor'), '#ffd54f');
@@ -481,6 +486,8 @@ test('見た目（開発用）: インストールページの開発用を入れ
   assert.equal(await ip.isChecked('#p-ppred input[value="chrome"]'), true);
   assert.equal(await ip.isChecked('#p-plen input[value="1"]'), true);
   assert.equal(await ip.isChecked('#p-blend input[value="group"]'), true);
+  assert.equal(await ip.isChecked('#p-gbg input[value="self"]'), true);
+  assert.ok(decodeURIComponent(await ip.getAttribute('#bm', 'href')).includes('\\"gbg\\":\\"self\\"'));
   assert.equal(await ip.isChecked('#p-dev'), true);
   assert.deepEqual(ie, []);
   await ip.close();
@@ -1272,6 +1279,7 @@ test('インストールページで選んだ設定入りのブックマーク�
   assert.equal(String(p0.plen), await page.evaluate(() => document.querySelector('#p-plen input:checked').value));
   assert.equal(p0.ui, await page.evaluate(() => document.querySelector('#p-ui input:checked').value));
   assert.equal(p0.blend, await page.evaluate(() => document.querySelector('#p-blend input:checked').value));
+  assert.equal(p0.gbg, await page.evaluate(() => document.querySelector('#p-gbg input:checked').value));
   await page.evaluate(() => window.__paintBookmarklet.destroy());
   // 選ぶと、ボタンの中身が変わる
   await page.click('[aria-label="色 7"]');

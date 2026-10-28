@@ -2768,6 +2768,44 @@ test('拡大した iPhone では、描いている途中の線も面の中に描
   await page.close();
 });
 
+test('拡大した iPhone で、最後に線を確定した後にページが伸びても、伸びた所に描いている途中の線が見える（面の大きさを押したときに測り直す。T-142）', async () => {
+  const IOS = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+  const page = await browser.newPage({ viewport: { width: 390, height: 700 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, userAgent: IOS });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(server.base + '/long');
+  await page.evaluate(() => { const m = document.createElement('meta'); m.name = 'viewport'; m.content = 'width=device-width'; document.head.append(m); });
+  await page.waitForTimeout(100);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.synthesizePinchGesture', { x: 300, y: 500, scaleFactor: 2, relativeSpeed: 1200 });
+  await page.waitForTimeout(300);
+  await runCode(page, CODE);
+  await page.waitForTimeout(300);
+  const h0 = (await page.evaluate(() => window.__paintBookmarklet.stats().surface))[1];
+  // 起動した後にページが 2000px 伸びる（無限スクロール・遅れて読み込む画像など）。伸びた所までスクロールする
+  await page.evaluate(() => { const d = document.createElement('div'); d.style.height = '2000px'; document.body.append(d); scrollTo(0, document.documentElement.scrollHeight - 700); });
+  await page.waitForTimeout(200);
+  const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y]) => ({ x, y, id: 0 })) });
+  await touch('touchStart', [[60, 200]]);
+  for (let i = 1; i <= 10; i++) { await touch('touchMove', [[60 + i * 8, 200]]); await page.waitForTimeout(16); }
+  // 描いている途中の線（live）の画素が、面の見える範囲（clip）の中にあるか
+  const mid = await page.evaluate(() => {
+    const surf = document.querySelector('paint-bookmarklet-surface'), c = surf.shadowRoot.querySelector('canvas.l');
+    if (!c) return null;
+    const r = c.getBoundingClientRect(), s = surf.getBoundingClientRect(), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    let n = 0, vis = 0;
+    for (let i = 3; i < d.length; i += 4 * 3) if (d[i]) { n++; const k = (i - 3) / 4, y = r.top + ((k / c.width) | 0) * r.height / c.height; if (y < s.bottom) vis++; }
+    return { n, vis, h: window.__paintBookmarklet.stats().surface[1] };
+  });
+  await touch('touchEnd', []);
+  await page.waitForTimeout(200);
+  assert.ok(mid && mid.n > 0, 'the line being drawn is in the surface while zoomed');
+  assert.ok(mid.h >= h0 + 2000, `the surface was measured again on press: ${h0} → ${mid.h}`);
+  assert.equal(mid.vis, mid.n, 'all of the line being drawn is inside the surface (not clipped)');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('iPhone・iPad では、描く面とツールバーの touchmove を止める（ページ自身のスクロールが同時に動いて震えないように）。ボタンのタップ・パネルのスライダー・2 本指のスクロールはそのまま。ほかでは止めない（T-107）', async () => {
   const IOS = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
   const open = async ua => {

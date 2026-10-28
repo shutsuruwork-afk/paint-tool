@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.38.8';
+  const VERSION = '1.38.9';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -418,8 +418,16 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // R-019 の答え。どの基準でずれるのかは未確認）。面の中なら、確定するときと同じ S の対応で見えるので、固定の層がどこに出ても合う。
   // 拡大していないときと iPhone・iPad 以外は今まで通り host の中（低遅延の経路を変えない）。押したときに呼ぶ（mapNow の後。live は空のとき）
   let gIn = false;
+  const zoomed = () => IOS && !!VV && VV.scale > 1.01;
+  // 面の中に描くと、面の大きさ（surfW / surfH。確定と fit のときに測る）の外は clip で隠れる。最後に測ってからページが伸びていたら（無限スクロールなど）、
+  // 押したときに測り直す（T-142。前は伸びた所に描くと、離すまで線が見えなかった）。hdx が変わるかもしれないので mapNow の前に呼ぶ。拡大した iPhone のときだけ
+  function growSurf() {
+    if (!zoomed()) return;
+    const de = doc.documentElement, b = doc.body;
+    if (max(de.scrollWidth, b ? b.scrollWidth : 0) > surfW || max(de.scrollHeight, b ? b.scrollHeight : 0) > surfH) sizeSurface();
+  }
   function placeLive() {
-    const z = IOS && !!VV && VV.scale > 1.01;
+    const z = zoomed();
     if (z !== gIn) {
       gIn = z;
       grp.classList.toggle('gz', z);
@@ -1670,6 +1678,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (doc.activeElement !== host) wrap.focus({ preventScroll: true });
     if ((win.devicePixelRatio || 1) !== dpr) fit();
     finishHandoff();
+    growSurf();
     mapNow();
     placeLive();
     if (hud && VV) {

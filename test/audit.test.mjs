@@ -407,3 +407,36 @@ test('iPhone で「この見た目をデフォルトに」を押しても、予�
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+// Review (2026-10-28, PR #1 /code-review ultra): hasInk read the display tiles directly, so a second Delete read the same tile again. Fails on v1.38.7.
+test('全部消した後に全消去を何度押しても、表示のタイルを直接読み戻さず（コンソールに読み出しの警告が出ない）、履歴も増えない（T-141）', async () => {
+  const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+  const errors = [], warns = [];
+  page.on('pageerror', e => errors.push(String(e)));
+  page.on('console', m => { if (m.type() === 'warning') warns.push(m.text()); });
+  await page.goto(server.base + '/');
+  await runCode(page, CODE);
+  const drag = async (pts, steps) => {
+    await page.mouse.move(...pts[0]); await page.mouse.down();
+    for (const p of pts.slice(1)) await page.mouse.move(...p, { steps });
+    await page.mouse.up();
+  };
+  // 2 つのタイルにまたがる線を描いて、消しゴム（32px）で全部なぞる
+  await drag([[100, 300], [520, 300]], 10);
+  await page.keyboard.press('e');
+  await drag([[90, 300], [530, 300]], 20);
+  await frames(page);
+  assert.equal(await hist(page), 2);
+  for (let i = 0; i < 3; i++) { await page.keyboard.press('Delete'); await frames(page, 2); }
+  assert.equal(await hist(page), 2, 'nothing to clear');
+  // 少しでも残っていれば全消去する
+  await page.keyboard.press('p');
+  await drag([[100, 400], [300, 400]], 5);
+  await page.keyboard.press('e');
+  await drag([[90, 400], [150, 400]], 5);
+  await page.keyboard.press('Delete');
+  assert.equal(await hist(page), 5, 'partly erased: cleared');
+  assert.deepEqual(warns.filter(w => /readback/i.test(w)), []);
+  assert.deepEqual(errors, []);
+  await page.close();
+});

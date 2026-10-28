@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.38.7';
+  const VERSION = '1.38.8';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -1276,16 +1276,25 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     cbx0 = cby0 = cbx1 = cby1 = 0;
   }
 
-  // 描いた範囲（cb*）に画素が 1 つでも残っているか。掛かるタイルの重なる所だけを読み戻す（全消去の前にだけ使う。T-063）
+  // 描いた範囲（cb*）に画素が 1 つでも残っているか。掛かるタイルの重なる所だけを読み戻す（全消去の前にだけ使う。T-063）。
+  // 表示のタイルは直接読まず、読み出し用の canvas（zCtx。履歴の圧縮と共用）に写してから読む（同じタイルを 2 回読むと Chrome がページのコンソールに
+  // 警告を出し、読み戻したタイルはその後の描画が遅くなるブラウザがある。T-141）
   function hasInk() {
+    const z = zCtx(), sc = z.canvas;
+    let ink = false;
     for (const [k, t] of dtiles) {
       const x = (k % 65536) * DT, y = ((k / 65536) | 0) * DT;
       const ax = max(floor(cbx0), x), ay = max(floor(cby0), y), ex = min(ceil(cbx1), x + DT), ey = min(ceil(cby1), y + DT);
       if (ex <= ax || ey <= ay) continue;
-      const d = t.x.getImageData(ax - x, ay - y, ex - ax, ey - ay).data;
-      for (let i = 3; i < d.length; i += 4) if (d[i]) return true;
+      const w = ex - ax, h = ey - ay;
+      if (sc.width !== DT || sc.height !== DT) sc.width = sc.height = DT; else z.clearRect(0, 0, w, h);
+      z.drawImage(t.c, ax - x, ay - y, w, h, 0, 0, w, h);
+      const d = z.getImageData(0, 0, w, h).data;
+      for (let i = 3; i < d.length && !ink; i += 4) ink = d[i] > 0;
+      if (ink) break;
     }
-    return false;
+    if (!zRun) zFree();
+    return ink;
   }
 
   // ---------- 履歴の圧縮（T-114） ----------

@@ -1923,6 +1923,34 @@ test('描画中の入力はページ側のリスナーに伝播しない', async
   await page.close();
 });
 
+test('電卓は巨大な数も正確に計算する。割り切れる答えは正確な小数、割り切れない答えは整数の部分を全部と小数を 12 桁ほど。大きすぎる答えと 0 で割る式は出さない（T-150）', async () => {
+  const { page, errors } = await fresh();
+  await page.evaluate(() => localStorage.setItem('paint-bookmarklet', JSON.stringify({ calc: true })));
+  await page.evaluate(() => window.__paintBookmarklet.destroy());
+  await runCode(page, CODE);
+  const ghost = () => shadowEval(page, root => { const g = root.querySelector('.gh'); return g ? g.textContent : null; });
+  await page.keyboard.press('t');
+  await page.mouse.click(200, 450);
+  const cases = [
+    ['123456789012345678901234567890*2', '=246913578024691357802469135780'],
+    ['123456789*987654321', '=121932631112635269'], // 前は 121932631113000000
+    ['9007199254740993+0', '=9007199254740993'], // 倍精度では表せない整数
+    ['2^100', '=1267650600228229401496703205376'],
+    ['2^-3', '=0.125'], ['1.5^2', '=2.25'], ['0.1*0.2', '=0.02'], ['1/3', '=0.333333333333'], ['2/3', '=0.666666666667'],
+    ['10/3', '=3.33333333333'], ['-1/3', '=-0.333333333333'], ['1/3000', '=0.000333333333333'],
+    ['10^20/3', '=33333333333333333333.33'], ['1/2^20', '=0.00000095367431640625'],
+    ['2^0.5', '=1.41421356237'], // 整数でない指数はふつうの数
+    ['7/0', null], ['2^10000', null], ['(1-1)^-1', null]];
+  for (const [ex, want] of cases) {
+    await page.keyboard.press('Control+a');
+    await page.keyboard.press('Backspace');
+    await page.keyboard.insertText(ex);
+    assert.equal(await ghost(), want, ex);
+  }
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('ページの入力欄にフォーカスがあってもショートカットが効き、文字が入力されない', async () => {
   const { page } = await openPage(browser, server.base + '/');
   await page.focus('#inp');

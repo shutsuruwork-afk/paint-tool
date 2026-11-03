@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.41.0';
+  const VERSION = '1.42.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -3023,7 +3023,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (!ok) { ta.setRangeText(t, ghostEnd, ghostEnd, 'end'); updateGhost(); }
   }
   // 1 行の計算式を計算して、薄く出す文字（「 = 36」か「=36」、行が = で終わっていれば「36」か「 36」）を返す。式でなければ ''。
-  // eval は使わない（CSP で止まるページがあり、安全のためにも）。かけ算・わり算が先、^ は右から、% は百分率
+  // eval は使わない（CSP で止まるページがあり、安全のためにも）。かけ算・わり算が先、^ は右から、% は百分率。
+  // 数は分数 [分子, 分母]（BigInt。分母は正、約分済み）で持ち、桁がいくら多くても正確に計算する（T-150、ideas/paint-tool-calc.md: 巨大な数の計算を正確に）。
+  // 整数でない指数（2^0.5 など）だけはふつうの数（倍精度）にする。BigInt のない古いブラウザでは、全部ふつうの数（前と同じ）
   function calcLine(src) {
     let s = src.normalize('NFKC').replace(/[×✕]/g, '*').replace(/÷/g, '/').replace(/[−–]/g, '-').replace(/(\d),(?=\d{3}(?!\d))/g, '$1');
     // 空白は式の書き方に合わせる: 演算子か = の前後に空白があれば空白を入れ、詰めて書いた式なら詰める。
@@ -3032,33 +3034,55 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (eq) s = s.replace(/=\s*$/, '');
     // 数字の後ろに演算子が 1 つ以上ある行だけを式とみなす（「12」や「-5」だけでは出さない）
     if (!/^[\d\s+\-*/^%().]+$/.test(s) || !/\d\s*[%)]*\s*[+\-*/^%]/.test(s)) return '';
+    const N = typeof BigInt === 'function' ? BigInt : null;
     let i = 0;
     const peek = () => { while (s[i] === ' ') i++; return s[i]; };
+    const fl = v => (typeof v === 'number' ? v : Number(v[0]) / Number(v[1]));
+    const gcd = (a, b) => { if (a < 0) a = -a; while (b) [a, b] = [b, a % b]; return a; };
+    const Q = (n, d) => {
+      if (!d) throw 0; // 0 で割った
+      if (d < 0) { n = -n; d = -d; }
+      const g = gcd(n, d);
+      return [n / g, d / g];
+    };
+    const add = (a, b, k) => (typeof a === 'number' || typeof b === 'number' ? fl(a) + k * fl(b) : Q(a[0] * b[1] + (k < 0 ? -b[0] : b[0]) * a[1], a[1] * b[1]));
+    const mul = (a, b) => (typeof a === 'number' || typeof b === 'number' ? fl(a) * fl(b) : Q(a[0] * b[0], a[1] * b[1]));
+    const div = (a, b) => (typeof a === 'number' || typeof b === 'number' ? fl(a) / fl(b) : Q(a[0] * b[1], a[1] * b[0]));
+    const pow = (a, b) => {
+      if (typeof a === 'number' || typeof b === 'number' || b[1] !== N(1)) return fl(a) ** fl(b);
+      let e = b[0];
+      const inv = e < 0;
+      if (inv) e = -e;
+      // 答えが 1000 桁を超えそうなら出さない（大きすぎる計算で入力が止まらないように）
+      if (Number(e) * ((a[0] < 0 ? -a[0] : a[0]).toString(2).length + a[1].toString(2).length) > 3400) throw 0;
+      const r = [a[0] ** e, a[1] ** e];
+      return inv ? Q(r[1], r[0]) : r;
+    };
     const expr = () => {
       let v = term();
       for (;;) {
         const c = peek();
-        if (c === '+') { i++; v += term(); } else if (c === '-') { i++; v -= term(); } else return v;
+        if (c === '+') { i++; v = add(v, term(), 1); } else if (c === '-') { i++; v = add(v, term(), -1); } else return v;
       }
     };
     const term = () => {
       let v = unary();
       for (;;) {
         const c = peek();
-        if (c === '*') { i++; v *= unary(); } else if (c === '/') { i++; v /= unary(); } else return v;
+        if (c === '*') { i++; v = mul(v, unary()); } else if (c === '/') { i++; v = div(v, unary()); } else return v;
       }
     };
     const unary = () => {
       const c = peek();
-      if (c === '-') { i++; return -unary(); }
+      if (c === '-') { i++; return mul(unary(), N ? [N(-1), N(1)] : -1); }
       if (c === '+') { i++; return unary(); }
       const b = post();
-      if (peek() === '^') { i++; return b ** unary(); }
+      if (peek() === '^') { i++; return pow(b, unary()); }
       return b;
     };
     const post = () => {
       let v = atom();
-      while (peek() === '%') { i++; v /= 100; }
+      while (peek() === '%') { i++; v = div(v, N ? [N(100), N(1)] : 100); }
       return v;
     };
     const atom = () => {
@@ -3072,13 +3096,37 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       const m = /^(\d+(\.\d*)?|\.\d+)/.exec(s.slice(i));
       if (!m) throw 0;
       i += m[0].length;
-      return +m[0];
+      if (!N) return +m[0];
+      const [a, b = ''] = m[0].split('.');
+      return Q(N((a || '0') + b), N(10) ** N(b.length));
     };
-    let v;
-    try { v = expr(); } catch (_) { return ''; }
-    if (peek() !== undefined || !isFinite(v)) return '';
-    const r = String(+v.toPrecision(12) || 0);
+    let r;
+    try { r = fmt(expr()); } catch (_) { return ''; }
+    if (peek() !== undefined || !r) return '';
     return eq ? (sp && !tw ? ' ' : '') + r : sp ? (tw ? '= ' : ' = ') + r : '=' + r;
+    // 答えの書き方: 整数と割り切れる小数（小数 30 桁まで）は正確に。割り切れないときは、整数の部分は全部、小数は前と同じく有効数字 12 桁ほど
+    // （整数の部分が 10 桁を超えても小数 2 桁）。ふつうの数は前と同じ（有効数字 12 桁）。1000 桁を超える答えは出さない
+    function fmt(v) {
+      if (typeof v === 'number') return isFinite(v) ? String(+v.toPrecision(12) || 0) : '';
+      let [n, d] = v;
+      const sg = n < 0 ? '-' : '', T = N(10);
+      if (sg) n = -n;
+      const ip = n / d, is = String(ip);
+      if (is.length > 1000) return '';
+      if (n % d === N(0)) return sg + is;
+      let k = d, t2 = 0, t5 = 0;
+      while (k % N(2) === N(0)) { k /= N(2); t2++; }
+      while (k % N(5) === N(0)) { k /= N(5); t5++; }
+      let f = max(t2, t5);
+      if (k !== N(1) || f > 30) {
+        let z = 0;
+        if (!ip) for (let x = n * T; x < d; x *= T) z++;
+        f = ip ? max(2, 12 - is.length) : z + 12;
+      }
+      const q = String((n * T ** N(f) * N(2) + d) / (N(2) * d)).padStart(f + 1, '0'); // 小数 f 桁で四捨五入
+      const a = q.slice(0, -f), b = q.slice(-f).replace(/0+$/, '');
+      return (b || a !== '0' ? sg : '') + a + (b ? '.' + b : '');
+    }
   }
 
   // 入力欄の中身を文字の物として面に置く（書き直しなら物を更新し、空なら消す）。1 手として履歴に積む

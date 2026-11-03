@@ -1167,6 +1167,53 @@ test('ページ操作モードでツールを選ぶ（ボタンでもキーで�
   await page.close();
 });
 
+test('文字の道具でも、文字を押して引けば動き、引かずに押せば書き直す。打っている途中は点線の枠の縁を引いて、打ったまま動かせる（T-146）', async () => {
+  const { page, errors } = await fresh();
+  await page.keyboard.press('t');
+  await page.mouse.click(200, 300);
+  await page.keyboard.type('Hello');
+  await page.keyboard.press('Escape');
+  const r0 = await textRect(page);
+  const h0 = await hist(page);
+  // 文字の道具のまま、文字を押して引く: 動く（入力欄は出ない）
+  const cx = r0.x + r0.w / 2, cy = r0.y + r0.h / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  for (let i = 1; i <= 6; i++) await page.mouse.move(cx + i * 25, cy + i * 15);
+  await page.mouse.up();
+  const r1 = await textRect(page);
+  assert.ok(Math.abs(r1.x - r0.x - 150) < 3 && Math.abs(r1.y - r0.y - 90) < 3, `moved: ${JSON.stringify(r0)} → ${JSON.stringify(r1)}`);
+  assert.equal(await textBox(page), null, 'dragging does not start editing');
+  assert.match(await toolOn(page), /^文字/);
+  // 引かずに押す: 書き直し（1 回目で）
+  await page.mouse.click(r1.x + r1.w / 2, r1.y + r1.h / 2);
+  assert.equal((await textBox(page)).value, 'Hello');
+  await page.keyboard.press('Escape');
+  assert.equal(await hist(page), h0 + 1, 'the move is one step');
+  await page.keyboard.press('Control+z');
+  const r2 = await textRect(page);
+  assert.ok(Math.abs(r2.x - r0.x) < 1 && Math.abs(r2.y - r0.y) < 1, 'undo puts it back');
+  // 打っている途中に、点線の枠の右の縁（見えない余白）を引くと、打ったまま動く。確定するとその位置に付く
+  await page.mouse.click(300, 500);
+  await page.keyboard.type('ab');
+  const box = await shadowEval(page, root => { const r = root.querySelector('.tx').getBoundingClientRect(); return { r: r.right, y: (r.top + r.bottom) / 2, l: r.left, t: r.top }; });
+  await page.mouse.move(box.r - 3, box.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 5; i++) await page.mouse.move(box.r - 3 + i * 20, box.y + i * 10);
+  await page.mouse.up();
+  const moved = await shadowEval(page, root => { const r = root.querySelector('.tx').getBoundingClientRect(); return { l: r.left, t: r.top }; });
+  assert.ok(Math.abs(moved.l - box.l - 100) < 2 && Math.abs(moved.t - box.t - 50) < 2, `the input moved: ${JSON.stringify(box)} → ${JSON.stringify(moved)}`);
+  assert.equal((await textBox(page)).focused, true, 'still typing');
+  await page.keyboard.type('c');
+  await page.keyboard.press('Escape');
+  const texts = await textInfo(page);
+  assert.deepEqual(texts.map(t => t.s), ['Hello', 'abc']);
+  const r3 = await textRect(page, 1);
+  assert.ok(Math.abs(r3.x - (300 + 100)) < 4, `committed where it was moved: ${r3.x}`);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('文字に触れる: ペンのまま文字を押して動かし、もう一度押すと書き直し（道具と色はそのまま）。外から描く線は描ける。設定で切れる', async () => {
   const { page, errors } = await fresh();
   await page.keyboard.press('t');

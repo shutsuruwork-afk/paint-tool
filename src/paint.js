@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.40.1';
+  const VERSION = '1.41.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -1607,7 +1607,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const t = erase ? 'eraser' : tool;
     const x = e.clientX * dpr, y = e.clientY * dpr, X = x * sk + sox, Y = y * sk + soy;
     // 文字に触れる: 選んでいる物か文字の上を押したら、どの道具でも選択ツールと同じに扱う
-    if (t === 'select' || (touchText && TOUCH[t] && ((sel && selHit(X, Y) !== -2) || textHit(X, Y)))) { selDown(e, X, Y); return; }
+    // 文字の道具でも、文字の上を押したら選択と同じに扱う。引けば動き、引かずに離せば書き直す（sEd。T-146。前は押すと書き直しになるだけで、動かせなかった）
+    const onT = (sel && selHit(X, Y) !== -2) || textHit(X, Y);
+    if (t === 'select' || (onT && (t === 'text' || (touchText && TOUCH[t])))) { sEd = t === 'text'; selDown(e, X, Y); return; }
     dropSel();
     if (t === 'fill' || t === 'text') {
       // タッチは離したときに行う（2 本指のスクロールになったら何もしない。T-104）
@@ -1680,7 +1682,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function onMove(e) {
     if (e.pointerId !== act) {
       if (e.pointerType === 'pen') lastPen = e.timeStamp; // ホバー中のペンもパームリジェクションに使う
-      if (act === -1 && (sel || (tlist.length && (tool === 'select' || (touchText && TOUCH[tool]))))) selHover(e);
+      if (act === -1 && (sel || (tlist.length && (tool === 'select' || tool === 'text' || (touchText && TOUCH[tool]))))) selHover(e);
       return;
     }
     // 離した合図を取りこぼしたまま、ボタンを押していないマウス・ペンの動きが来たら、そこで線を終える（別のタブで離して戻ると、押さずに動かすだけで描き続け、
@@ -2459,7 +2461,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     h.style.top = HND[i + 1] * 100 + '%';
     selB.append(h);
   }
-  let sel = false, sDrag = 0, sH = 0, sWas = false, hoverCur = '', toolCur = '';
+  let sel = false, sDrag = 0, sH = 0, sWas = false, sEd = false, hoverCur = '', toolCur = ''; // sEd: 文字の道具で押した（引かずに離せば 1 回目で書き直す。T-146）
   let selX = 0, selY = 0, selW = 0, selH = 0;     // 今の枠（S、小数のまま持つ）
   let srcX = 0, srcY = 0, srcW = 0, srcH = 0;     // 浮かせた元の範囲（S、整数）
   let dragX = 0, dragY = 0, begX = 0, begY = 0, begW = 0, begH = 0; // ドラッグ開始時のポインタと枠
@@ -2702,8 +2704,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         const x = floor(selX), y = floor(selY);
         liftSel(x, y, ceil(selX + selW) - x, ceil(selY + selH) - y, true);
       } else pickSel(dragX, dragY);
-    } else if (sDrag === 2 && sWas && !srcW && selT.length === 1 && selX === begX && selY === begY) {
-      // 選んでいる文字をもう一度押して、動かさずに離した: 書き直す（ダブルクリックもこれになる）
+    } else if (sDrag === 2 && (sWas || sEd) && !srcW && selT.length === 1 && selX === begX && selY === begY) {
+      // 選んでいる文字をもう一度押して、動かさずに離した: 書き直す（ダブルクリックもこれになる）。文字の道具なら 1 回目で書き直す
       const o = selT[0][0];
       sDrag = 0;
       dropSel();
@@ -2860,6 +2862,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     ta.addEventListener('compositionend', updateGhost);
     ta.addEventListener('keyup', updateGhost);
     ta.addEventListener('pointerup', updateGhost);
+    ta.addEventListener('pointerdown', taDrag);
+    ta.addEventListener('pointermove', taHover);
     ta.addEventListener('keydown', e => {
       if (e.isComposing || e.keyCode === 229) return;
       // Tab: 電卓の答えを書き込む。答えがなくても、入力欄からフォーカスは外さない
@@ -2879,6 +2883,58 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     styleTa();
     ta.focus({ preventScroll: true });
     if (value) ta.setSelectionRange(value.length, value.length);
+  }
+  // 打っている途中に、点線の枠の縁（見えない余白 TA_PAD の所）を 3px 以上引くと、打ったまま入力欄を動かす（T-146、ideas/new-ideas1: 端を持って移動）。
+  // 引かずに離したら、今まで通りその近くにカーソルを置く（caretAt。余白を押しても入力が続く T-024 のまま）。中身の所はブラウザに任せる（カーソルと範囲の選択）。
+  // マウスとペンだけ（指はページのスクロールと取り合うので、確定した文字を文字の道具で引いて動かす）
+  const taEdge = e => {
+    const r = ta.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+    return e.pointerType !== 'touch' && (x < TA_PAD || y < TA_PAD || x > r.width - TA_PAD || y > r.height - TA_PAD);
+  };
+  function taHover(e) {
+    if (e.buttons) return;
+    const c = taEdge(e) ? 'move' : '';
+    if (ta.style.cursor !== c) ta.style.cursor = c;
+  }
+  function taDrag(e) {
+    if (e.button !== 0 || !taEdge(e)) return;
+    e.preventDefault();
+    const o = ta, id = e.pointerId, sx = e.clientX, sy = e.clientY, dx = sx - taX, dy = sy - taCY;
+    let moving = false;
+    try { o.setPointerCapture(id); } catch (_) { }
+    const mv = ev => {
+      if (ev.pointerId !== id) return;
+      if (!ev.buttons) { up(ev); return; } // 離した合図を取りこぼした（T-151）
+      if (!moving && abs(ev.clientX - sx) < 3 && abs(ev.clientY - sy) < 3) return;
+      moving = true;
+      taX = ev.clientX - dx; taCY = ev.clientY - dy;
+      styleTa();
+    };
+    const up = ev => {
+      if (ev.pointerId !== id) return;
+      o.removeEventListener('pointermove', mv);
+      o.removeEventListener('pointerup', up);
+      o.removeEventListener('pointercancel', up);
+      if (ta !== o) return;
+      o.focus({ preventScroll: true });
+      if (!moving && ev.type === 'pointerup') caretAt(sx, sy);
+    };
+    o.addEventListener('pointermove', mv);
+    o.addEventListener('pointerup', up);
+    o.addEventListener('pointercancel', up);
+  }
+  // 画面の (cx, cy) にいちばん近い文字の境目にカーソルを置く（余白を押して引かずに離したとき）。行は高さで、行の中は入力欄と同じ測り方（lineW）で決める
+  function caretAt(cx, cy) {
+    const r = ta.getBoundingClientRect(), L = ta.value.split('\n');
+    const li = min(L.length - 1, max(0, floor((cy - r.top - TA_PAD) / (taFs * LH)))), t = L[li], x = cx - r.left - TA_PAD;
+    let lo = 0, hi = t.length;
+    while (lo < hi) {
+      const m = (lo + hi) >> 1;
+      if (x < (lineW(t.slice(0, m)) + lineW(t.slice(0, m + 1))) / 2) hi = m; else lo = m + 1;
+    }
+    let k = lo;
+    for (let i = 0; i < li; i++) k += L[i].length + 1;
+    ta.setSelectionRange(k, k);
   }
   // 確定した文字を書き直す: その物の書式のまま同じ位置に入力欄を出す（物はその間だけ隠す）。道具と今の色は変えない
   function editText(o) {

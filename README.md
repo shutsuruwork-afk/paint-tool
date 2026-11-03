@@ -36,7 +36,7 @@
 | `P` / `H` / `E` | ペン / 蛍光ペン / 消しゴム（右クリック・ペンの消しゴム側でも消去）。ペンを選んだ状態でペンのボタンをもう一度押すと、ペンの種類（ペン・万年筆・筆・鉛筆）を選べる |
 | `L` / `A` / `R` / `O` | 直線 / 矢印 / 四角形 / 楕円（`Shift` で 45° 刻み・正方形・正円、`Alt` で中心から） |
 | `T` | 文字（クリックした所に入力。外を押すか `Esc`・`Ctrl`+`Enter` で確定。書いた文字は、どの道具でも押すと選べ、もう一度押すと書き直し） |
-| `F` / `I` | 塗りつぶし / スポイト（EyeDropper 対応ブラウザ） |
+| `F` / `I` | 塗りつぶし / スポイト（EyeDropper 対応ブラウザでは画面のどこからでも。ないブラウザ〈iPhone など〉では、次に押した所の描いた絵と文字から色を拾う） |
 | `1`〜`8` | 色 |
 | `[` / `]` | 太さ |
 | `Ctrl`+`Z` / `Ctrl`+`Shift`+`Z`・`Ctrl`+`Y` | 元に戻す / やり直す（Mac は `⌘` も可） |
@@ -184,7 +184,7 @@
 ```sh
 npm install
 npm run build   # src/paint.js → dist/paint.min.js, dist/bookmarklet.txt, docs/index.html
-npm test        # Playwright（Chromium）で 114 項目の動作テスト
+npm test        # Playwright（Chromium）で 115 項目の動作テスト
 npm run bench   # 性能計測
 npm run pop     # 蛍光ペンの先端の「ぴょこぴょこ」（消える画素）と隙間の計測
 npm run predict -- paint-input-*.json  # 録った入力で、予測の方法（なし・ブラウザ・曲がりに沿う・直線）ごとの、1 フレーム後のペン先とのずれ・外れた予測・消える線の長さを比べる。負荷の様子（フレームの間隔・入力が届くまでの遅れ・予測線の点滅）も出す

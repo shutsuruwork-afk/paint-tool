@@ -598,6 +598,65 @@ test('「−」と Esc で隠すと、絵もツールバーも消えて「ブッ
   await page.close();
 });
 
+test('スポイト: ブラウザの EyeDropper がないとき（iPhone など）は、スポイトを押してから描いた絵か文字を押すと、その色になる。何もない所では待ち、Esc でやめる（T-147）', async () => {
+  const page = await browser.newPage();
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(server.base + '/');
+  await page.evaluate(() => { delete window.EyeDropper; });
+  await runCode(page, CODE);
+  const col = async () => (await prefs(page)).color;
+  const dropOn = () => shadowEval(page, root => root.querySelector('[aria-label^="スポイト"]').classList.contains('on'));
+  // 赤の線と、緑の文字
+  await page.evaluate(() => window.__paintBookmarklet.color('#e53935'));
+  await drag(page, [[100, 400], [500, 400]], 5);
+  await page.evaluate(() => window.__paintBookmarklet.color('#43a047'));
+  await page.keyboard.press('t');
+  await page.mouse.click(200, 550);
+  await page.keyboard.type('MMMM');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('p');
+  await page.evaluate(() => window.__paintBookmarklet.color('#1e88e5'));
+  const h0 = await hist(page);
+  // 色と太さのパネルのスポイト: パネルは開いたまま、ボタンが選んでいる見た目になる
+  await mouseClick(page, '[aria-label^="色・"]');
+  await mouseClick(page, '.pn.on [aria-label^="スポイト"]');
+  assert.equal(await dropOn(), true);
+  assert.equal(await openPanels(page), 1);
+  // 何も描いていない所では拾わずに待つ
+  await page.mouse.click(700, 200);
+  assert.equal(await col(), '#1e88e5');
+  assert.equal(await dropOn(), true);
+  // 線の上を押すと、その色になって待つのをやめる。線は描かない
+  await page.mouse.click(300, 400);
+  assert.equal(await col(), '#e53935');
+  assert.equal(await dropOn(), false);
+  assert.equal(await hist(page), h0, 'picking does not draw');
+  // I キーでも。文字の色も拾える
+  await page.keyboard.press('i');
+  assert.equal(await dropOn(), true);
+  const tr = await textRect(page);
+  await page.mouse.click(tr.x + 4, tr.y + tr.h / 2);
+  assert.equal(await col(), '#43a047');
+  // Esc でやめる。やめた後は描ける
+  await page.keyboard.press('i');
+  await page.keyboard.press('Escape');
+  assert.equal(await dropOn(), false);
+  await drag(page, [[100, 600], [300, 600]], 4);
+  assert.equal(await hist(page), h0 + 1);
+  // 指は離したときに拾う（押しただけでは変わらない）
+  await page.evaluate(() => window.__paintBookmarklet.color('#1e88e5'));
+  await page.keyboard.press('i');
+  const touch = type => firePointer(page, type, { pointerId: 21, pointerType: 'touch', isPrimary: true, clientX: 300, clientY: 400, button: 0, buttons: type === 'pointerdown' ? 1 : 0 });
+  await touch('pointerdown');
+  assert.equal(await col(), '#1e88e5');
+  await touch('pointerup');
+  assert.equal(await col(), '#e53935');
+  assert.equal(await hist(page), h0 + 1);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('色と太さのパネル: 色を選んでも開いたまま、描き始めると閉じてその色で描ける。Esc はまずパネルを閉じる', async () => {
   const { page } = await fresh();
   await mouseClick(page, '[aria-label^="色・"]');

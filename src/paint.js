@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.42.0';
+  const VERSION = '1.43.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -295,6 +295,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   shadow.append(wrap);
 
   // ---------- 状態 ----------
+  let picking = false; // スポイトで拾う待ち（EyeDropper のないブラウザ。T-147）
   let tool = 'pen', color = PALETTE[2], bg = 0, pass = false, visible = false, touchText = DEF.touchText !== false, penType = 'pen', calc = false;
   // 種類のあるボタン（ペン・図形）: 既定は「選んでいないときに押すとその道具、もう一度押すと選択肢」。pickOnce なら 1 回で選択肢も出す
   const pickOnce = DEF.pickOnce === true;
@@ -535,7 +536,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     try { ci.showPicker(); } catch (_) { ci.click(); }
   }, 'c cc');
   const pal = row(...swBtns, customB);
-  if (HAS_ED) pal.append(btn('スポイト (I)', I.drop, () => { closePanel(); pickColor(); }));
+  // スポイトはいつも出す。ブラウザの EyeDropper がないとき（iPhone・LINE・Firefox など）は、パネルを開いたまま拾う待ちにする（ボタンが選んでいる見た目になる。T-147）
+  const dropB = btn('スポイト (I)', I.drop, () => { if (HAS_ED) closePanel(); pickColor(); });
+  pal.append(dropB);
   styleP.append(pal);
 
   const range = (label, title, lo, hi, fn, p = styleP) => {
@@ -798,6 +801,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 
   // ---------- UI 同期（ホットパス外でのみ呼ぶ） ----------
   function setTool(t) {
+    setPicking(false);
     if (t !== 'text') commitText();
     if (t !== 'select') dropSel();
     if (pass) togglePass(); // ツールを選んだら描くつもりなので、ページ操作モードは解除する
@@ -940,8 +944,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   // カーソル画像は OS/コンポジタが描くので遅延ゼロ（DOM で追従させるとフレーム遅れが出る）
   function updateCursor() {
-    let cur = tool === 'text' ? 'text' : tool === 'select' ? 'default' : 'crosshair';
-    if (tool === 'pen' || tool === 'marker' || tool === 'eraser') {
+    let cur = picking ? 'copy' : tool === 'text' ? 'text' : tool === 'select' ? 'default' : 'crosshair';
+    if (!picking && (tool === 'pen' || tool === 'marker' || tool === 'eraser')) {
       const d = max(6, round(CFG[tool].size)), s = d + 4, m = s / 2, r = d / 2;
       if (s <= 128) {
         const svg = `<svg xmlns="${SVGNS}" width="${s}" height="${s}"><circle cx="${m}" cy="${m}" r="${r}" fill="none" stroke="#000" stroke-opacity=".75" stroke-width="1.5"/><circle cx="${m}" cy="${m}" r="${max(r - 1.25, 0.5)}" fill="none" stroke="#fff" stroke-opacity=".9"/></svg>`;
@@ -1568,6 +1572,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 塗りつぶしと文字（x, y は V、cx, cy は client。sk・sox・soy は押したときの mapNow のまま）
   let tapId = -1, tapT = '', tapX = 0, tapY = 0, tapCX = 0, tapCY = 0;
   function tapAct(t, x, y, cx, cy) {
+    if (t === 'pick') { pickAt(cx, cy); return; }
     if (t === 'fill') { floodFill(x, y); return; }
     const o = textHit(x * sk + sox, y * sk + soy);
     if (o) editText(o);
@@ -1603,6 +1608,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       zSX = win.scrollX - lx; zSY = win.scrollY - ly; zEX = e.pageX - e.clientX - lx; zEY = e.pageY - e.clientY - ly;
       const r = wrap.getBoundingClientRect();
       zHX = r.left; zHY = r.top;
+    }
+    if (picking && !erase) {
+      if (type === 'touch') { tapId = e.pointerId; tapT = 'pick'; tapCX = e.clientX; tapCY = e.clientY; } else pickAt(e.clientX, e.clientY);
+      return;
     }
     const t = erase ? 'eraser' : tool;
     const x = e.clientX * dpr, y = e.clientY * dpr, X = x * sk + sox, Y = y * sk + soy;
@@ -3206,8 +3215,30 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         .then(() => say('クリップボードにコピーしました'), () => say('コピーできませんでした'));
     } catch (_) { say('コピーできませんでした'); }
   }
+  // スポイト: ブラウザの EyeDropper があれば画面のどこからでも拾う。なければ、次に押した所の描いた絵と文字から拾う（picking。T-147、ideas/new-ideas1:
+  // サイト上から色を取れる。iPhone などではページの画素は読めないので、自分で描いた物から）。何も描いていない所を押したら拾わずに待つ。
+  // もう一度スポイト・Esc・道具を選ぶでやめる。指は離したときに拾う（2 本指のスクロールの 1 本目で拾わないように。picking は「状態」の節）
   function pickColor() {
+    if (!HAS_ED) { setPicking(!picking); return; }
     try { new EyeDropper().open().then(r => setColor(r.sRGBHex), () => { }); } catch (_) { }
+  }
+  function setPicking(on) {
+    if (picking === on) return;
+    picking = on;
+    dropB.classList.toggle('on', on);
+    updateCursor();
+  }
+  // 画面の (cx, cy)（CSS px）の周り 4px で、描いた絵と文字のいちばん濃い画素の色を拾う（書き出しと同じ capture。半透明の所は色だけ）。
+  // 1 画素だけだと、線や文字の縁の薄い画素で色が 1 ずれ、指では押した所がずれやすい
+  function pickAt(cx, cy) {
+    mapNow();
+    const r = 4, [c, x] = capture(cx - r, cy - r, 2 * r + 1, 2 * r + 1, { willReadFrequently: true }), d = x.getImageData(0, 0, c.width, c.height).data;
+    c.width = c.height = 0;
+    let k = -1;
+    for (let i = 3; i < d.length; i += 4) if (d[i] && (k < 0 || d[i] > d[k])) k = i;
+    if (k < 0) return;
+    setPicking(false);
+    setColor('#' + [d[k - 3], d[k - 2], d[k - 1]].map(v => v.toString(16).padStart(2, '0')).join(''));
   }
 
   // ---------- パフォーマンス HUD (D) ----------
@@ -3252,7 +3283,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       ["{L} {A} {R} {O}", "直線・矢印・四角形・楕円"],
       ["{T}", "文字（日本語入力対応）"],
       ["{F}", "塗りつぶし"],
-      ["{I}", "スポイト（対応するブラウザで）"]
+      ["{I}", "スポイト（描いた絵と文字から。対応するブラウザではページからも）"]
     ]],
     ["色と太さ", [
       ["{1}〜{8}", "色を選ぶ"],
@@ -3356,9 +3387,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     else if (k === 'v' && !cp2) togglePass(); // CP2 にページ操作モードはない
     else if (k === 'b') cycleBg();
     else if (k === 'd') toggleHud();
-    else if (k === 'i' && HAS_ED) pickColor();
+    else if (k === 'i') pickColor();
     else if (k === 'Delete') clearAll();
-    else if (k === 'Escape') openP ? closePanel() : cp2 ? hide() : hideHint(); // CP2 はお知らせを出さずに隠す
+    else if (k === 'Escape') picking ? setPicking(false) : openP ? closePanel() : cp2 ? hide() : hideHint(); // CP2 はお知らせを出さずに隠す
     else ok = false;
     if (ok) { e.preventDefault(); e.stopPropagation(); }
   }

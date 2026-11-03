@@ -186,15 +186,15 @@ test('スマホ（1 段に収まらない幅）では、ツールバーを道具
     assert.equal(r.tops.length, 14);
     assert.ok(r.tops[7] > r.tops[0], width + ': second row below');
     assert.ok(r.w <= 345 && r.over <= 0 && r.over >= -12, width + ': as wide as the longer row ' + JSON.stringify(r));
-    // キーのない端末では、隠すボタンで案内する
-    assert.equal(r.toast, '− で隠す');
+    // 起動時にお知らせは出さない（T-148）
+    assert.equal(r.toast, '');
     assert.deepEqual(errors, []);
     await page.close();
   }
   // マウスの画面を狭めると 2 段に、広げると 1 段に戻る
   const { page, errors } = await fresh('/', { width: 1000, height: 700 });
   assert.equal((await rows(page)).two, false);
-  assert.equal((await rows(page)).toast, 'Esc で隠す');
+  assert.equal((await rows(page)).toast, '');
   await page.setViewportSize({ width: 440, height: 700 });
   await page.waitForFunction(() => document.querySelector('paint-bookmarklet').shadowRoot.querySelector('.bar.two'));
   const n = await rows(page);
@@ -211,8 +211,8 @@ test('ツールバーは 1 段で幅 520px 以下。図形は最後に使った�
   const { page, errors } = await fresh();
   const bar = await rectOf(page, '.bar');
   assert.ok(bar.w <= 520 && bar.h <= 50, JSON.stringify(bar));
-  // 起動時のお知らせは「Esc で隠す」だけ
-  assert.equal(await shadowEval(page, root => root.querySelector('.t.on').textContent), 'Esc で隠す');
+  // 起動時にお知らせは出さない（T-148）
+  assert.equal(await shadowEval(page, root => root.querySelector('.t.on')), null);
   const shapeTitle = () => shadowEval(page, root => root.querySelector('.bar > .shp').title);
   // 図形ボタン: 押すと最後の図形（最初は直線）になるだけ。図形のときにもう一度押すとパネルが開く（ペンと同じ）
   await mouseClick(page, '.bar > .shp');
@@ -271,7 +271,6 @@ test('? で操作の一覧が重なって出る（? ・Esc・外を押すと閉�
   const { page: ip, errors: ie } = await openPage(browser, server.base + '/install');
   const inst = await ip.evaluate(() => [...document.querySelectorAll('.help li > span')].map(s => s.textContent));
   assert.deepEqual(inst, rows);
-  assert.ok(await ip.evaluate(() => document.querySelector('#keys-h').parentElement.textContent.includes('を押すと、同じ一覧')));
   assert.deepEqual(ie, []);
   await ip.close();
   assert.deepEqual(errors, []);
@@ -2117,7 +2116,7 @@ test('Simple Preview（CP2）: 開発用でなくてもその他の最後に出�
   assert.equal((await ip.textContent('#bm')).trim(), 'Paint');
   assert.ok(await ip.isChecked('#p-ui input[value="main"]'));
   // 開発用の節ではなく、ふつうの設定の「最初に出す版」にある（T-101）
-  assert.equal(await ip.evaluate(() => document.querySelector('#p-ui').closest('fieldset').querySelector('legend').textContent), '最初に出す版');
+  assert.equal(await ip.evaluate(() => document.querySelector('#p-ui').closest('fieldset').querySelector('legend').textContent), '版');
   await ip.check('#p-ui input[value="cp2"]');
   assert.equal((await ip.textContent('#bm')).trim(), 'Paint Simple');
   assert.ok(decodeURIComponent(await ip.getAttribute('#bm', 'href')).includes('{\\"ui\\":\\"cp2\\"}'));

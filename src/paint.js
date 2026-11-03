@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.38.9';
+  const VERSION = '1.39.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -69,9 +69,9 @@
   const PENS = ['pen', 'fountain', 'brush', 'pencil'];
   const PEN_TITLES = {
     pen: 'ペン (P)',
-    fountain: '万年筆 (P) — 線の向きで太さが変わる',
-    brush: '筆 (P) — ゆっくりだと太く、速いと細い',
-    pencil: '鉛筆 (P) — 少しかすれる',
+    fountain: '万年筆 (P)',
+    brush: '筆 (P)',
+    pencil: '鉛筆 (P)',
   };
   const NIB_C = Math.SQRT1_2, NIB_S = -Math.SQRT1_2; // 万年筆のペン先の向き（−45°。右上がりが細く、右下がりが太い）
   const KEYMAP = { p: 'pen', h: 'marker', e: 'eraser', l: 'line', a: 'arrow', r: 'rect', o: 'ellipse', f: 'fill', t: 'text', s: 'select' };
@@ -491,16 +491,16 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // パネルはバーの子なのでバーと一緒に動き、absolute なのでバーの幅には入らない。
   // ボタンは版（本家・CP2）に関係なく全部作り、バーに並べるのは layout()（T-088）
   const TITLES = {
-    select: '選択 (S) — 囲むかクリックで選び、ドラッグで移動・角で拡大縮小',
+    select: '選択 (S)',
     pen: 'ペン (P)',
     marker: '蛍光ペン (H)',
-    eraser: '消しゴム (E) — 右クリックやペンの消しゴム側でも消せます',
-    line: '直線 (L) — Shift で 45° 刻み',
-    arrow: '矢印 (A) — Shift で 45° 刻み',
-    rect: '四角形 (R) — Shift で正方形 / Alt で中心から',
-    ellipse: '楕円 (O) — Shift で正円 / Alt で中心から',
+    eraser: '消しゴム (E)',
+    line: '直線 (L)',
+    arrow: '矢印 (A)',
+    rect: '四角形 (R)',
+    ellipse: '楕円 (O)',
     fill: '塗りつぶし (F)',
-    text: '文字 (T) — クリックした所に入力。外を押すか Esc で確定',
+    text: '文字 (T)',
   };
   const SHAPES = ['line', 'arrow', 'rect', 'ellipse'];
   const pnl = () => el('div', 'pn');
@@ -550,7 +550,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     try { ci.showPicker(); } catch (_) { ci.click(); }
   }, 'c cc');
   const pal = row(...swBtns, customB);
-  if (HAS_ED) pal.append(btn('スポイト (I) — 画面上の色を拾う', I.drop, () => { closePanel(); pickColor(); }));
+  if (HAS_ED) pal.append(btn('スポイト (I)', I.drop, () => { closePanel(); pickColor(); }));
   styleP.append(pal);
 
   const range = (label, title, lo, hi, fn, p = styleP) => {
@@ -576,14 +576,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 
   const undoB = btn('元に戻す (Ctrl/⌘+Z)', I.undo, undo);
   const redoB = btn('やり直す (Ctrl/⌘+Shift+Z)', I.redo, redo);
-  const passB = btn('ページ操作モード (V) — 絵を残したままページを操作', I.pass, togglePass);
+  const passB = btn('ページ操作モード (V)', I.pass, togglePass);
   // その他: 名前とショートカット付きのメニュー。keep なら押しても閉じない（背景を続けて切り替えられる）
   const moreP = pnl();
-  const MORE_T = ['その他（全消去・背景・保存・コピー・電卓・画面に固定・デフォルトの変更）', 'その他（全消去・色・本家に戻す）'];
-  const moreB = btn(MORE_T[0], I.more, () => togglePanel(moreP, moreB));
+  const moreB = btn('その他', I.more, () => togglePanel(moreP, moreB));
   // sw なら入り・切りのスイッチ（role="switch"。状態は aria-checked で持ち、つまみは CSS で動かす）
-  const item = (title, label, key, d, fn, keep, sw) => {
-    const b = btn(title, d, () => { if (!keep) closePanel(); fn(); }, 'mi');
+  const item = (label, key, d, fn, keep, sw) => {
+    const b = btn(label + (key ? ` (${key})` : ''), d, () => { if (!keep) closePanel(); fn(); }, 'mi');
     const s = el('span');
     s.textContent = label;
     b.append(s);
@@ -592,22 +591,21 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     moreP.append(b);
     return [b, s];
   };
-  const [clrMi] = item('全消去 (Delete)', '全消去', 'Delete', I.trash, clearAll);
-  const [bgB, bgL] = item('', '', 'B', I.bg, cycleBg, true);
-  item('PNG で保存 (Ctrl/⌘+S)', 'PNG で保存', IS_MAC ? '⌘S' : 'Ctrl+S', I.save, save);
-  if (HAS_CLIP) item('画像をクリップボードにコピー', 'クリップボードにコピー', '', I.copy, copyImg);
-  const [calcB] = item('電卓 — 文字に計算式を書くと答えが薄く出て、Tab で書き込める', '電卓', '', I.calc, () => {
+  const [clrMi] = item('全消去', 'Delete', I.trash, clearAll);
+  const [bgB, bgL] = item('', 'B', I.bg, cycleBg, true);
+  item('PNG で保存', IS_MAC ? '⌘S' : 'Ctrl+S', I.save, save);
+  if (HAS_CLIP) item('クリップボードにコピー', '', I.copy, copyImg);
+  const [calcB] = item('電卓', '', I.calc, () => {
     calc = !calc;
     syncCalc();
     updateGhost();
     remember();
-    say(calc ? '電卓: 文字に計算式を書くと答えが出ます（Tab で書き込み）' : '電卓: 切');
   }, true, true);
-  const [fixB] = item('画面に固定 — スクロールしても絵が画面の同じ所に留まる（動画や地図の上に描くとき）', '画面に固定', '', I.pin, toggleFixed, true, true);
+  const [fixB] = item('画面に固定', '', I.pin, toggleFixed, true, true);
   // デフォルトの変更: インストールページの設定を新しいタブで開く。今のブックマークの既定（DEF）を渡して、フォームに読み込ませる。
   // 設定はこのページに集め、メニューの項目は増やさない
   const openDefaults = d => win.open(PAGE + '#defaults=' + encodeURIComponent(JSON.stringify(d)), '_blank', 'noopener');
-  item('デフォルトの変更 — インストールページで、起動したときの色・太さ・動きを選ぶ（新しいタブ）', 'デフォルトの変更', '', I.prefs, () => openDefaults(DEF));
+  item('デフォルトの変更', '', I.prefs, () => openDefaults(DEF));
   // 見た目（開発用。インストールページの「開発用」を入れたときだけメニューに出す）: ツールバーの色とガラスをその場で変える。
   // 気に入ったら、その見た目を持ってインストールページを開き、デフォルトにできる
   const lookP = pnl();
@@ -631,8 +629,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     lci.value = look.theme[0] === '#' ? look.theme : '#3a4a5c';
     try { lci.showPicker(); } catch (_) { lci.click(); }
   }, 'c cc');
-  const glassSw = lookSw('ガラス風 — 半透明にして下をぼかす', 'ガラス風', () => setLook('glass', !look.glass));
-  const gaussSw = lookSw('ガウス — 周りも拾ってぼかす（切るとふつうの backdrop-filter）', 'ガウス', () => setLook('blurMode', look.blurMode === 'gauss' ? 'plain' : 'gauss'));
+  const glassSw = lookSw('ガラス風', 'ガラス風', () => setLook('glass', !look.glass));
+  const gaussSw = lookSw('ガウス', 'ガウス', () => setLook('blurMode', look.blurMode === 'gauss' ? 'plain' : 'gauss'));
   lookP.append(row(...themeBs, lcB), glassSw, gaussSw);
   const [blurW, blurR, blurO] = range('ぼかし', 'ぼかしの強さ', 0, 40, v => setLook('blur', v), lookP);
   const [tintW, tintR, tintO] = range('地', 'ガラスの地の濃さ', 30, 95, v => setLook('tint', v), lookP);
@@ -694,7 +692,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   gbR.append(gbL);
   const gbW = row(...gbBs);
   lookP.append(gbR, gbW);
-  const toDefB = btn('この見た目をデフォルトにする — インストールページを開く（新しいタブ）', I.prefs, () => {
+  const toDefB = btn('この見た目をデフォルトにする', I.prefs, () => {
     closePanel();
     openDefaults({ ...DEF, theme: look.theme, glass: look.glass, blurMode: look.blurMode, blur: look.blur, tint: look.tint, sat: look.sat, gbg: look.gbg, ...(ppred !== ppred0 && { ppred }), plen, mpred, blend });
   }, 'mi');
@@ -723,18 +721,18 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const closeB = btn('閉じる（8 秒間は元に戻せます）', I.close, close);
   // 入力の録画（開発用。T-070）: 描いた線の入力を録って JSON で書き出す。予測の精度を、人が実際に書いた線で測るため（T-060）
   let recB = null, hudB = null;
-  if (dev) item('見た目（開発用） — ツールバーの色やガラス（地の置き方も）、予測の方法と長さ、蛍光ペンの予測、半透明の線の描き方をその場で変える', '見た目（開発用）', '', I.bg, () => openPanel(lookP, moreB));
+  if (dev) item('見た目（開発用）', '', I.bg, () => openPanel(lookP, moreB));
   if (dev) {
-    [recB] = item('入力を録る（開発用） — ペン・蛍光ペンで描いた線の入力（座標・時刻・筆圧・Chrome の予測）を録る。入れると前の録画は消える', '入力を録る（開発用）', '', I.rec, toggleRec, true, true);
-    item('録った入力を書き出す（開発用） — JSON をダウンロード', '録った入力を書き出す', '', I.save, recExport);
+    [recB] = item('入力を録る（開発用）', '', I.rec, toggleRec, true, true);
+    item('録った入力を書き出す', '', I.save, recExport);
     // キーボードのない iPhone でも計測表示（D）を出せるように（T-123）
-    [hudB] = item('計測表示（開発用） — 左下に、入力の数・座標・まとめられた点・ブラウザの予測・遅れを出す（D キーと同じ）', '計測表示（開発用）', 'D', I.prefs, toggleHud, true, true);
+    [hudB] = item('計測表示（開発用）', 'D', I.prefs, toggleHud, true, true);
   }
-  const hideB = btn('隠す (Esc) — ブックマークレットを再度押すと再表示', I.hide, hideHint);
+  const hideB = btn('隠す (Esc)', I.hide, hideHint);
   // ここまでが本家のその他。CP2 のその他は、全消去・色（選ぶとメニューを閉じ、消しゴムのときはペンに戻す）・本家に戻す
   const mainMore = [...moreP.children];
-  const [cp2Mi] = item('Simple Preview — バーをペン・文字・元に戻すだけにしたシンプルな表示に切り替える。絵はそのまま。その他の「本家に戻す」で戻る', 'Simple Preview', '', I.swap, () => setUi(true));
-  const [mainMi] = item('本家に戻す — いつもの表示に戻す。絵はそのまま', '本家に戻す', '', I.swap, () => setUi(false));
+  const [cp2Mi] = item('Simple Preview', '', I.swap, () => setUi(true));
+  const [mainMi] = item('本家に戻す', '', I.swap, () => setUi(false));
   const mcBtns = PALETTE.map((c, i) => {
     const b = btn(`色 ${i + 1}`, null, () => { setColor(c); if (tool === 'eraser') setTool('pen'); closePanel(); }, 'c');
     b.style.setProperty('--c', c);
@@ -742,7 +740,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   });
   const mcRow = row(...mcBtns);
   // CP2 の閉じる（× の見た目）は、中身は隠す（絵は残り、ブックマークレットでまた出る）。お知らせも出さない
-  const hideCB = btn('閉じる — ブックマークレットを再度押すと、絵もそのまま再表示', I.close, hide);
+  const hideCB = btn('閉じる', I.close, hide);
   // 版に合わせて、バーとその他の中身を並べ直す。パネルと色の入力（ci・lci）はどちらの版でもバーの子に置く
   function layout() {
     closePanel();
@@ -751,8 +749,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       el('div', 'sep brk'), styleB, sep(), undoB, redoB, sep(), passB, moreB, sep(), hideB, closeB); // 1 段に収まらないときは .brk で段を分ける（.two .brk。T-064・T-067）
     bar.append(shapeP, penP, styleP, moreP, lookP, ci, lci);
     moreP.replaceChildren(...(cp2 ? [clrMi, mcRow, mainMi] : [...mainMore, cp2Mi]));
-    moreB.title = MORE_T[+cp2];
-    moreB.setAttribute('aria-label', MORE_T[+cp2]);
     penB.classList.toggle('dd', !cp2);
     helpEl.replaceChildren(); // 操作の一覧は次に開いたときに作り直す（CP2 ではページ操作モードの行を出さない）
     syncPen();
@@ -1010,7 +1006,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     offTop();
     wrap.classList.toggle('pass', pass);
     passB.classList.toggle('on', pass);
-    say(pass ? 'ページ操作モード（V で描画に戻る）' : '描画モード');
   }
   // カーソル画像は OS/コンポジタが描くので遅延ゼロ（DOM で追従させるとフレーム遅れが出る）
   function updateCursor() {
@@ -1441,7 +1436,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     }
     sizeSurface();
     syncFixed();
-    say(fixed ? '画面に固定: スクロールしても絵は動きません' : '画面に固定: 切（絵はページに付きます）');
   }
   // 面の中身を S の (dx, dy) だけずらす（文字は CSS px の整数のまま (tx, ty) だけ）。文書の上や左にはみ出した所は消える
   function shiftAll(dx, dy, tx, ty) {
@@ -2589,7 +2583,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     h.style.top = HND[i + 1] * 100 + '%';
     selB.append(h);
   }
-  let sel = false, selHint = false, sDrag = 0, sH = 0, sWas = false, hoverCur = '', toolCur = '';
+  let sel = false, sDrag = 0, sH = 0, sWas = false, hoverCur = '', toolCur = '';
   let selX = 0, selY = 0, selW = 0, selH = 0;     // 今の枠（S、小数のまま持つ）
   let srcX = 0, srcY = 0, srcW = 0, srcH = 0;     // 浮かせた元の範囲（S、整数）
   let dragX = 0, dragY = 0, begX = 0, begY = 0, begW = 0, begH = 0; // ドラッグ開始時のポインタと枠
@@ -2695,7 +2689,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     selX = bX0; selY = bY0; selW = bW0; selH = bH0;
     sel = true;
     showSel();
-    if (!selHint) { selHint = true; say('ドラッグで移動 ・ 角で拡大縮小 ・ Delete で削除 ・ Esc で確定', 3000); }
     return true;
   }
   // 浮かせた中身を今の枠に描き込み、文字の物を枠に合わせて動かす。del なら置かずに消す。
@@ -3225,7 +3218,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function save() {
     exportBlob().then(b => {
       download(b, `paint-${stamp()}.png`);
-      say('PNG をダウンロードします');
     }, () => say('保存できませんでした'));
   }
   function copyImg() {
@@ -3307,7 +3299,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       ["文字の入力中", "{Esc}・{Ctrl}+{Enter}・外を押すと確定"],
       ["{Tab}", "電卓が入りのとき、薄く出た答えを書き込む"],
       ["ツールバー", "どこを押しても、引けば動かせる"],
-      ["その他（⋯）", "全消去・背景・保存・コピー・電卓・画面に固定（スクロールしても絵が画面に留まる）・デフォルトの変更（インストールページを開く）"]
+      ["その他（⋯）", "全消去・背景・保存・コピー・電卓・画面に固定・デフォルトの変更"]
     ]]
   ]/*HELP*/;
   // 一覧は初めて開いたときに作る。開いている間は、外を押すと閉じるだけ（線は描かない）
@@ -3632,6 +3624,4 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   show();
   placeBar();
   ready = true;
-  // キーのないタッチの端末（スマホなど）では、隠すボタンで案内する
-  say(win.matchMedia && win.matchMedia('(hover:none)').matches ? '− で隠す' : 'Esc で隠す');
 })();

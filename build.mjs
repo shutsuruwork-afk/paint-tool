@@ -42,10 +42,11 @@ const tpl = await readFile('src/install.html', 'utf8');
 // （圧縮で変数名が $ になったときに、ボタンの中身が壊れたことがある）
 const page = tpl
   .replaceAll('%%BOOKMARKLET_HREF%%', () => escAttr(bookmarklet))
-  .replaceAll('%%SIZE%%', () => kb(bookmarklet.length))
-  .replaceAll('%%GZIP%%', () => kb(gz))
   .replace('%%HELP%%', () => helpHtml)
   .replace('%%INLINE_CODE%%', () => inline.replace(/<\/(script)/gi, '<\\/$1'));
+// 置き換え忘れの目印（%%NAME%%）が残っていないか（コメントに目印を書くと、そこが置き換わって本物が残る）
+const left = page.match(/%%[A-Z_]+%%/);
+if (left) throw new Error('install page placeholder left: ' + left[0]);
 // ボタンの href が、そのままブックマークレットになっているかを確かめる
 const unesc = t => t.replace(/&lt;/g, '<').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
 const hrefs = [...page.matchAll(/href="(javascript:[^"]*)"/g)].map(m => unesc(m[1]));

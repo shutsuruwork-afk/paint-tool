@@ -397,3 +397,62 @@ test('全部消した後に全消去を何度押しても、表示のタイル�
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+// R-021 の B（2026-11-03、ユーザー: Chrome で、別のタブに行って戻ると変な感じになる）: 隠れている間に離した合図はページに来ない
+test('別のタブに移って戻っても、途中の線・ツールバーの移動が続かず、打っている途中の文字に焦点が戻る（T-151）', async () => {
+  const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(server.base + '/');
+  await runCode(page, CODE);
+  const st = () => page.evaluate(() => { const s = window.__paintBookmarklet.stats(); return [s.drawing, s.history]; });
+  const ink = (x, y, w, h) => page.evaluate(([x, y, w, h]) => { const d = window.__paintBookmarklet.pixels(x, y, w, h).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; }, [x, y, w, h]);
+  // 隠れた・見えたの合図（ヘッドレスではタブを替えても visibilityState が変わらないので、まねる）
+  const vis = state => page.evaluate(s => { Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => s }); document.dispatchEvent(new Event('visibilitychange')); }, state);
+  const pt = (type, id, kind, x, y, buttons) => fire(page, type, { pointerId: id, pointerType: kind, isPrimary: true, clientX: x, clientY: y, button: type === 'pointermove' ? -1 : 0, buttons });
+  // 1) マウス: 押して描いている途中に、離した合図のないまま、ボタンを押していない動きが来たら、そこで線を終える（その後は描かない）
+  await pt('pointerdown', 7, 'mouse', 100, 200, 1);
+  for (let i = 1; i <= 5; i++) await pt('pointermove', 7, 'mouse', 100 + i * 20, 200, 1);
+  await pt('pointermove', 7, 'mouse', 300, 400, 0);
+  for (let i = 1; i <= 5; i++) await pt('pointermove', 7, 'mouse', 300 + i * 20, 400, 0);
+  await page.waitForTimeout(100);
+  assert.deepEqual(await st(), [false, 1], 'the stroke ends at the first move without a button');
+  assert.ok(await ink(90, 190, 130, 20) > 100, 'what was drawn is kept');
+  assert.equal(await ink(280, 380, 140, 40), 0, 'moving without a button does not draw');
+  // 2) 指: 描いている途中に隠れたら、そこで線を終える（iPhone では、戻っても離した合図が来ないことがある）
+  await pt('pointerdown', 8, 'touch', 100, 500, 1);
+  for (let i = 1; i <= 5; i++) await pt('pointermove', 8, 'touch', 100 + i * 20, 500, 1);
+  await vis('hidden');
+  assert.deepEqual(await st(), [false, 2], 'hiding the page ends the stroke');
+  await vis('visible');
+  for (let i = 1; i <= 5; i++) await pt('pointermove', 8, 'touch', 300 + i * 20, 600, 1);
+  await page.waitForTimeout(100);
+  assert.deepEqual(await st(), [false, 2]);
+  assert.equal(await ink(280, 580, 140, 40), 0, 'the old finger does not draw after coming back');
+  // 3) ツールバーを引いている途中に隠れたら、引くのを終える（戻ってマウスを動かしても付いてこない）
+  const barPos = () => shadowEval(page, root => { const r = root.querySelector('.bar').getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top)]; });
+  const [bx, by] = await barPos();
+  await page.mouse.move(bx + 8, by + 8);
+  await page.mouse.down();
+  for (let i = 1; i <= 5; i++) await page.mouse.move(bx + 8 + i * 10, by + 8 + i * 10);
+  const moved = await barPos();
+  assert.ok(moved[0] > bx + 30, 'dragging moves the bar');
+  await vis('hidden');
+  await vis('visible');
+  for (let i = 1; i <= 5; i++) await page.mouse.move(bx + 60 + i * 20, by + 60 + i * 20);
+  assert.deepEqual(await barPos(), moved, 'the bar does not follow after coming back');
+  await page.mouse.up();
+  // 4) 打っている途中の文字はそのまま。戻ったら入力欄に焦点が戻り、続きを打てる（ショートカットにならない）
+  await page.evaluate(() => window.__paintBookmarklet.tool('text'));
+  await page.mouse.click(400, 300);
+  await page.keyboard.type('ab');
+  await vis('hidden');
+  await shadowEval(page, root => root.activeElement && root.activeElement.blur());
+  await vis('visible');
+  await page.keyboard.type('fe');
+  const text = await shadowEval(page, root => { const t = root.querySelector('textarea'); return t && t.value; });
+  assert.equal(text, 'abfe', 'typing continues in the text input');
+  assert.match(await shadowEval(page, root => root.querySelector('.b.on').getAttribute('aria-label')), /^文字/, 'the tool did not change');
+  assert.deepEqual(errors, []);
+  await page.close();
+});

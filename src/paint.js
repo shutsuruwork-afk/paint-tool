@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.40.0';
+  const VERSION = '1.40.1';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -764,6 +764,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     let moving = false;
     const mv = ev => {
       if (ev.pointerId !== id) return;
+      // ボタンを押していないマウス・ペンの動きなら、離した合図を取りこぼしている（別のタブで離して戻った。T-151）。ここで止める
+      if (ev.buttons === 0 && ev.pointerType !== 'touch') { up(ev); return; }
       if (!moving) {
         if (abs(ev.clientX - sx) < 4 && abs(ev.clientY - sy) < 4) return;
         moving = true;
@@ -776,6 +778,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     };
     const up = ev => {
       if (ev.pointerId !== id) return;
+      barEnd = null;
       win.removeEventListener('pointermove', mv, true);
       win.removeEventListener('pointerup', up, true);
       win.removeEventListener('pointercancel', up, true);
@@ -789,7 +792,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     win.addEventListener('pointermove', mv, true);
     win.addEventListener('pointerup', up, true);
     win.addEventListener('pointercancel', up, true);
+    barEnd = () => up({ pointerId: id });
   });
+  let barEnd = null; // ツールバーを引いている途中なら、それを終える関数（タブが隠れたときに呼ぶ。T-151）
 
   // ---------- UI 同期（ホットパス外でのみ呼ぶ） ----------
   function setTool(t) {
@@ -1678,6 +1683,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       if (act === -1 && (sel || (tlist.length && (tool === 'select' || (touchText && TOUCH[tool]))))) selHover(e);
       return;
     }
+    // 離した合図を取りこぼしたまま、ボタンを押していないマウス・ペンの動きが来たら、そこで線を終える（別のタブで離して戻ると、押さずに動かすだけで描き続け、
+    // 次にどこかを押したときにその線が残っていた。R-021・T-151）。見えていた所までは確定する（T-118 と同じ）
+    if (e.buttons === 0 && (aType === 'mouse' || aType === 'pen') && e.type !== 'pointerup') { endStroke(); return; }
     if (recCur) recEv(e);
     const t0 = hud ? now() : 0;
     const list = HAS_CO && e.getCoalescedEvents ? e.getCoalescedEvents() : EMPTY;
@@ -3283,7 +3291,19 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const f = on ? 'addEventListener' : 'removeEventListener';
     win[f]('keydown', onKey, true);
     win[f]('resize', onResize);
+    doc[f]('visibilitychange', onVis);
   };
+  // 別のタブに移って隠れたら、途中の操作（線・図形・消しゴム・選択の移動・ツールバーの移動・2 本指のスクロールと慣性）を終える（R-021・T-151。
+  // 隠れている間に離した合図はページに来ないので、戻ると押さずに動かすだけで描き続けたり、ツールバーが付いてきたりした。iPhone の指は動きが来ないので、ここで終える）。
+  // 打っている途中の文字はそのまま（戻って続きを打てるように）。戻ったら入力欄に焦点を戻す（外れたまま打つと、文字がショートカットとして効く）
+  function onVis() {
+    if (doc.visibilityState !== 'hidden') { if (ta) ta.focus({ preventScroll: true }); return; }
+    if (act !== -1) endStroke();
+    if (barEnd) barEnd();
+    stopFling();
+    tI0 = tI1 = tapId = -1;
+    scr = 0;
+  }
 
   // ---------- 表示制御 ----------
   function topLayer() {

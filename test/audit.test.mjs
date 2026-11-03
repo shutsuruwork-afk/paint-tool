@@ -312,49 +312,6 @@ test('線を確定するたびに（受け渡しで描いている途中の線�
   await page.close();
 });
 
-test('開発用の「ガラスの地」: 重ねる（今）・バー自身・スクロール中は二重を切り替えられ、スクロール中は二重なら 2 本指のスクロールの間だけバーにも地を敷く（T-130）', async () => {
-  const page = await browser.newPage({ viewport: { width: 390, height: 700 }, hasTouch: true });
-  const errors = [];
-  page.on('pageerror', e => errors.push(e.message));
-  await page.goto(server.base + '/long');
-  await runCode(page, withDefaults(CODE, { dev: true }));
-  const look = () => shadowEval(page, root => {
-    const w = root.querySelector('.w'), b = root.querySelector('.bar');
-    return { cls: ['gself', 'gscr', 'scr'].filter(c => w.classList.contains(c)), bg: getComputedStyle(b).backgroundColor, after: getComputedStyle(b, '::after').content };
-  });
-  const pick = t => shadowEval(page, (root, t) => root.querySelector(`[aria-label="ガラスの地: ${t}"]`).click(), t);
-  let s = await look();
-  assert.deepEqual(s.cls, []);
-  assert.equal(s.bg, 'rgba(0, 0, 0, 0)', 'the tint is on ::after');
-  await pick('バー自身');
-  s = await look();
-  assert.deepEqual(s.cls, ['gself']);
-  assert.notEqual(s.bg, 'rgba(0, 0, 0, 0)', 'the tint is on the bar itself');
-  assert.equal(s.after, 'none');
-  await pick('スクロール中は二重');
-  s = await look();
-  assert.deepEqual(s.cls, ['gscr']);
-  assert.equal(s.bg, 'rgba(0, 0, 0, 0)', 'at rest it looks as before');
-  const cdp = await page.context().newCDPSession(page);
-  const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], id) => ({ x, y, id })) });
-  await touch('touchStart', [[150, 600]]);
-  await touch('touchStart', [[150, 600], [250, 600]]);
-  for (let i = 1; i <= 5; i++) await touch('touchMove', [[150, 600 - i * 10], [250, 600 - i * 10]]);
-  s = await look();
-  assert.deepEqual(s.cls, ['gscr', 'scr'], 'while scrolling');
-  assert.notEqual(s.bg, 'rgba(0, 0, 0, 0)');
-  await page.waitForTimeout(200); // stop before lifting: no fling
-  await touch('touchEnd', [[150, 550]]);
-  await touch('touchEnd', []);
-  await page.waitForTimeout(50);
-  s = await look();
-  assert.deepEqual(s.cls, ['gscr'], 'after the scroll');
-  await pick('重ねる');
-  assert.deepEqual((await look()).cls, []);
-  assert.deepEqual(errors, []);
-  await page.close();
-});
-
 test('ページの高さだけが変わる（LINE などで、スクロールするとブラウザのバーが縮む）ときは、ツールバーを組み直さない。幅が変われば組み直す（T-134）', async () => {
   const page = await browser.newPage({ viewport: { width: 390, height: 700 }, hasTouch: true });
   const errors = [];

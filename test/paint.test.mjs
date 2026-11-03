@@ -449,44 +449,27 @@ test('見た目（開発用）: インストールページの開発用を入れ
   await pick('#ffd54f');
   assert.deepEqual(await st(page), { cls: 'light', bar: 'rgb(255, 213, 79)', gb: '8px', color: 'rgb(29, 32, 38)' });
   assert.equal((await prefs(page)).theme, '#ffd54f');
-  // 蛍光ペンの予測を切り替える（既定はそのまま）
-  const mpOn = () => shadowEval(page, root => [...root.querySelectorAll('.pn.on .sg')].filter(b => b.classList.contains('on')).map(b => b.textContent));
-  assert.deepEqual(await mpOn(), ['曲がりに沿う', '3/4', 'そのまま', 'キャンバスの中で', '重ねる']);
-  await mouseClick(page, '.pn.on [aria-label="蛍光ペンの予測: なし"]');
-  assert.deepEqual(await mpOn(), ['曲がりに沿う', '3/4', 'なし', 'キャンバスの中で', '重ねる']);
-  // 予測の長さを 1 フレーム（前の長さ）に
+  // 予測の方法と長さを切り替える（既定は曲がりに沿う・3/4）
+  const on = () => shadowEval(page, root => [...root.querySelectorAll('.pn.on .sg')].filter(b => b.classList.contains('on')).map(b => b.textContent));
+  assert.deepEqual(await on(), ['曲がりに沿う', '3/4']);
   await mouseClick(page, '.pn.on [aria-label="予測の長さ: 1 フレーム"]');
   assert.equal((await prefs(page)).plen, 1);
-  // 予測の方法をブラウザ（前の方式）に
   await mouseClick(page, '.pn.on [aria-label="予測の方法: ブラウザ"]');
   assert.equal((await prefs(page)).ppred, 'chrome');
-  assert.equal((await prefs(page)).mpred, 'off');
-  // 半透明の線の描き方を前の方式（まとめて）にすると、蛍光ペンを選んだ時点でまとめた要素に濃さがかかる
-  await mouseClick(page, '.pn.on [aria-label="半透明の線の描き方: まとめて"]');
-  assert.deepEqual(await mpOn(), ['ブラウザ', '1 フレーム', 'なし', 'まとめて', '重ねる']);
-  assert.equal((await prefs(page)).blend, 'group');
-  // ガラスの地をバー自身に（ガラス風を入れてから。T-139 でインストールページにも持っていく）
-  await mouseClick(page, '.pn.on [aria-label^="ガラス風"]');
-  await mouseClick(page, '.pn.on [aria-label="ガラスの地: バー自身"]');
-  assert.equal((await prefs(page)).gbg, 'self');
-  await mouseClick(page, '.pn.on [aria-label^="ガラス風"]');
+  assert.deepEqual(await on(), ['ブラウザ', '1 フレーム']);
   // この見た目をデフォルトに: 見た目を持ってインストールページを開く
   await page.evaluate(() => { window.__opened = []; window.open = (...a) => { window.__opened.push(a); return null; }; });
   await mouseClick(page, '.pn.on [aria-label^="この見た目をデフォルトに"]');
   const [url] = (await page.evaluate(() => window.__opened))[0];
   const d = JSON.parse(decodeURIComponent(url.slice(url.indexOf('#defaults=') + 10)));
-  assert.deepEqual([d.dev, d.theme, d.glass, d.blur, d.sat, d.ppred, d.plen, d.mpred, d.blend, d.gbg], [true, '#ffd54f', false, 8, 250, 'chrome', 1, 'off', 'group', 'self']);
+  assert.deepEqual([d.dev, d.theme, d.glass, d.blur, d.sat, d.ppred, d.plen], [true, '#ffd54f', false, 8, 250, 'chrome', 1]);
   const { page: ip, errors: ie } = await openPage(browser, server.base + '/install' + url.slice(url.indexOf('#')));
   assert.equal(await ip.isChecked('#p-theme input[value="custom"]'), true);
   assert.equal(await ip.inputValue('#p-tcolor'), '#ffd54f');
   assert.equal(await ip.inputValue('#p-blur'), '8');
   assert.equal(await ip.inputValue('#p-sat'), '250');
-  assert.equal(await ip.isChecked('#p-mpred input[value="off"]'), true);
   assert.equal(await ip.isChecked('#p-ppred input[value="chrome"]'), true);
   assert.equal(await ip.isChecked('#p-plen input[value="1"]'), true);
-  assert.equal(await ip.isChecked('#p-blend input[value="group"]'), true);
-  assert.equal(await ip.isChecked('#p-gbg input[value="self"]'), true);
-  assert.ok(decodeURIComponent(await ip.getAttribute('#bm', 'href')).includes('\\"gbg\\":\\"self\\"'));
   assert.equal(await ip.isChecked('#p-dev'), true);
   assert.deepEqual(ie, []);
   await ip.close();
@@ -1273,12 +1256,9 @@ test('インストールページで選んだ設定入りのブックマーク�
   assert.equal(String(p0.tint), await page.inputValue('#p-tint'));
   assert.equal(String(p0.sat), await page.inputValue('#p-sat'));
   assert.equal(p0.dev, await page.isChecked('#p-dev'));
-  assert.equal(p0.mpred, await page.evaluate(() => document.querySelector('#p-mpred input:checked').value));
   assert.equal(p0.ppred, await page.evaluate(() => document.querySelector('#p-ppred input:checked').value));
   assert.equal(String(p0.plen), await page.evaluate(() => document.querySelector('#p-plen input:checked').value));
   assert.equal(p0.ui, await page.evaluate(() => document.querySelector('#p-ui input:checked').value));
-  assert.equal(p0.blend, await page.evaluate(() => document.querySelector('#p-blend input:checked').value));
-  assert.equal(p0.gbg, await page.evaluate(() => document.querySelector('#p-gbg input:checked').value));
   await page.evaluate(() => window.__paintBookmarklet.destroy());
   // 選ぶと、ボタンの中身が変わる
   await page.click('[aria-label="色 7"]');
@@ -1542,7 +1522,7 @@ test('電卓: 入りにすると、文字の行が計算式なら答えが薄く
   await page.close();
 });
 
-test('予測線: ペンも蛍光ペンも最後の点より先まで伸ばす。蛍光ペンは設定で「必要な分だけ」（丸い先端で届かない分だけ。ゆっくりなら予測しない）「なし」にもできる', async () => {
+test('予測線: ペンも蛍光ペンも最後の点より先まで伸ばす', async () => {
   // 合成のイベントに timeStamp を与えて速さを決め（step px を 2 ms ごと）、途中の pred を読む。
   // 最後の点は x = 400。reach は線の先の x
   const measure = (page, step) => page.evaluate(step => {
@@ -1564,18 +1544,10 @@ test('予測線: ペンも蛍光ペンも最後の点より先まで伸ばす。
     return out;
   }, step);
   const { page, errors } = await fresh();
-  // 既定（そのまま）: 速くても（5 px/ms）ゆっくりでも（0.5 px/ms）、ペンも蛍光ペンも先まで伸ばす（蛍光ペンは太さの半分 12px より先）
+  // 速くても（5 px/ms）ゆっくりでも（0.5 px/ms）、ペンも蛍光ペンも先まで伸ばす（蛍光ペンは太さの半分 12px より先）
   const fast = await measure(page, 10), slow = await measure(page, 1);
-  assert.equal((await prefs(page)).mpred, 'full');
   assert.ok(fast.pen > 415 && fast.marker > 425, JSON.stringify(fast));
   assert.ok(slow.pen > 402 && slow.marker > 414, JSON.stringify(slow));
-  // 必要な分だけ: 速いと伸ばし、ゆっくりなら丸い先端で 1 フレーム後のペン先まで届くので予測しない。なし: 速くても太さの半分まで
-  for (const [mpred, ok] of [['need', r => r.f > 425 && r.s <= 413], ['off', r => r.f <= 413]]) {
-    await page.evaluate(() => window.__paintBookmarklet.destroy());
-    await runCode(page, withDefaults(CODE, { mpred }));
-    const r = { f: (await measure(page, 10)).marker, s: (await measure(page, 1)).marker };
-    assert.ok(ok(r), mpred + ' ' + JSON.stringify(r));
-  }
   assert.deepEqual(errors, []);
   await page.close();
 });
@@ -1769,41 +1741,6 @@ test('パソコンが重いとき: 入力が遅れてまとめて届いても、
   assert.ok(r.delay > 30, 'measures the input delay ' + JSON.stringify(r));
   assert.ok(r.predWhenStopped > 0 && r.cleared > 0 && r.cleared < 400, 'cleared after stopping ' + JSON.stringify(r));
   assert.ok(r.fi > 14 && r.fi < 19, 'frame length is not stretched by dropped frames ' + JSON.stringify(r));
-  assert.deepEqual(errors, []);
-  await page.close();
-});
-
-test('蛍光ペン（予測が必要な分だけ）: ゆっくり〜ふつうの速さで曲線を描いても、描いている途中に一度見えた所が次の入力で消えない（先端がぴょこぴょこしない）', async () => {
-  const { page, errors } = await openPage(browser, server.base + '/');
-  await runCode(page, withDefaults(CODE, { mpred: 'need' }));
-  const lost = await page.evaluate(() => {
-    const api = window.__paintBookmarklet, root = document.querySelector('paint-bookmarklet').shadowRoot;
-    const pad = root.querySelector('.p'), lv = root.querySelector('canvas.l'), pr = root.querySelector('canvas.q'), grp = root.querySelector('.g');
-    const ev = (type, x, y, ts, extra) => { const e = new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, pointerId: 9, pointerType: 'mouse', isPrimary: true, clientX: x, clientY: y, button: type === 'pointermove' ? -1 : 0, buttons: 1, ...extra }); Object.defineProperty(e, 'timeStamp', { value: ts }); return e; };
-    const k = devicePixelRatio, X0 = 300 * k, Y0 = 200 * k, WW = 400 * k, HH = 300 * k;
-    // 見えている画素: live と pred を重ねた濃さ（まとめた要素の opacity も掛ける）が 4 を超える所
-    const mask = () => { const a = lv.getContext('2d').getImageData(X0, Y0, WW, HH).data, c = pr.getContext('2d').getImageData(X0, Y0, WW, HH).data, g = +(grp.style.opacity || 1); const m = new Uint8Array(WW * HH); for (let i = 0, j = 3; i < m.length; i++, j += 4) m[i] = (a[j] + c[j] * (1 - a[j] / 255)) * g > 4 ? 1 : 0; return m; };
-    const out = {};
-    api.tool('marker');
-    // 速さ 150 px/s と 600 px/s で半径 100px の弧。入力は 8 ms ごと（±1.5 ms ぶれる）、座標は整数
-    for (const v of [150, 600]) {
-      api.clear();
-      const T0 = performance.now() + 1000, pts = [];
-      for (let t = 0; t <= 1000; t += 8) { const a = (v * t / 1000) / 100; pts.push([Math.round(500 + 100 * Math.sin(a)), Math.round(350 - 100 * Math.cos(a))]); }
-      pad.dispatchEvent(ev('pointerdown', pts[0][0], pts[0][1], T0));
-      let prev = mask(), n = 0;
-      for (let i = 1; i < pts.length; i++) {
-        pad.dispatchEvent(ev('pointermove', pts[i][0], pts[i][1], T0 + i * 8 + ((i * 7919) % 31) / 10 - 1.5));
-        const m = mask();
-        for (let j = 0; j < m.length; j++) if (prev[j] && !m[j]) n++;
-        prev = m;
-      }
-      pad.dispatchEvent(ev('pointerup', pts.at(-1)[0], pts.at(-1)[1], T0 + pts.length * 8, { buttons: 0 }));
-      out[v] = n;
-    }
-    return out;
-  });
-  assert.deepEqual(lost, { 150: 0, 600: 0 });
   assert.deepEqual(errors, []);
   await page.close();
 });
@@ -3186,10 +3123,10 @@ test('html に position や margin があるページでも、画面上の位置
   await page.close();
 });
 
-test('確定の瞬間にちらつかない（live は隠してから 2 フレーム後に消す）。半透明の濃さは canvas の中で付ける（前の方式では押す前に合わせてある）', async () => {
-  for (const blend of ['canvas', 'group']) {
+test('確定の瞬間にちらつかない（live は隠してから 2 フレーム後に消す）。半透明の濃さは canvas の中で付ける', async () => {
+  {
     const { page } = await openPage(browser, server.base + '/');
-    await runCode(page, withDefaults(CODE, { blend }));
+    await runCode(page, CODE);
     await page.keyboard.press('h'); // 蛍光ペン（35%）
     const r = await shadowEval(page, async root => {
       const grp = root.querySelector('.g'), live = root.querySelector('canvas.l'), pad = root.querySelector('.p');
@@ -3205,20 +3142,19 @@ test('確定の瞬間にちらつかない（live は隠してから 2 フレー
       for (let i = 0; i < 3; i++) await new Promise(r => requestAnimationFrame(r));
       return { before, during, atUp, after: { opacity: op(), live: alpha() } };
     });
-    const a = blend === 'canvas' ? '1' : '0.35';
-    assert.equal(r.before, a, blend + ': opacity set when the tool was chosen');
-    assert.equal(r.during.opacity, a, blend + ': opacity while drawing');
-    // canvas の方式は live に線の濃さ（35% ≈ 89）で、前の方式は不透明で描く
-    assert.ok(blend === 'canvas' ? Math.abs(r.during.live - 89) <= 2 : r.during.live > 200, blend + ': live alpha ' + r.during.live);
-    assert.equal(r.atUp.opacity, '0', blend + ': live hidden at commit');
-    assert.ok(r.atUp.live > 80 && r.atUp.surface > 80, blend + ': stroke on both layers at the moment of commit');
-    assert.equal(r.after.live, 0, blend + ': live cleared after frames');
-    assert.equal(r.after.opacity, a, blend + ': opacity restored');
+    assert.equal(r.before, '1', 'group opacity before');
+    assert.equal(r.during.opacity, '1', 'group opacity while drawing');
+    // live に線の濃さ（35% ≈ 89）で描く
+    assert.ok(Math.abs(r.during.live - 89) <= 2, 'live alpha ' + r.during.live);
+    assert.equal(r.atUp.opacity, '0', 'live hidden at commit');
+    assert.ok(r.atUp.live > 80 && r.atUp.surface > 80, 'stroke on both layers at the moment of commit');
+    assert.equal(r.after.live, 0, 'live cleared after frames');
+    assert.equal(r.after.opacity, '1', 'opacity restored');
     await page.close();
   }
 });
 
-test('半透明の線は、描いている途中も重なった所が濃くならず（まとめた要素の opacity は 1）、確定した絵は前の方式とほぼ同じ', async () => {
+test('半透明の線は、描いている途中も確定した絵も、重なった所が濃くならない（まとめた要素の opacity は 1）', async () => {
   const run = (page, pen) => shadowEval(page, async (root, pen) => {
     const api = window.__paintBookmarklet, pad = root.querySelector('.p'), lv = root.querySelector('canvas.l'), pr = root.querySelector('canvas.q'), grp = root.querySelector('.g');
     api.clear(); api.tool(pen === 'marker' ? 'marker' : 'pen');
@@ -3245,28 +3181,24 @@ test('半透明の線は、描いている途中も重なった所が濃くな�
     return { max: Math.round(max), over, ops: [...ops], al };
   }, pen);
   const res = {};
-  for (const blend of ['canvas', 'group']) {
-    const { page, errors } = await openPage(browser, server.base + '/');
-    await runCode(page, withDefaults(CODE, { blend, alpha: { pen: 0.35 }, size: { pen: 24 } }));
-    for (const pen of ['marker', 'pen', 'pencil']) {
-      if (pen === 'pencil') await shadowEval(page, root => root.querySelector('[aria-label^="鉛筆"]').click());
-      res[blend + ' ' + pen] = await run(page, pen);
-    }
-    assert.deepEqual(errors, []);
-    await page.close();
-  }
+  const { page, errors } = await openPage(browser, server.base + '/');
+  await runCode(page, withDefaults(CODE, { alpha: { pen: 0.35 }, size: { pen: 24 } }));
   for (const pen of ['marker', 'pen', 'pencil']) {
-    const c = res['canvas ' + pen], g = res['group ' + pen];
+    if (pen === 'pencil') await shadowEval(page, root => root.querySelector('[aria-label^="鉛筆"]').click());
+    res[pen] = await run(page, pen);
+  }
+  assert.deepEqual(errors, []);
+  await page.close();
+  for (const pen of ['marker', 'pen', 'pencil']) {
+    const c = res[pen];
     assert.deepEqual(c.ops, ['1'], pen + ': group opacity stays 1');
-    assert.deepEqual(g.ops, ['0.35'], pen + ': old way uses group opacity');
     // 重なった所が二重になると 0.35 + 0.35 × 0.65 ≈ 148 になる。縁のぼかしの数画素だけは少し超えてよい
     assert.ok(c.max < 115 && c.over <= 20, pen + ': while drawing ' + JSON.stringify({ max: c.max, over: c.over }));
-    assert.ok(g.max <= 90, pen + ': old way while drawing ' + g.max);
-    // 確定した絵の濃さは、前の方式と 3 以内（8 ビットで足すときの丸め）
-    let n = 0, dmax = 0;
-    for (let i = 0; i < c.al.length; i++) { if (c.al[i]) n++; dmax = Math.max(dmax, Math.abs(c.al[i] - g.al[i])); }
+    // 確定した絵も、交わった所まで線の濃さ（89）のまま（8 ビットで足すときの丸めだけ）
+    let n = 0, amax = 0;
+    for (const a of c.al) { if (a) n++; if (a > amax) amax = a; }
     assert.ok(n > 10000, pen + ': stroke committed');
-    assert.ok(dmax <= 3, pen + ': committed alpha differs from the old way by ' + dmax);
+    assert.ok(amax <= 92, pen + ': committed alpha ' + amax);
   }
 });
 

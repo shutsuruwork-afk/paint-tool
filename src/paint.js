@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.39.0';
+  const VERSION = '1.40.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -157,8 +157,6 @@ canvas{position:absolute;left:0;top:0;pointer-events:none}
 .light{color:#1d2026;color-scheme:light;--gc:250 250 252}
 .light .bar,.light .pn,.light .t,.light .hp{background:var(--bb,#fbfbfc);border-color:#0000001a;box-shadow:0 6px 24px #0003}
 .light.glass .bar,.light.glass .pn{background:none;border-color:transparent;outline-color:#0000001a;box-shadow:0 6px 24px #0003,inset 0 1px 0 #ffffff99}
-.glass.gself .bar,.glass.gself .pn,.glass.gscr.scr .bar,.glass.gscr.scr .pn{background:rgb(var(--gc) / var(--gt))}
-.glass.gself .bar::after,.glass.gself .pn::after{content:none}
 .light .b:hover,.light .t button:hover{background:#0000000f}.light .b:active,.light .b.open:not(.on){background:#0000001c}
 .b.on:not(.c):hover,.light .b.on:not(.c):hover,.light .b.on:not(.c):active{background:#2f6bea}
 .b.on.pc,.b.on.pc:hover,.light .b.on.pc:hover,.light .b.on.pc:active{background:var(--pc);color:var(--pi);box-shadow:0 1px 3px #0000003d}
@@ -284,7 +282,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const [liveC, lctx] = layer('l');
   const [predC, pctx] = layer('q');
   const DESYNC = !!(lctx.getContextAttributes && lctx.getContextAttributes().desynchronized);
-  // live と pred をまとめる。blend が 'group' のときは、まとめて不透明度をかける（重なり部分が二重に濃くならない）
+  // live と pred をまとめる（確定の受け渡しで、まとめて隠す）
   const grp = el('div', 'g');
   grp.append(liveC, predC);
   const pad = el('div', 'p');
@@ -327,12 +325,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     blur: +DEF.blur >= 0 && +DEF.blur <= 40 ? +DEF.blur : 18,
     tint: +DEF.tint >= 30 && +DEF.tint <= 95 ? +DEF.tint : 80,
     sat: +DEF.sat >= 100 && +DEF.sat <= 300 ? +DEF.sat : 200, // ガラスの彩度（%。T-065）
-    // ガラスの地の置き方（開発用。T-130）: 'pseudo' は ::after（今）、'self' はバーとパネル自身、'scroll' は 2 本指のスクロール・慣性の間だけバーとパネル自身にも敷く
-    gbg: DEF.gbg === 'self' || DEF.gbg === 'scroll' ? DEF.gbg : 'pseudo',
   };
   const dev = DEF.dev === true;
-  // 蛍光ペンの予測: 'full'（既定）はペンと同じ。'need' は丸い先端で届かない分だけ（1 フレーム後のペン先まで）、曲がりに沿って予測し、
-  // 点と点を直線でつなぐ（T-055）。'off' は描かない。ぴょこぴょこの主な原因は半透明の描き方だったので（T-056）、既定はペンと同じに戻した（T-059）。開発用のパネルでも切り替えられる
   // ペンの予測の方法（T-060）: 'own' は入力ごとに自前で求める（ownPred）。'chrome' はブラウザの予測（pointermove の getPredictedEvents）。開発用で見比べられる。
   // 既定は 'own' で、iPhone・iPad だけ 'chrome'（T-116）: WebKit は iOS が出すタッチの予測（UIKit の predictedTouches）をそのまま入れる。急に止めたときにすぐ縮み、
   // 自前より目立たなかった（ユーザーが iPhone で見比べた）。pointerrawupdate のない iOS では、Chrome のように古い点からの予測になることもない
@@ -342,12 +336,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 自前の予測の先読み（1 フレームの何倍。T-115）。既定は 4 分の 3（急に止めたときに予測が止まった所より先へ飛び出す長さを、1 フレーム分より 2〜4 割短くする。ユーザーが選んだ）。開発用で見比べられる
   const PLENS = [1, 0.75, 0.5];
   let plen = PLENS.includes(+DEF.plen) ? +DEF.plen : 0.75;
-  const MPREDS = ['need', 'off', 'full'];
-  let mpred = MPREDS.includes(DEF.mpred) ? DEF.mpred : 'full';
-  // 半透明の線の描き方（T-056）: 'canvas' は線の濃さを live の canvas の中で付ける（まとめた要素の opacity は 1 のまま。不透明の線と同じ経路）。
-  // 'group' は前の方式（不透明に描き、live と pred をまとめた要素に CSS の opacity）。半透明のときだけ先端がぴょこぴょこ見えていた（ユーザーが実機で確かめた）
-  const BLENDS = ['canvas', 'group'];
-  let blend = BLENDS.includes(DEF.blend) ? DEF.blend : 'canvas';
   // 相対輝度が 0.3 を超える（明るい）色か。上に載せる文字や印を黒にする
   function isLite(hex) {
     const n = parseInt(hex.slice(1), 16);
@@ -367,16 +355,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     cl.toggle('light', lite);
     cl.toggle('glass', look.glass);
     cl.toggle('gauss', look.glass && look.blurMode === 'gauss');
-    cl.toggle('gself', look.glass && look.gbg === 'self');
-    cl.toggle('gscr', look.glass && look.gbg === 'scroll');
-    if (look.gbg !== 'scroll') cl.remove('scr');
     ws.setProperty('--gb', look.blur + 'px');
     ws.setProperty('--gm', look.blur * 2 + 'px');
     ws.setProperty('--gt', look.tint / 100);
     ws.setProperty('--gs', look.sat / 100);
   }
   applyLook();
-  let dpr = win.devicePixelRatio || 1, W = 0, H = 0, grpA = 1, pendingFit = false, rz = 0, warmT = 0, shrT = 0;
+  let dpr = win.devicePixelRatio || 1, W = 0, H = 0, pendingFit = false, rz = 0, warmT = 0, shrT = 0;
   let rg = null, rbx = null, rn = 0; // 半透明の線の、描いた部分の形（addPiece）
   // 履歴タイル: ストロークが触れた T×T タイル（面の座標）だけを記録し、確定・undo・消しゴムの退避をその範囲に限定する。
   // 文書は大きいので、印は配列ではなく Set で持つ。番号は 行 × 65536 + 列
@@ -581,15 +566,20 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const moreP = pnl();
   const moreB = btn('その他', I.more, () => togglePanel(moreP, moreB));
   // sw なら入り・切りのスイッチ（role="switch"。状態は aria-checked で持ち、つまみは CSS で動かす）
-  const item = (label, key, d, fn, keep, sw) => {
-    const b = btn(label + (key ? ` (${key})` : ''), d, () => { if (!keep) closePanel(); fn(); }, 'mi');
-    const s = el('span');
+  // メニューの項目（印・名前・キー）。sw なら入り・切りのスイッチ（状態は aria-checked）
+  const mi = (label, d, fn, key, sw) => {
+    const b = btn(label + (key ? ` (${key})` : ''), d, fn, 'mi'), s = el('span');
     s.textContent = label;
     b.append(s);
     if (key) { const k = el('kbd'); k.textContent = key; b.append(k); }
     if (sw) { b.setAttribute('role', 'switch'); b.append(el('i', 'sw')); }
+    return b;
+  };
+  // その他の項目。keep なら押してもパネルを閉じない
+  const item = (label, key, d, fn, keep, sw) => {
+    const b = mi(label, d, () => { if (!keep) closePanel(); fn(); }, key, sw);
     moreP.append(b);
-    return [b, s];
+    return [b, b.querySelector('span')];
   };
   const [clrMi] = item('全消去', 'Delete', I.trash, clearAll);
   const [bgB, bgL] = item('', 'B', I.bg, cycleBg, true);
@@ -609,15 +599,17 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 見た目（開発用。インストールページの「開発用」を入れたときだけメニューに出す）: ツールバーの色とガラスをその場で変える。
   // 気に入ったら、その見た目を持ってインストールページを開き、デフォルトにできる
   const lookP = pnl();
-  const lookSw = (title, label, fn) => {
-    const b = btn(title, null, fn, 'mi');
-    const s = el('span');
-    s.textContent = label;
-    b.setAttribute('role', 'switch');
-    b.append(s, el('i', 'sw'));
-    return b;
-  };
   const setLook = (k, v) => { look[k] = v; applyLook(); syncLook(); };
+  // 選択肢 1 組: 見出しの行と、押すと set(値) するボタンの行。syncs に「今の値のボタンを .on にする」を足す
+  const syncs = [];
+  const choice = (label, opts, get, set) => {
+    const h = el('div', 'r'), l = el('span');
+    l.textContent = label;
+    h.append(l);
+    const bs = opts.map(([k, t]) => { const b = btn(`${label}: ${t}`, null, () => { set(k); syncLook(); }, 'sg'); b.textContent = t; return b; });
+    syncs.push(() => bs.forEach((b, i) => b.classList.toggle('on', opts[i][0] === get())));
+    lookP.append(h, row(...bs));
+  };
   const lci = el('input', 'ci', { type: 'color', tabindex: '-1', 'aria-hidden': 'true' });
   lci.addEventListener('input', () => setLook('theme', lci.value));
   const themeBs = [['dark', '#202228', '暗い'], ['light', '#fbfbfc', '明るい']].map(([k, c, t]) => {
@@ -629,77 +621,19 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     lci.value = look.theme[0] === '#' ? look.theme : '#3a4a5c';
     try { lci.showPicker(); } catch (_) { lci.click(); }
   }, 'c cc');
-  const glassSw = lookSw('ガラス風', 'ガラス風', () => setLook('glass', !look.glass));
-  const gaussSw = lookSw('ガウス', 'ガウス', () => setLook('blurMode', look.blurMode === 'gauss' ? 'plain' : 'gauss'));
+  const glassSw = mi('ガラス風', null, () => setLook('glass', !look.glass), '', true);
+  const gaussSw = mi('ガウス', null, () => setLook('blurMode', look.blurMode === 'gauss' ? 'plain' : 'gauss'), '', true);
   lookP.append(row(...themeBs, lcB), glassSw, gaussSw);
   const [blurW, blurR, blurO] = range('ぼかし', 'ぼかしの強さ', 0, 40, v => setLook('blur', v), lookP);
   const [tintW, tintR, tintO] = range('地', 'ガラスの地の濃さ', 30, 95, v => setLook('tint', v), lookP);
   const [satW, satR, satO] = range('彩度', 'ガラスの彩度（下のページの色の鮮やかさ）', 100, 300, v => setLook('sat', v), lookP);
-  // 予測の方法を切り替えて見比べる（次に描く線から効く）
-  const ppL = el('span');
-  ppL.textContent = '予測の方法';
-  const ppBs = [['own', '曲がりに沿う'], ['chrome', 'ブラウザ']].map(([k, t]) => {
-    const b = btn(`予測の方法: ${t}`, null, () => { ppred = k; syncLook(); }, 'sg');
-    b.textContent = t;
-    return b;
-  });
-  const ppR = el('div', 'r');
-  ppR.append(ppL);
-  lookP.append(ppR, row(...ppBs));
-  // 予測の先読みの長さを切り替えて見比べる（曲がりに沿うとき。次に描く線から効く。T-115）
-  const plL = el('span');
-  plL.textContent = '予測の長さ';
-  const plBs = [[1, '1 フレーム'], [0.75, '3/4'], [0.5, '1/2']].map(([k, t]) => {
-    const b = btn(`予測の長さ: ${t}`, null, () => { plen = k; syncLook(); }, 'sg');
-    b.textContent = t;
-    return b;
-  });
-  const plR = el('div', 'r');
-  plR.append(plL);
-  lookP.append(plR, row(...plBs));
-  // 蛍光ペンの予測を切り替えて見比べる（次に描く線から効く）
-  const mpL = el('span');
-  mpL.textContent = '蛍光ペンの予測';
-  const mpBs = [['need', '必要な分だけ'], ['off', 'なし'], ['full', 'そのまま']].map(([k, t]) => {
-    const b = btn(`蛍光ペンの予測: ${t}`, null, () => { mpred = k; syncLook(); }, 'sg');
-    b.textContent = t;
-    return b;
-  });
-  const mpR = el('div', 'r');
-  mpR.append(mpL);
-  lookP.append(mpR, row(...mpBs));
-  // 半透明の線の描き方を切り替えて見比べる（次に描く線から効く）
-  const blL = el('span');
-  blL.textContent = '半透明の線の描き方';
-  const blBs = [['canvas', 'キャンバスの中で'], ['group', 'まとめて']].map(([k, t]) => {
-    const b = btn(`半透明の線の描き方: ${t}`, null, () => { blend = k; liveAlpha(); syncLook(); }, 'sg');
-    b.textContent = t;
-    return b;
-  });
-  const blR = el('div', 'r');
-  blR.append(blL);
-  lookP.append(blR, row(...blBs));
-  // ガラスの地の置き方を切り替えて見比べる（T-130: iPhone で 2 本指で弾いて滑らせている間に、ガラスのツールバーが透明になる）
-  const gbL = el('span');
-  gbL.textContent = 'ガラスの地';
-  const GBGS = ['pseudo', 'self', 'scroll'];
-  const gbBs = [['pseudo', '重ねる'], ['self', 'バー自身'], ['scroll', 'スクロール中は二重']].map(([k, t]) => {
-    const b = btn(`ガラスの地: ${t}`, null, () => setLook('gbg', k), 'sg');
-    b.textContent = t;
-    return b;
-  });
-  const gbR = el('div', 'r');
-  gbR.append(gbL);
-  const gbW = row(...gbBs);
-  lookP.append(gbR, gbW);
-  const toDefB = btn('この見た目をデフォルトにする', I.prefs, () => {
+  // 予測の方法と先読みの長さ（T-115）を見比べる（次に描く線から効く）
+  choice('予測の方法', [['own', '曲がりに沿う'], ['chrome', 'ブラウザ']], () => ppred, k => { ppred = k; });
+  choice('予測の長さ', [[1, '1 フレーム'], [0.75, '3/4'], [0.5, '1/2']], () => plen, k => { plen = k; });
+  lookP.append(mi('この見た目をデフォルトに', I.prefs, () => {
     closePanel();
-    openDefaults({ ...DEF, theme: look.theme, glass: look.glass, blurMode: look.blurMode, blur: look.blur, tint: look.tint, sat: look.sat, gbg: look.gbg, ...(ppred !== ppred0 && { ppred }), plen, mpred, blend });
-  }, 'mi');
-  const toDefL = el('span');
-  toDefL.textContent = 'この見た目をデフォルトに';
-  toDefB.append(toDefL);
-  lookP.append(toDefB);
+    openDefaults({ ...DEF, theme: look.theme, glass: look.glass, blurMode: look.blurMode, blur: look.blur, tint: look.tint, sat: look.sat, ...(ppred !== ppred0 && { ppred }), plen });
+  }));
   function syncLook() {
     const t = look.theme;
     themeBs[0].classList.toggle('on', t === 'dark');
@@ -708,15 +642,11 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (t[0] === '#') lcB.style.setProperty('--c', t); else lcB.style.removeProperty('--c');
     glassSw.setAttribute('aria-checked', look.glass);
     gaussSw.setAttribute('aria-checked', look.blurMode === 'gauss');
-    for (const w of [gaussSw, blurW, tintW, satW, gbW]) w.classList.toggle('dis', !look.glass);
-    gbBs.forEach((b, i) => b.classList.toggle('on', GBGS[i] === look.gbg));
+    for (const w of [gaussSw, blurW, tintW, satW]) w.classList.toggle('dis', !look.glass);
     blurR.value = look.blur; blurO.value = look.blur + 'px';
     tintR.value = look.tint; tintO.value = look.tint + '%';
     satR.value = look.sat; satO.value = look.sat + '%';
-    ppBs.forEach((b, i) => b.classList.toggle('on', PPREDS[i] === ppred));
-    plBs.forEach((b, i) => b.classList.toggle('on', PLENS[i] === plen));
-    mpBs.forEach((b, i) => b.classList.toggle('on', MPREDS[i] === mpred));
-    blBs.forEach((b, i) => b.classList.toggle('on', BLENDS[i] === blend));
+    for (const f of syncs) f();
   }
   const closeB = btn('閉じる（8 秒間は元に戻せます）', I.close, close);
   // 入力の録画（開発用。T-070）: 描いた線の入力を録って JSON で書き出す。予測の精度を、人が実際に書いた線で測るため（T-060）
@@ -897,7 +827,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (fromSlider) remember();
     syncDot();
     updateCursor();
-    liveAlpha();
+    prepCut();
   }
   // 色と太さのボタンの点: 色・太さ（4〜20px に縮めて表示）・濃さ。消しゴムは輪だけ
   function syncDot() {
@@ -907,13 +837,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     dot.style.setProperty('--a', tool === 'eraser' ? 1 : max(0.2, c.alpha));
     dot.classList.toggle('er', tool === 'eraser');
   }
-  // live のグループの不透明度は、ツールや濃さを選んだ時点で合わせておく。押した瞬間に変えると、
-  // desynchronized の live の方が先に画面へ出て、半透明の線が最初の 1 フレームだけ濃く見える。
-  // blend が 'canvas' なら濃さは canvas の中で付けるので 1 のまま。半透明のペンを選んだら、描いた部分の形を覚える場所を用意しておく
-  function liveAlpha() {
-    const a = tool === 'eraser' || tool === 'fill' || tool === 'select' ? 1 : CFG[tool].alpha, cv = blend === 'canvas', g = cv ? 1 : a;
-    if (cv && a < 1 && (tool === 'pen' || tool === 'marker')) ensureR();
-    if (grpA !== g && !handoff) { grp.style.opacity = g; grpA = g; }
+  // 半透明のペン・蛍光ペンを選んだら、描いた部分の形を覚える場所（cutPred）を押す前に用意しておく
+  function prepCut() {
+    if ((tool === 'pen' || tool === 'marker') && CFG[tool].alpha < 1) ensureR();
   }
   function setPen(k) {
     penType = k;
@@ -1462,16 +1388,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   let act = -1, aType = '', mode = 0; // mode: 1 インク / 2 消しゴム / 3 図形 / 4 選択（囲む・移動・拡大縮小）
   let sTool = 'pen', sW = 0, sA = 1, sP = false, sRaw = false, raf = 0;
   let sPen = 0, pf = 1, sDist = 0; // ペンの種類（PENS の番号）と、万年筆・筆の太さの係数、書き始めからの距離
-  // 予測線を描くか（蛍光ペンは mpred で決める）、点と点を直線でつなぐか（蛍光ペン。描いた所が後から変わらない）、必要な分だけ予測するか（T-055）
-  let sPd = true, sPoly = false, sNeed = false;
-  let sTr = false, sCa = 1, sKA = 1, inkS = ''; // 半透明の線を canvas の中で濃さにするか（T-056。鉛筆はいつも。T-122）、確定で面に合成するときの濃さ、抜いてから足すときの濃さ、線の色（鉛筆は模様）
-  let pvx = 0, pvy = 0, om = 0, fi = 16.7; // 直前の区間の速度、向きの変わる速さ（rad/ms）、1 フレームの長さ（ms。tick で測る）
+  let sTr = false, inkS = ''; // 半透明の線を canvas の中で濃さにするか（T-056。鉛筆はいつも。T-122）、線の色（鉛筆は模様）
+  let fi = 16.7; // 1 フレームの長さ（ms。tick で測る）
   let bx = 0, by = 0, bw = 0, mx = 0, my = 0, ps = 1, lt = 0, lastPen = -1e9;
   let x0 = 0, y0 = 0, x1 = 0, y1 = 0, mW = 0; // ストロークの外接矩形
   let tx0 = 0, ty0 = 0, tx1 = 0, ty1 = 0; // pred レイヤの汚れ矩形
   let sx = 0, sy = 0, cx = 0, cy = 0, shShift = false, shAlt = false, shaped = false, gHead = false;
   const G = new Float64Array(8); // 確定時のタイル算出用に、最後に描いた図形の形状を保持
-  let pn = 0, nativePred = false, vx = 0, vy = 0;
+  let pn = 0, nativePred = false;
   const px = new Float64Array(PRED_MAX), py = new Float64Array(PRED_MAX), pt = new Float64Array(PRED_MAX);
   // 直近の入力の点（自前の予測で当てはめる。止まっている間の点も入れる）。HN 個の輪
   const HN = 64, hT = new Float64Array(HN), hX = new Float64Array(HN), hY = new Float64Array(HN);
@@ -1552,9 +1476,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const KN = 8, KF = 0.998, KSTOP = 0.3, kT = new Float64Array(KN), kX = new Float64Array(KN), kY = new Float64Array(KN);
   let kN = 0, kVX = 0, kVY = 0, kAX = 0, kAY = 0, kL = 0, kR = 0;
   const kPush = (t, x, y) => { const i = kN++ % KN; kT[i] = t; kX[i] = x; kY[i] = y; };
-  // 弾いたときにガラスが透明になる件（T-130）を見比べる開発用の 'scroll' のときだけ、スクロール・慣性の間 .scr を付ける
-  const syncScr = () => { if (look.gbg === 'scroll') wrap.classList.toggle('scr', scr === 1 || !!kR); };
-  const stopFling = () => { if (kR) { cancelAnimationFrame(kR); kR = 0; syncScr(); } if (scrR) { cancelAnimationFrame(scrR); scrR = 0; } };
+  const stopFling = () => { if (kR) { cancelAnimationFrame(kR); kR = 0; } if (scrR) { cancelAnimationFrame(scrR); scrR = 0; } };
   function flingStart(t) {
     if (kN < 2) return;
     const j = (kN - 1) % KN, tj = kT[j];
@@ -1571,7 +1493,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (v > 8) { vx *= 8 / v; vy *= 8 / v; }
     kVX = vx; kVY = vy; kAX = kAY = 0; kL = t;
     kR = requestAnimationFrame(fling);
-    syncScr();
   }
   function fling(ts) {
     const dt = min(50, max(0, ts - kL)), k = KF ** dt;
@@ -1583,10 +1504,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       const x0 = win.scrollX, y0 = win.scrollY;
       scrollTo(x0 + dx, y0 + dy);
       offTop();
-      if (win.scrollX === x0 && win.scrollY === y0) { kR = 0; syncScr(); return; } // 端に着いた
+      if (win.scrollX === x0 && win.scrollY === y0) { kR = 0; return; } // 端に着いた
     }
     kR = abs(kVX) + abs(kVY) < 0.03 ? 0 : requestAnimationFrame(fling);
-    if (!kR) syncScr();
   }
   function twoDown(e) {
     const flung = !!kR && hypot(kVX, kVY) >= KSTOP;
@@ -1608,7 +1528,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       if (act !== -1) mode === 1 && e.timeStamp - sDown >= KEEP_MS && max(x1 - x0, y1 - y0) >= KEEP_PX * dpr ? endStroke() : abortStroke();
       tapId = -1;
       scr = 1; scrX = (tX0 + tX1) / 2; scrY = (tY0 + tY1) / 2; sbX = win.scrollX; sbY = win.scrollY; sLk = 0;
-      syncScr();
       kN = 0; kPush(e.timeStamp, scrX, scrY);
       for (const i of [tI0, tI1]) try { pad.setPointerCapture(i); } catch (_) { }
     } else return;
@@ -1638,7 +1557,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     e.stopImmediatePropagation();
     if (scr === 1 && e.type === 'pointerup') flingStart(e.timeStamp); // 1 本目を離したところで滑らせる
     scr = tI0 === -1 && tI1 === -1 ? 0 : 2;
-    syncScr();
   }
   const TWO = [['pointerdown', twoDown], ['pointermove', twoMove], ['pointerup', twoUp], ['pointercancel', twoUp]];
 
@@ -1662,7 +1580,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const erase = b === 2 || b === 5 || (e.buttons & 32) !== 0;
     if (b !== 0 && !erase) return;
     e.preventDefault();
-    // 入力中の文字があれば確定する。文字ツールのままなら、このクリックは確定だけ（新しい入力欄は出さない）
     // 入力中の文字があれば確定する。このクリックは確定だけ（新しい入力欄も線も出さない）
     if (ta) {
       commitText();
@@ -1697,7 +1614,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     act = e.pointerId; aType = type; sTool = t;
     const c = CFG[t];
     sW = c.size * dpr; sA = c.alpha; mW = sW;
-    lt = sDown = e.timeStamp; pn = 0; vx = vy = 0;
+    lt = sDown = e.timeStamp; pn = 0;
     bx = mx = sx = cx = x0 = x1 = x;
     by = my = sy = cy = y0 = y1 = y;
     try { pad.setPointerCapture(act); } catch (_) { }
@@ -1711,27 +1628,19 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       ePts[0] = x * sk + sox; ePts[1] = y * sk + soy;
       erasePts(1);
     } else {
-      const cv = blend === 'canvas', ga = cv ? 1 : sA;
-      if (grpA !== ga) { grp.style.opacity = ga; grpA = ga; }
-      sCa = cv ? 1 : sA;
       setInk(lctx);
       if (t === 'pen' || t === 'marker') {
         mode = 1;
         setInk(pctx);
         // 半透明の線は live に線の濃さで描く（stk）。pred も線の濃さで描き、live が覆う所を抜く（cutPred）。
-        // 鉛筆は濃さ 100% でも同じにする（かすれの模様は半透明の画素なので、入力ごとのつなぎ目で丸い先端が重なって濃くなっていた。T-122）。
-        // まとめた要素の opacity で濃さを付ける前の方式（'group'）では、抜いてから濃さ 1 で足す
+        // 鉛筆は濃さ 100% でも同じにする（かすれの模様は半透明の画素なので、入力ごとのつなぎ目で丸い先端が重なって濃くなっていた。T-122）
         sPen = t === 'pen' ? PENS.indexOf(penType) : 0;
-        sTr = (cv && sA < 1) || sPen === 3;
-        sKA = cv ? sA : 1;
-        if (sTr) { ensureR(); rn = 0; pctx.globalAlpha = sKA; }
+        sTr = sA < 1 || sPen === 3;
+        if (sTr) { ensureR(); rn = 0; pctx.globalAlpha = sA; }
         sP = pen && t === 'pen' && e.pressure > 0;
         ps = sP ? e.pressure : 1;
         pf = sPen === 1 ? 0.6 : 1;
         sDist = 0;
-        sPd = t === 'pen' || mpred !== 'off';
-        sNeed = sPoly = t === 'marker' && mpred === 'need';
-        pvx = pvy = om = 0;
         bw = sP ? qw(sW * (0.2 + 0.8 * ps)) : sW;
         if (sPen === 1) bw = qw(bw * (0.2 + 0.8 * pf));
         else if (sPen === 2) bw = qw(bw * 0.35);
@@ -1741,7 +1650,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         hN = 0; fT = 0; hPush(lt, x, y);
         if (hud) sqP = sqInt = sqCo = sqEv = sqPM = sqPN = sqPDt = sqPOld = 0;
         lctx.beginPath(); lctx.arc(x, y, bw / 2, 0, TAU);
-        if (sTr) { lctx.globalAlpha = sKA; lctx.fill(); lctx.globalAlpha = 1; addPiece(2, x, y, x, y, x, y, bw); } else lctx.fill();
+        if (sTr) { lctx.globalAlpha = sA; lctx.fill(); lctx.globalAlpha = 1; addPiece(2, x, y, x, y, x, y, bw); } else lctx.fill();
         const p = bw / 2 + 2;
         markBox(x - p, y - p, x + p, y + p);
       } else {
@@ -1750,7 +1659,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         shShift = e.shiftKey; shAlt = e.altKey;
         lctx.lineWidth = sW;
         lctx.lineJoin = t === 'rect' ? 'miter' : 'round';
-        lctx.globalAlpha = sA / sCa; // 図形は毎回描き直すので、canvas の方式ならそのまま線の濃さで描ける
+        lctx.globalAlpha = sA; // 図形は毎回描き直すので、そのまま線の濃さで描ける
       }
     }
     // 図形は 1 フレームに 1 回の再描画で十分なので rawupdate は使わない
@@ -1778,12 +1687,12 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       const h0 = hN;
       inkMove(e, list, n);
       // 新しい点が 1 つもない入力（rawupdate で描いた点の pointermove など）では、末尾も自前の予測も同じ物になるので描き直さない。
-      // 描くと pred の canvas の書き出し（desynchronized の DispatchFrame）が 1 回増える。ブラウザの予測・蛍光ペンの必要な分だけは pointermove で新しくなるので描く
-      let redraw = hN !== h0 || (isMove && (ppred !== 'own' || sNeed));
+      // 描くと pred の canvas の書き出し（desynchronized の DispatchFrame）が 1 回増える。ブラウザの予測は pointermove で新しくなるので描く
+      let redraw = hN !== h0 || (isMove && ppred !== 'own');
       if (inkP && sA === 1) {
         // OS が実際のポインタ位置まで線を伸ばすので、推測（予測線）は使わない
-        if (isMove) try { inkP.updateInkTrailStartPoint(e, { color, diameter: bw / dpr }); pn = 0; } catch (_) { if (sPd) { predict(e, true); redraw = true; } }
-      } else if (sPd && redraw) predict(e, isMove);
+        if (isMove) try { inkP.updateInkTrailStartPoint(e, { color, diameter: bw / dpr }); pn = 0; } catch (_) { predict(e, true); redraw = true; }
+      } else if (redraw) predict(e, isMove);
       if (redraw) drawTail();
     } else if (mode === 2) {
       eraseMove(e, list, n);
@@ -1820,16 +1729,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       if (x === bx && y === by) { if (t > hT[(hN - 1) % HN]) hPush(t, x, y); continue; }
       hPush(t, x, y);
       const dt = t - lt;
-      if (dt > 0.5) {
-        const ix = (x - bx) / dt, iy = (y - by) / dt;
-        if (sNeed && (pvx || pvy)) {
-          // 向きの変わる速さ（曲がりに沿って予測するため）。入力の揺れで暴れないように上限を付けてならす
-          const a = max(-0.02, min(0.02, atan2(pvx * iy - pvy * ix, pvx * ix + pvy * iy) / dt));
-          om += (a - om) * 0.5;
-        }
-        pvx = ix; pvy = iy;
-        vx += (ix - vx) * 0.5; vy += (iy - vy) * 0.5;
-      }
       lt = t;
       nPts++;
       let w = sW;
@@ -1853,19 +1752,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         }
       }
       if (sP || sPen) w = qw(w);
-      if (sPoly) {
-        // 蛍光ペン: 点と点を直線でつなぐ（丸い角）。中点を結ぶ曲線だと、末尾の直線が次の入力で曲線に確定するときに内側へ引っ込む。
-        // 太い線では直線でも角は見えない。未確定の末尾がないので、pred には予測だけが残る
-        if (bw !== cw) { if (open) stk(c); c.lineWidth = cw = bw; c.beginPath(); c.moveTo(bx, by); open = true; }
-        c.lineTo(x, y);
-        markSeg(bx, by, x, y, bw / 2 + 2);
-        if (sTr) addPiece(0, bx, by, bx, by, x, y, bw);
-        mx = bx = x; my = by = y; bw = w;
-        if (x < x0) x0 = x; else if (x > x1) x1 = x;
-        if (y < y0) y0 = y; else if (y > y1) y1 = y;
-        if (w > mW) mW = w;
-        continue;
-      }
       const nx = (bx + x) * 0.5, ny = (by + y) * 0.5;
       if (bw !== cw) {
         if (open) stk(c);
@@ -1893,7 +1779,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     c.stroke();
     if (sPen === 3) c.strokeStyle = inkS;
     c.globalCompositeOperation = 'lighter';
-    c.globalAlpha = sKA;
+    c.globalAlpha = sA;
     c.stroke();
     c.globalCompositeOperation = 'source-over';
     c.globalAlpha = 1;
@@ -1941,15 +1827,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     }
     if (open) c.stroke();
     c.globalCompositeOperation = 'source-over';
-    c.globalAlpha = sKA;
+    c.globalAlpha = sA;
     c.strokeStyle = inkS;
     c.lineWidth = bw;
   }
 
-  // 予測線の先を px / py / pt に入れる。自前（ownPred）は入力ごと、ブラウザの予測（readPred）と蛍光ペンの必要な分だけ（needPred）は pointermove のとき
+  // 予測線の先を px / py / pt に入れる。自前（ownPred）は入力ごと、ブラウザの予測（readPred）は pointermove のとき
   function predict(e, isMove) {
-    if (sNeed) { if (isMove) needPred(); }
-    else if (ppred === 'own') ownPred();
+    if (ppred === 'own') ownPred();
     else if (isMove) readPred(e);
   }
   // 自前の予測（T-060。録った人の線で、ブラウザの予測と比べて決めた）: 直近 PW ms の点（3 点に満たなければ 100 ms まで）に 2 次式を当てはめ（最小二乗）、今の速さ・向きの変わる速さ（角速度）・減速を求めて、
@@ -1992,7 +1877,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
 
   function readPred(e) {
-    if (sNeed) { needPred(); return; }
     const l = e.getPredictedEvents ? e.getPredictedEvents() : EMPTY;
     let k = 0;
     for (let i = 0; i < l.length && k < PRED_MAX; i++, k++) {
@@ -2004,18 +1888,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     // 一度も出さない環境（古い iOS・予測のないブラウザ）では、自前の予測を使う（T-116。前は直近の速さから 12 ms まっすぐ伸ばしていた）
     if (k) nativePred = true;
     else if (!nativePred) ownPred();
-  }
-
-  // 蛍光ペンの予測（必要な分だけ）: 丸い先端は点より太さの半分だけ先まで覆っているので、1 フレーム後のペン先に届かない分だけ伸ばす。
-  // ゆっくり〜ふつうの速さでは予測しない（外れた予測がぴょこぴょこ見えるのは、太い線ほど目立つため）。向きは曲がりに沿って回す
-  function needPred() {
-    const sp = hypot(vx, vy), L = min(sp * fi - sW / 2, 40 * dpr);
-    if (L <= 0) { pn = 0; return; }
-    const r = om * (L / sp) / 2, cs = cos(r), sn = sin(r);
-    px[0] = bx + (vx * cs - vy * sn) / sp * L;
-    py[0] = by + (vx * sn + vy * cs) / sp * L;
-    pt[0] = lt + L / sp;
-    pn = 1;
   }
 
   // 未確定の末尾（最後の中点→最新点）と予測点を pred レイヤに描く。毎回この小さな範囲だけ消して描き直す
@@ -2275,17 +2147,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const atlas = gather(R, pack(R));
     for (let i = 0; i < R.length; i += 6) {
       forTiles(R[i], R[i + 1], R[i + 2], R[i + 3], true, (t, ox, oy, ix, iy, iw, ih) => {
-        const c = t.x;
-        c.globalAlpha = sCa;
-        c.drawImage(liveC, (ix - sox) / sk, (iy - soy) / sk, iw / sk, ih / sk, ix - ox, iy - oy, iw, ih);
-        c.globalAlpha = 1;
+        t.x.drawImage(liveC, (ix - sox) / sk, (iy - soy) / sk, iw / sk, ih / sk, ix - ox, iy - oy, iw, ih);
       });
     }
     push(R, atlas, [bX, bY, bX + bW, bY + bH]);
     // live は desynchronized なので、ここで消すと通常の更新であるタイルより先に画面へ出て、線が一瞬消える。
     // live は残したままグループを隠し（タイルの更新と同じフレームで切り替わる）、2 フレーム後に中身を消す
     grp.style.opacity = 0;
-    grpA = 0;
     hcx = rx; hcy = ry; hcw = rw; hch = rh;
     handoff = requestAnimationFrame(() => { handoff = requestAnimationFrame(finishHandoff); });
   }
@@ -2294,7 +2162,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     cancelAnimationFrame(handoff);
     handoff = 0;
     lctx.clearRect(hcx, hcy, hcw, hch);
-    liveAlpha();
+    grp.style.opacity = 1;
   }
 
   // ---------- 入力の録画（開発用。T-070） ----------
@@ -2353,7 +2221,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     });
     const data = {
       v: 1, app: VERSION, ua: navigator.userAgent, dpr, vw: win.innerWidth, vh: win.innerHeight,
-      desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, inkTrail: !!inkP, ui: UIS[+cp2], ppred, plen, mpred, blend,
+      desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, inkTrail: !!inkP, ui: UIS[+cp2], ppred, plen,
       cols: ['kind', 't', 'x', 'y', 'pressure', 'handled'], kinds: ['down', 'move', 'rawupdate', 'up', 'coalesced', 'predicted', 'frame'], strokes,
     };
     download(new Blob([JSON.stringify(data)], { type: 'application/json' }), `paint-input-${stamp()}.json`);
@@ -3608,7 +3476,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     width: W, height: H, dpr, surface: [surfW, surfH], tiles: dtiles.size, selection: sel ? [selX, selY, selW, selH] : null, texts: tlist.length, fixed, history: hist.length, historyPixels: hpix, historyZipped: zipped(), drawing: act !== -1, memory: (canvasPix() + hpix) * 4, memoryCap: MEM * 4, events: nEv, points: nPts,
     desynchronized: DESYNC, rawupdate: HAS_RAW, coalesced: HAS_CO, nativePrediction: nativePred, inkTrail: !!inkP, pred: pn, frame: round(fi * 10) / 10, inputDelay: round(dl * 10) / 10, inputInterval: round(pdt * 10) / 10,
     rec: [rec, recS.length, recN],
-    prefs: { ...snapPrefs(), bar: [barX, barY], touchText, pickOnce, keepPanels, dev, ...look, ppred, plen, mpred, blend },
+    prefs: { ...snapPrefs(), bar: [barX, barY], touchText, pickOnce, keepPanels, dev, ...look, ppred, plen },
   });
   win[NS] = { version: VERSION, toggle, show, hide, close, destroy, undo, redo, clear: clearAll, tool: setTool, color: setColor, stats, pixels };
   layout();

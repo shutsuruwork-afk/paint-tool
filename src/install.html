@@ -209,14 +209,6 @@ details > .row:first-of-type, details > .check:first-of-type { border-top-color:
               <label class="slider"><span>彩度</span><input type="range" id="p-sat" min="100" max="300"><output for="p-sat"></output></label>
             </div>
           </fieldset>
-          <fieldset class="row">
-            <legend>ガラスの地</legend>
-            <div class="choices" id="p-gbg" role="radiogroup" aria-label="ガラスの地">
-              <label><input type="radio" name="gbg" value="pseudo">重ねる</label>
-              <label><input type="radio" name="gbg" value="self">バー自身</label>
-              <label><input type="radio" name="gbg" value="scroll">スクロール中は二重</label>
-            </div>
-          </fieldset>
         </div>
         <fieldset class="row">
           <legend>予測</legend>
@@ -231,21 +223,6 @@ details > .row:first-of-type, details > .check:first-of-type { border-top-color:
             <label><input type="radio" name="plen" value="0.75">3/4 フレーム</label>
             <label><input type="radio" name="plen" value="1">1 フレーム</label>
             <label><input type="radio" name="plen" value="0.5">1/2 フレーム</label>
-          </div>
-        </fieldset>
-        <fieldset class="row">
-          <legend>蛍光ペン</legend>
-          <div class="choices" id="p-mpred" role="radiogroup" aria-label="蛍光ペンの予測">
-            <label><input type="radio" name="mpred" value="full">ペンと同じ予測</label>
-            <label><input type="radio" name="mpred" value="need">必要な分だけ</label>
-            <label><input type="radio" name="mpred" value="off">予測なし</label>
-          </div>
-        </fieldset>
-        <fieldset class="row">
-          <legend>半透明</legend>
-          <div class="choices" id="p-blend" role="radiogroup" aria-label="半透明の線の描き方">
-            <label><input type="radio" name="blend" value="canvas">キャンバスの中で</label>
-            <label><input type="radio" name="blend" value="group">まとめて</label>
           </div>
         </fieldset>
       </details>
@@ -267,7 +244,7 @@ function runPaint() {%%INLINE_CODE%%}
   // ---- デフォルトの設定: 選んだ既定をブックマークレットのコードに埋め込む ----
   // 組み込みの既定（src/paint.js の PALETTE と CFG に合わせる。テストで一致を確かめている）
   const PALETTE = ['#111111', '#ffffff', '#e53935', '#fb8c00', '#fdd835', '#43a047', '#1e88e5', '#8e24aa'];
-  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 4, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: false, pickOnce: false, keepPanels: false, glass: true, theme: 'light', blurMode: 'gauss', blur: 18, tint: 80, sat: 200, dev: false, ui: 'main', ppred: 'own', plen: 0.75, mpred: 'full', blend: 'canvas', gbg: 'pseudo' };
+  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 4, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: false, pickOnce: false, keepPanels: false, glass: true, theme: 'light', blurMode: 'gauss', blur: 18, tint: 80, sat: 200, dev: false, ui: 'main', ppred: 'own', plen: 0.75 };
   const BASE = bm.getAttribute('href'); // 既定の入っていないブックマークレット
   const KEY = 'paint-defaults';
   const $ = id => document.getElementById(id);
@@ -280,6 +257,9 @@ function runPaint() {%%INLINE_CODE%%}
     colorsEl.insertBefore(r, colorsEl.lastElementChild);
   });
   const sizes = ['pen', 'marker', 'eraser', 'text'];
+  // 選択肢の組とスイッチ（フォームの id → 設定の名前）
+  const RADIOS = [['p-bar', 'bar'], ['p-mode', 'blurMode'], ['p-ui', 'ui'], ['p-ppred', 'ppred'], ['p-plen', 'plen']];
+  const SWITCHES = [['p-touch', 'touchText'], ['p-calc', 'calc'], ['p-once', 'pickOnce'], ['p-keep', 'keepPanels'], ['p-glass', 'glass'], ['p-dev', 'dev']];
   // ツールの「デフォルトの変更」から開いたときは、そのブックマークの既定が #defaults=… で届くので、それを読み込む
   let fromTool = false;
   let cur = fromHash() || load();
@@ -319,9 +299,6 @@ function runPaint() {%%INLINE_CODE%%}
       if (v.ui === 'main' || v.ui === 'cp2') d.ui = v.ui;
       if (v.ppred === 'own' || v.ppred === 'chrome') d.ppred = v.ppred;
       if ([1, 0.75, 0.5].includes(+v.plen)) d.plen = +v.plen;
-      if (v.mpred === 'need' || v.mpred === 'off' || v.mpred === 'full') d.mpred = v.mpred;
-      if (v.blend === 'canvas' || v.blend === 'group') d.blend = v.blend;
-      if (v.gbg === 'pseudo' || v.gbg === 'self' || v.gbg === 'scroll') d.gbg = v.gbg;
     }
     return d;
   }
@@ -331,12 +308,7 @@ function runPaint() {%%INLINE_CODE%%}
     if (c.color !== BUILTIN.color) o.color = c.color;
     if (c.tool !== BUILTIN.tool) o.tool = c.tool;
     for (const k of sizes) if (c.size[k] !== BUILTIN.size[k]) (o.size || (o.size = {}))[k] = c.size[k];
-    if (c.bar !== BUILTIN.bar) o.bar = c.bar;
-    if (c.touchText !== BUILTIN.touchText) o.touchText = c.touchText;
-    if (c.calc !== BUILTIN.calc) o.calc = c.calc;
-    if (c.pickOnce !== BUILTIN.pickOnce) o.pickOnce = c.pickOnce;
-    if (c.keepPanels !== BUILTIN.keepPanels) o.keepPanels = c.keepPanels;
-    for (const k of ['glass', 'theme', 'blurMode', 'blur', 'tint', 'sat', 'dev', 'ui', 'ppred', 'plen', 'mpred', 'blend', 'gbg']) if (c[k] !== BUILTIN[k]) o[k] = c[k];
+    for (const k of ['bar', 'touchText', 'calc', 'pickOnce', 'keepPanels', 'glass', 'theme', 'blurMode', 'blur', 'tint', 'sat', 'dev', 'ui', 'ppred', 'plen']) if (c[k] !== BUILTIN[k]) o[k] = c[k];
     return o;
   }
   const enc = s => s.replace(/[%#\s"]/g, ch => encodeURIComponent(ch));
@@ -349,22 +321,10 @@ function runPaint() {%%INLINE_CODE%%}
     custom.value = cur.color;
     for (const k of sizes) { const r = $('p-' + k); r.value = cur.size[k]; r.nextElementSibling.value = cur.size[k]; }
     $('p-tool').value = cur.tool;
-    for (const r of document.querySelectorAll('#p-bar input')) r.checked = r.value === cur.bar;
-    $('p-touch').checked = cur.touchText;
-    $('p-calc').checked = cur.calc;
-    $('p-once').checked = cur.pickOnce;
-    $('p-keep').checked = cur.keepPanels;
-    $('p-glass').checked = cur.glass;
+    for (const [id, k] of RADIOS) for (const r of document.querySelectorAll(`#${id} input`)) r.checked = r.value === String(cur[k]);
+    for (const [id, k] of SWITCHES) $(id).checked = cur[k];
     for (const r of document.querySelectorAll('#p-theme input[type=radio]')) r.checked = r.value === (cur.theme[0] === '#' ? 'custom' : cur.theme);
     if (cur.theme[0] === '#') $('p-tcolor').value = cur.theme;
-    $('p-dev').checked = cur.dev;
-    for (const r of document.querySelectorAll('#p-mode input')) r.checked = r.value === cur.blurMode;
-    for (const r of document.querySelectorAll('#p-ui input')) r.checked = r.value === cur.ui;
-    for (const r of document.querySelectorAll('#p-ppred input')) r.checked = r.value === cur.ppred;
-    for (const r of document.querySelectorAll('#p-plen input')) r.checked = +r.value === cur.plen;
-    for (const r of document.querySelectorAll('#p-mpred input')) r.checked = r.value === cur.mpred;
-    for (const r of document.querySelectorAll('#p-blend input')) r.checked = r.value === cur.blend;
-    for (const r of document.querySelectorAll('#p-gbg input')) r.checked = r.value === cur.gbg;
     for (const k of ['blur', 'tint', 'sat']) { const r = $('p-' + k); r.value = cur[k]; r.nextElementSibling.value = k === 'blur' ? cur[k] + 'px' : cur[k] + '%'; }
     $('p-gdev').classList.toggle('off', !cur.glass);
     const o = diff(cur);
@@ -380,22 +340,10 @@ function runPaint() {%%INLINE_CODE%%}
   custom.addEventListener('input', () => { cur.color = custom.value.toLowerCase(); update(); });
   for (const k of sizes) $('p-' + k).addEventListener('input', e => { cur.size[k] = +e.target.value; update(); });
   $('p-tool').addEventListener('change', e => { cur.tool = e.target.value; update(); });
-  $('p-bar').addEventListener('change', e => { cur.bar = e.target.value; update(); });
-  $('p-touch').addEventListener('change', e => { cur.touchText = e.target.checked; update(); });
-  $('p-calc').addEventListener('change', e => { cur.calc = e.target.checked; update(); });
-  $('p-once').addEventListener('change', e => { cur.pickOnce = e.target.checked; update(); });
-  $('p-keep').addEventListener('change', e => { cur.keepPanels = e.target.checked; update(); });
-  $('p-glass').addEventListener('change', e => { cur.glass = e.target.checked; update(); });
+  for (const [id, k] of RADIOS) $(id).addEventListener('change', e => { cur[k] = k === 'plen' ? +e.target.value : e.target.value; update(); });
+  for (const [id, k] of SWITCHES) $(id).addEventListener('change', e => { cur[k] = e.target.checked; update(); });
   $('p-theme').addEventListener('change', e => { if (e.target.name === 'theme') { cur.theme = e.target.value === 'custom' ? $('p-tcolor').value : e.target.value; update(); } });
   $('p-tcolor').addEventListener('input', e => { cur.theme = e.target.value.toLowerCase(); update(); });
-  $('p-dev').addEventListener('change', e => { cur.dev = e.target.checked; update(); });
-  $('p-mode').addEventListener('change', e => { cur.blurMode = e.target.value; update(); });
-  $('p-ui').addEventListener('change', e => { cur.ui = e.target.value; update(); });
-  $('p-ppred').addEventListener('change', e => { cur.ppred = e.target.value; update(); });
-  $('p-plen').addEventListener('change', e => { cur.plen = +e.target.value; update(); });
-  $('p-mpred').addEventListener('change', e => { cur.mpred = e.target.value; update(); });
-  $('p-blend').addEventListener('change', e => { cur.blend = e.target.value; update(); });
-  $('p-gbg').addEventListener('change', e => { cur.gbg = e.target.value; update(); });
   for (const k of ['blur', 'tint', 'sat']) $('p-' + k).addEventListener('input', e => { cur[k] = +e.target.value; update(); });
   $('p-reset').addEventListener('click', () => { cur = JSON.parse(JSON.stringify(BUILTIN)); update(); });
   if (fromTool) {

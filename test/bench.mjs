@@ -1,10 +1,7 @@
 // 性能計測。入力遅延に効くのは「メインスレッドを塞ぐ時間」なので、それを測る
 // （Chrome の Canvas 2D は描画命令を記録するだけで、ラスタライズは GPU プロセスで非同期に行われる）。
 // 比較対象として「毎イベントでパス全体を描き直す」素朴な実装も同じ入力で測る。
-import { CODE as BASE, startServer, launch, withDefaults } from './helpers.mjs';
-
-// BLEND=group で、半透明の線を前の方式（まとめた要素の opacity）で描いたときと比べられる
-const CODE = process.env.BLEND ? withDefaults(BASE, { blend: process.env.BLEND }) : BASE;
+import { CODE, startServer, launch } from './helpers.mjs';
 
 const N = Number(process.env.N || 3000);
 const { srv, base } = await startServer();

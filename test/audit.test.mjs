@@ -1,7 +1,7 @@
 // Audit (2026-10-17): regressions found in the gesture code (T-104〜T-110). Each test failed on v1.32.1.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { CODE, startServer, launch, runCode, readMain, shadowEval, withDefaults } from './helpers.mjs';
+import { CODE, startServer, launch, runCode, readMain, shadowEval, withDefaults, clearAll } from './helpers.mjs';
 
 let server, browser;
 before(async () => { server = await startServer(); browser = await launch(); });
@@ -165,7 +165,7 @@ test('全消去はタイルを 1 枚のアトラスに写さない（タイル�
   assert.ok(tiles >= 20, 'many tiles: ' + tiles);
   const before = await surfaceSum(page);
   await page.evaluate(() => { window.__track = true; });
-  await page.keyboard.press('Delete');
+  await clearAll(page);
   await page.evaluate(() => { window.__track = false; });
   const maxOC = await page.evaluate(() => window.__maxOC);
   assert.ok(maxOC < 256 * 256, `clear-all allocated a ${maxOC} px canvas (an atlas of all ${tiles} tiles is ${tiles * 256 * 256})`);
@@ -196,7 +196,7 @@ test('全消去の後に画面に固定を入れてスクロールし、切っ�
   await runCode(page, CODE);
   await page.mouse.move(100, 300); await page.mouse.down(); await page.mouse.move(500, 300, { steps: 8 }); await page.mouse.up();
   assert.ok((await readMain(page, 300, 300))[3] > 200);
-  await page.keyboard.press('Delete');
+  await clearAll(page);
   const fix = () => shadowEval(page, root => root.querySelector('[title^="画面に固定"]').click());
   await fix();
   await page.evaluate(() => scrollTo({ top: 100, behavior: 'instant' }));
@@ -384,14 +384,14 @@ test('全部消した後に全消去を何度押しても、表示のタイル�
   await drag([[90, 300], [530, 300]], 20);
   await frames(page);
   assert.equal(await hist(page), 2);
-  for (let i = 0; i < 3; i++) { await page.keyboard.press('Delete'); await frames(page, 2); }
+  for (let i = 0; i < 3; i++) { await clearAll(page); await frames(page, 2); }
   assert.equal(await hist(page), 2, 'nothing to clear');
   // 少しでも残っていれば全消去する
   await page.keyboard.press('p');
   await drag([[100, 400], [300, 400]], 5);
   await page.keyboard.press('e');
   await drag([[90, 400], [150, 400]], 5);
-  await page.keyboard.press('Delete');
+  await clearAll(page);
   assert.equal(await hist(page), 5, 'partly erased: cleared');
   assert.deepEqual(warns.filter(w => /readback/i.test(w)), []);
   assert.deepEqual(errors, []);

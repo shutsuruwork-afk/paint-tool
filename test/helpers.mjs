@@ -102,6 +102,8 @@ export async function drag(page, pts, steps = 1) {
 }
 
 export const click = (page, sel) => shadowEval(page, (root, s) => root.querySelector(s).click(), sel);
+// 全消去（その他のメニューの項目。キーでは全消去しない。T-173）
+export const clearAll = page => click(page, '[title="全消去"]');
 export const toolOn = page => shadowEval(page, root => {
   const b = [...root.querySelectorAll('.bar .b.on')].find(x => !x.classList.contains('c'));
   return b ? b.title : null;

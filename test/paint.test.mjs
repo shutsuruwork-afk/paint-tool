@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   CODE, BOOKMARKLET, startServer, launch, openPage, runBookmarklet, shadowEval, readMain, alphaStats, drag, click, toolOn,
-  screenPixel, scrollTo, withDefaults, runCode,
+  screenPixel, scrollTo, withDefaults, runCode, clearAll,
 } from './helpers.mjs';
 
 let server, browser;
@@ -1183,14 +1183,14 @@ test('全消去は、消しゴム・選択の削除で全部消した後や、�
   await drag(page, [[90, 300], [210, 300]], 10);
   assert.equal((await alphaStats(page, 80, 280, 140, 40)).count, 0);
   assert.equal(await n(), 2);
-  await page.keyboard.press('Delete');
+  await clearAll(page);
   assert.equal(await n(), 2, 'after erasing everything');
   // 一部だけ消した後は全消去する
   await page.keyboard.press('p');
   await drag(page, [[100, 400], [300, 400]], 5);
   await page.keyboard.press('e');
   await drag(page, [[90, 400], [150, 400]], 5);
-  await page.keyboard.press('Delete');
+  await clearAll(page);
   assert.equal(await n(), 5, 'partly erased');
   assert.equal((await alphaStats(page, 80, 380, 240, 40)).count, 0);
   // 選択して削除した後
@@ -1201,50 +1201,60 @@ test('全消去は、消しゴム・選択の削除で全部消した後や、�
   await page.keyboard.press('Delete');
   const k = await n();
   assert.equal((await alphaStats(page, 380, 280, 140, 40)).count, 0);
-  await page.keyboard.press('Delete');
+  await clearAll(page);
   assert.equal(await n(), k, 'after deleting the selection');
   // 最初まで元に戻した後
   for (let i = 0; i < k; i++) await page.keyboard.press('Control+z');
   assert.equal((await alphaStats(page, 0, 0, 1000, 700)).count, 0);
-  await page.keyboard.press('Delete');
+  await clearAll(page);
   assert.equal(await n(), k, 'after undoing everything');
   // やり直して絵が戻れば、全消去は 1 手（やり直した手は描く手なので読み戻さない）
   await page.keyboard.press('Control+Shift+z');
-  await page.keyboard.press('Delete');
+  await clearAll(page);
   assert.equal(await n(), 2);
   assert.deepEqual(errors, []);
   await page.close();
 });
 
-// T-172: Backspace（Mac・iPad のキーボードの delete）は選んだ物を消すだけで、全消去しない。v1.63.0（T-171）では全消去していた
-test('Backspace は選んだ物だけを消し、全消去はしない。文字の入力中は文字だけを消す。Delete は全消去', async () => {
+// T-172・T-173: Delete・Backspace（Mac・iPad のキーボードの delete）は選んだ物を消すだけで、全消去しない。全消去はその他のメニューから。
+// v1.63.0（T-171）は Backspace で、v1.64.0 は Delete で全消去していた
+test('Delete・Backspace は選んだ物だけを消し、全消去はしない。文字の入力中は文字だけを消す。全消去はその他のメニュー', async () => {
   const { page, errors } = await fresh();
   const n = () => page.evaluate(() => window.__paintBookmarklet.stats().history);
   await drag(page, [[100, 300], [300, 300]], 5);
   await drag(page, [[100, 500], [300, 500]], 5);
-  // 何も選んでいなければ、Backspace では何も消えない
-  await page.keyboard.press('Backspace');
-  assert.ok((await alphaStats(page, 80, 280, 240, 40)).count > 0, 'Backspace without a selection');
-  assert.equal(await n(), 2);
-  // 文字の入力中は、入力欄の文字だけが消える
+  await drag(page, [[600, 300], [800, 300]], 5);
+  // 何も選んでいなければ、Delete・Backspace では何も消えない
+  for (const k of ['Delete', 'Backspace']) {
+    await page.keyboard.press(k);
+    assert.ok((await alphaStats(page, 80, 280, 240, 40)).count > 0, `${k} without a selection`);
+    assert.equal(await n(), 3);
+  }
+  // 文字の入力中は、入力欄の文字だけが消える。確定した後も全消去しない
   await page.keyboard.press('t');
   await page.mouse.click(500, 450);
-  await page.keyboard.type('ab');
+  await page.keyboard.type('abc');
   await page.keyboard.press('Backspace');
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('Delete');
   assert.equal((await textBox(page)).value, 'a');
   await page.keyboard.press('Escape');
-  await page.keyboard.press('Backspace');
-  assert.equal(await page.evaluate(() => window.__paintBookmarklet.stats().texts), 1, 'Backspace after the text');
+  for (const k of ['Delete', 'Backspace']) await page.keyboard.press(k);
+  assert.equal(await page.evaluate(() => window.__paintBookmarklet.stats().texts), 1, 'after the text');
   assert.ok((await alphaStats(page, 80, 280, 240, 40)).count > 0);
-  // 選んだ物は Backspace で消える。ほかは残る
+  // 選んだ物は Backspace・Delete で消える。ほかは残る
   await page.keyboard.press('s');
   await drag(page, [[80, 270], [320, 330]], 5);
   await page.keyboard.press('Backspace');
-  assert.equal((await alphaStats(page, 80, 280, 240, 40)).count, 0, 'selection deleted');
-  assert.ok((await alphaStats(page, 80, 480, 240, 40)).count > 0, 'the other line stays');
-  // Delete は全消去
+  assert.equal((await alphaStats(page, 80, 280, 240, 40)).count, 0, 'selection deleted (Backspace)');
+  await drag(page, [[580, 270], [820, 330]], 5);
   await page.keyboard.press('Delete');
-  assert.equal((await alphaStats(page, 0, 0, 1000, 700)).count, 0, 'Delete clears');
+  assert.equal((await alphaStats(page, 580, 280, 240, 40)).count, 0, 'selection deleted (Delete)');
+  assert.ok((await alphaStats(page, 80, 480, 240, 40)).count > 0, 'the other line stays');
+  // 全消去はその他のメニューから。キーは出さない
+  assert.equal(await shadowEval(page, root => root.querySelector('[title^="全消去"]').title), '全消去');
+  await clearAll(page);
+  assert.equal((await alphaStats(page, 0, 0, 1000, 700)).count, 0, 'menu clears');
   assert.equal(await page.evaluate(() => window.__paintBookmarklet.stats().texts), 0);
   assert.deepEqual(errors, []);
   await page.close();
@@ -1254,25 +1264,25 @@ test('全消去は、消す物がないときは何もしない（履歴が増�
   const { page, errors } = await fresh();
   const st = () => page.evaluate(() => { const s = window.__paintBookmarklet.stats(); return [s.history, s.historyPixels]; });
   // 何も描いていなければ増えない
-  await page.keyboard.press('Delete');
+  await clearAll(page);
   assert.deepEqual(await st(), [0, 0]);
   // 描いてから全消去は 1 手。続けて押しても増えない
   await drag(page, [[100, 300], [200, 300]], 5);
-  await page.keyboard.press('Delete');
+  await clearAll(page);
   assert.equal((await st())[0], 2);
-  await page.keyboard.press('Delete');
+  await clearAll(page);
   assert.equal((await st())[0], 2, 'second clear does nothing');
   // 元に戻すと絵が戻り、もう一度全消去できる。やり直した直後（直前の手が全消去）は増えない
   await page.keyboard.press('Control+z');
   assert.ok((await alphaStats(page, 90, 290, 120, 20)).count > 100);
   await page.keyboard.press('Control+Shift+z');
   assert.equal((await alphaStats(page, 90, 290, 120, 20)).count, 0);
-  await page.keyboard.press('Delete');
+  await clearAll(page);
   assert.equal((await st())[0], 2, 'clear right after redoing a clear does nothing');
   // 別の所に小さく描いて全消去すると、前に描いて空になったタイルは積まない（1x の表示タイルは 256px 四方）
   await drag(page, [[700, 600], [720, 600]], 5);
   const [n0, p0] = await st();
-  await page.keyboard.press('Delete');
+  await clearAll(page);
   const [n1, p1] = await st();
   assert.equal(n1, n0 + 1);
   assert.ok(p1 - p0 <= 2 * 256 * 256, 'only tiles in the drawn range: ' + (p1 - p0));
@@ -1320,7 +1330,7 @@ test('文字の物: 消しゴムでなぞると消え（なぞっている間は
   assert.deepEqual(await textRect(page), t0);
   assert.ok((await alphaStats(page, 140, 390, 320, 20)).count > 500);
   // 全消去は文字も消す。元に戻すで両方戻る
-  await page.keyboard.press('Delete');
+  await clearAll(page);
   assert.deepEqual(await textInfo(page), []);
   assert.equal((await alphaStats(page, 0, 0, 1000, 700)).count, 0);
   await page.keyboard.press('Control+z');

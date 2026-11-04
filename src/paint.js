@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.64.0';
+  const VERSION = '1.65.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -590,7 +590,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     moreP.append(b);
     return [b, b.querySelector('span')];
   };
-  const [clrMi] = item('全消去', 'Delete', I.trash, clearAll);
+  const [clrMi] = item('全消去', '', I.trash, clearAll); // キーでは全消去しない。Delete・Backspace は選んだ物を消すだけ（T-172・T-173。打ち間違いで全部消えないように）
   const [bgB, bgL] = item('', 'B', I.bg, cycleBg, true);
   item('PNG で保存', IS_MAC ? '⌘S' : 'Ctrl+S', I.save, save);
   if (HAS_CLIP) item('クリップボードにコピー', '', I.copy, copyImg);
@@ -4090,7 +4090,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       ["{Ctrl}+{Y}", "やり直す（{Ctrl}+{Shift}+{Z} でも）"],
       ["{Ctrl}+{C} {X} {V}", "選んだ物のコピー・切り取り・貼り付け"],
       ["{Alt}+引く", "選んだ物を複製して動かす"],
-      ["{Delete}", "全消去（元に戻せる）"],
       ["{Ctrl}+{S}", "PNG で保存"]
     ]],
     ["表示", [
@@ -4187,7 +4186,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     else if (k === 'b') cycleBg();
     else if (k === 'd') toggleHud();
     else if (k === 'i') pickColor();
-    else if (k === 'Delete') clearAll(); // Backspace（Mac・iPad の delete）では全消去しない。選んだ物を消すだけ（T-172。打ち間違いで全部消えないように）
     else if (k === 'Escape') picking ? setPicking(false) : openP ? closePanel() : cp2 ? hide() : hideHint(); // CP2 はお知らせを出さずに隠す
     else ok = false;
     if (ok) { e.preventDefault(); e.stopPropagation(); }

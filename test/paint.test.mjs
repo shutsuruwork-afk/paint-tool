@@ -967,6 +967,128 @@ test('選択: クリックで描いた物を選び（四角で囲んだ文字は
   await page.close();
 });
 
+test('選択: 上の丸いつまみで回し（45° の近くで吸い付く）、Alt を押しながら引くと複製、Ctrl+C / Ctrl+X / Ctrl+V でコピー・切り取り・貼り付け。どれも 1 手ずつ元に戻せる（T-020）', async () => {
+  const { page, errors } = await fresh();
+  await drag(page, [[300, 300], [500, 300]], 10);
+  const s0 = await checksum(page);
+  await page.keyboard.press('s');
+  await drag(page, [[280, 260], [520, 340]], 5);
+  // つまみは枠の上の真ん中。中心（400, 300）のまわりに 88° 回すと 90° に吸い付く
+  const f = await selBox(page, true);
+  const hx = f.x + f.w / 2, hy = f.y - 22.5, d = 300 - hy;
+  await drag(page, [[hx, hy], [400 + d * Math.sin(88 * Math.PI / 180), 300 - d * Math.cos(88 * Math.PI / 180)]], 8);
+  const rb = await selBox(page);
+  assert.ok(near(rb.w, 4, 2) && near(rb.h, 204, 3), JSON.stringify(rb)); // 枠ごと回って縦長に見える
+  await page.keyboard.press('Enter');
+  assert.equal(await hist(page), 2);
+  assert.equal((await alphaStats(page, 290, 290, 90, 20)).count, 0); // 横の線は消え
+  assert.ok((await alphaStats(page, 390, 200, 20, 200)).count > 600); // 縦の線になる
+  const s1 = await checksum(page);
+  await page.keyboard.press('Control+z');
+  assert.equal(await checksum(page), s0);
+  await page.keyboard.press('Control+Shift+z');
+  assert.equal(await checksum(page), s1);
+  // Alt を押しながら引くと、元は残して写しを動かす（1 手）
+  await drag(page, [[380, 180], [420, 420]], 5);
+  await page.keyboard.down('Alt');
+  await drag(page, [[400, 300], [550, 300]], 8);
+  await page.keyboard.up('Alt');
+  await page.keyboard.press('Enter');
+  assert.equal(await hist(page), 3);
+  assert.ok((await alphaStats(page, 390, 200, 20, 200)).count > 600, '元は残る');
+  assert.ok((await alphaStats(page, 540, 200, 20, 200)).count > 600, '写し');
+  await page.keyboard.press('Control+z');
+  assert.equal(await checksum(page), s1);
+  // Ctrl+C → Ctrl+V は 16px ずらして浮かせる。Ctrl+X は消し、続く Ctrl+V は同じ所に戻す
+  await drag(page, [[380, 180], [420, 420]], 5);
+  await page.keyboard.press('Control+c');
+  await page.keyboard.press('Control+v');
+  const pb = await selBox(page);
+  assert.ok(near(pb.x, 414, 3) && near(pb.y, 214, 3), JSON.stringify(pb));
+  await page.keyboard.press('Enter');
+  assert.equal(await hist(page), 3);
+  assert.ok((await alphaStats(page, 410, 300, 10, 10)).count > 20, '貼った写し');
+  await page.keyboard.press('Control+z');
+  assert.equal(await checksum(page), s1);
+  await drag(page, [[380, 180], [420, 420]], 5);
+  await page.keyboard.press('Control+x');
+  assert.equal((await alphaStats(page, 0, 0, 1000, 700)).count, 0);
+  assert.equal(await hist(page), 3);
+  await page.keyboard.press('Control+v');
+  await page.keyboard.press('Enter');
+  assert.equal(await checksum(page), s1);
+  await page.keyboard.press('Control+z');
+  assert.equal((await alphaStats(page, 0, 0, 1000, 700)).count, 0);
+  await page.keyboard.press('Control+z');
+  assert.equal(await checksum(page), s1);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('選択: 選んでいる物を引かずに押す（タップ）と枠の上に複製・削除のメニューが出る。文字は回しても立てたまま位置だけ回る（T-020）', async () => {
+  const page = await browser.newPage({ viewport: { width: 800, height: 700 }, hasTouch: true });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(server.base + '/');
+  await runCode(page, CODE);
+  await drag(page, [[300, 400], [500, 400]], 10);
+  await page.keyboard.press('t');
+  await page.mouse.click(300, 440);
+  await page.keyboard.insertText('A');
+  await page.keyboard.press('Escape');
+  const tx0 = await page.evaluate(() => document.querySelector('paint-bookmarklet-surface').shadowRoot.querySelector('.to').getBoundingClientRect().toJSON());
+  await page.keyboard.press('s');
+  await drag(page, [[280, 380], [520, 480]], 5);
+  const menu = () => page.evaluate(() => {
+    const m = document.querySelector('paint-bookmarklet-surface').shadowRoot.querySelector('.sm');
+    return m && m.isConnected ? [...m.children].map(e => { const r = e.getBoundingClientRect(); return [e.textContent, r.x + r.width / 2, r.y + r.height / 2]; }) : null;
+  });
+  assert.equal(await menu(), null);
+  // タップでメニュー。もう一度タップで閉じる
+  await page.touchscreen.tap(400, 420);
+  const m = await menu();
+  assert.deepEqual(m && m.map(x => x[0]), ['複製', '削除']);
+  assert.ok(m[0][2] < 380, JSON.stringify(m)); // 枠の上
+  await page.touchscreen.tap(400, 420);
+  assert.equal(await menu(), null);
+  // 複製は少しずらして浮かせる（元はそこに残る）
+  await page.touchscreen.tap(400, 420);
+  const [, mx, my] = (await menu())[0];
+  await page.touchscreen.tap(mx, my);
+  assert.equal(await menu(), null);
+  await page.keyboard.press('Enter');
+  assert.equal((await page.evaluate(() => window.__paintBookmarklet.stats())).texts, 2);
+  assert.ok((await alphaStats(page, 302, 396, 10, 8)).count > 10, '元');
+  assert.ok((await alphaStats(page, 505, 412, 10, 8)).count > 10, '写し（16px ずれる）');
+  await page.keyboard.press('Control+z');
+  assert.equal((await page.evaluate(() => window.__paintBookmarklet.stats())).texts, 1);
+  // 削除
+  await drag(page, [[280, 380], [520, 480]], 5);
+  await page.touchscreen.tap(400, 420);
+  const del = (await menu())[1];
+  await page.touchscreen.tap(del[1], del[2]);
+  assert.equal((await alphaStats(page, 0, 0, 800, 700)).count, 0);
+  assert.equal((await page.evaluate(() => window.__paintBookmarklet.stats())).texts, 0);
+  await page.keyboard.press('Control+z');
+  // 文字を含めて 180° 回すと、文字は中心の反対側へ動き、字は立てたまま
+  await drag(page, [[280, 380], [520, 480]], 5);
+  const f = await selBox(page, true), c = await selBox(page);
+  const cx = c.x + c.w / 2, cy = c.y + c.h / 2, hx = f.x + f.w / 2, hy = f.y - 22.5;
+  await drag(page, [[hx, hy], [cx + 2, cy + (cy - hy)]], 12);
+  await page.keyboard.press('Enter');
+  const t1 = await page.evaluate(() => { const e = document.querySelector('paint-bookmarklet-surface').shadowRoot.querySelector('.to'); return { r: e.getBoundingClientRect().toJSON(), tf: getComputedStyle(e).transform }; });
+  assert.equal(t1.tf, 'none');
+  assert.ok(near(t1.r.x + t1.r.width / 2, 2 * cx - (tx0.x + tx0.width / 2), 3) && near(t1.r.y + t1.r.height / 2, 2 * cy - (tx0.y + tx0.height / 2), 3), JSON.stringify([t1, tx0, cx, cy]));
+  // 角で拡大縮小して枠が小数の位置になっても、引かずに押せばメニュー（前は動かしたと見なしていた）
+  await drag(page, [[280, 380], [520, 480]], 5);
+  const br = await page.evaluate(() => { const r = document.querySelector('paint-bookmarklet-surface').shadowRoot.querySelectorAll('.sel i')[4].getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
+  await drag(page, [br, [br[0] + 37, br[1] + 11]], 6);
+  await page.touchscreen.tap(400, 430);
+  assert.notEqual(await menu(), null);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('選択: 選んだままスクロールすると枠も本文と一緒に動き、ツールの切り替えで確定する', async () => {
   const { page } = await fresh('/long');
   await scrollTo(page, 400);

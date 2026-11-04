@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.54.0';
+  const VERSION = '1.55.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -125,10 +125,15 @@
   const CSS = `
 .w{--gc:28 30 36;--gt:.8;--gb:18px;--gm:36px;--gs:2;all:initial;position:absolute;inset:0;overflow:hidden;contain:strict;pointer-events:none;outline:none;font:12px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e8e9ee;color-scheme:dark;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
 .s{position:absolute;inset:0}.s.bg1{background:#fff}.s.bg2{background:#1d1f23}
-.sel{position:absolute;z-index:2;pointer-events:none}
+.sel{position:absolute;z-index:2;pointer-events:none;transform-origin:50% 50%}
 .sel b{position:absolute;outline:1px solid #3d7cff}
 .sel.only i:nth-of-type(2n){display:none}
-.si{position:absolute;left:0;top:0;transform-origin:0 0}
+.sel u{position:absolute;left:50%;top:-22px;width:11px;height:11px;margin:-6px 0 0 -6px;box-sizing:border-box;background:#fff;border:1.5px solid #3d7cff;border-radius:50%}
+.sel u::after{content:"";position:absolute;left:3.25px;top:9.5px;width:1.5px;height:17px;background:#3d7cff}
+.sel.nr u{display:none}
+.si{position:absolute;left:0;top:0;transform-origin:0 0}.si .to{transform-origin:50% 50%}
+.sm{position:absolute;z-index:3;display:flex;gap:2px;padding:3px;background:#202228;border-radius:10px;box-shadow:0 4px 16px #0006;transform:translate(-50%,-100%);font:500 14px/1 system-ui,-apple-system,sans-serif;color:#fff;white-space:nowrap;pointer-events:none}
+.sm.dn{transform:translateX(-50%)}.sm span{padding:9px 12px;border-radius:7px}
 .gh{position:absolute;white-space:pre;pointer-events:none;color:var(--c);opacity:calc(var(--a) * .45);font:600 var(--fs)/${LH} ${FONT}}
 .to{position:absolute;z-index:1;white-space:pre;pointer-events:none;color:var(--c);opacity:var(--a);font:600 var(--fs)/${LH} ${FONT}}
 .to.gone{opacity:calc(var(--a) * .25)}.to.ed{visibility:hidden}
@@ -1573,9 +1578,11 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const TWO = [['pointerdown', twoDown], ['pointermove', twoMove], ['pointerup', twoUp], ['pointercancel', twoUp]];
 
   // 塗りつぶしと文字（x, y は V、cx, cy は client。sk・sox・soy は押したときの mapNow のまま）
-  let tapId = -1, tapT = '', tapX = 0, tapY = 0, tapCX = 0, tapCY = 0;
+  let tapId = -1, tapT = '', tapX = 0, tapY = 0, tapCX = 0, tapCY = 0, mWas = false;
+  const menuAct = m => m ? dropSel(true) : dupSel(16 * sdpr); // 選択のメニュー: 0 複製（少しずらす）・1 削除
   function tapAct(t, x, y, cx, cy) {
     if (t === 'pick') { pickAt(cx, cy); return; }
+    if (t === 'mdup' || t === 'mdel') { menuAct(t === 'mdel' ? 1 : 0); return; }
     if (t === 'fill') { floodFill(x, y); return; }
     const o = textHit(x * sk + sox, y * sk + soy);
     if (o) editText(o);
@@ -1593,6 +1600,16 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const erase = b === 2 || b === 5 || (e.buttons & 32) !== 0;
     if (b !== 0 && !erase) return;
     e.preventDefault();
+    // 選択のメニュー（複製・削除。T-020）: 押したら閉じる。項目を押したならそれを行う（タッチは離したとき。2 本指のスクロールになったら何もしない）
+    mWas = selMOn;
+    if (selMOn) {
+      const m = selMenuHit(e.clientX, e.clientY);
+      hideSelMenu();
+      if (m >= 0 && !erase) {
+        if (type === 'touch') { tapId = e.pointerId; tapT = m ? 'mdel' : 'mdup'; } else menuAct(m);
+        return;
+      }
+    }
     // 入力中の文字があれば確定する。このクリックは確定だけ（新しい入力欄も線も出さない）
     if (ta) {
       commitText();
@@ -2519,13 +2536,23 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   let bX0 = 0, bY0 = 0, bW0 = 1, bH0 = 1; // 選んだ時の枠（S）
   // つまみの位置（枠に対する割合）: 左上・上・右上・右・右下・下・左下・左
   const HND = [0, 0, 0.5, 0, 1, 0, 1, 0.5, 1, 1, 0.5, 1, 0, 1, 0, 0.5];
-  const HCUR = ['nwse-resize', 'ns-resize', 'nesw-resize', 'ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize', 'ew-resize'];
+  const HCUR = ['nwse-resize', 'ns-resize', 'nesw-resize', 'ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize', 'ew-resize', 'grab'];
   for (let i = 0; i < 16; i += 2) {
     const h = el('i');
     h.style.left = HND[i] * 100 + '%';
     h.style.top = HND[i + 1] * 100 + '%';
     selB.append(h);
   }
+  // 回すつまみ（枠の上の丸。T-020）と、選んでいる枠を引かずに押すと出るメニュー（複製・削除。ユーザーが選んだ iPhone の出し方）。
+  // メニューは面の中に置き（ページと一緒にスクロールする）、押したかは onDown で位置を比べて決める（面の上は入力の板が覆っている）
+  selB.append(el('u'));
+  const ROT = 22.5; // 回すつまみの中心の、枠の上からの高さ（CSS px）
+  const selM = el('div', 'sm'), mDup = el('span'), mDel = el('span');
+  mDup.textContent = '複製';
+  mDel.textContent = '削除';
+  selM.append(mDup, mDel);
+  let selA = 0, begA = 0, rotA0 = 0; // 枠の向き（ラジアン。浮いている間は CSS で回し、確定のときに描く）
+  let sCopy = false, altDup = false, clip = null, selMOn = false; // sCopy: 浮いている物は写し（元の範囲を消していない）
   let sel = false, sDrag = 0, sH = 0, sWas = false, sEd = false, hoverCur = '', toolCur = ''; // sEd: 文字の道具で押した（引かずに離せば 1 回目で書き直す。T-146）
   let selX = 0, selY = 0, selW = 0, selH = 0;     // 今の枠（S、小数のまま持つ）
   let srcX = 0, srcY = 0, srcW = 0, srcH = 0;     // 浮かせた元の範囲（S、整数）
@@ -2567,7 +2594,12 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     st.height = selH / sdpr + 'px';
     bs.left = bs.right = px;
     bs.top = bs.bottom = py;
-    selIn.style.transform = `scale(${selW / bW0},${selH / bH0})`;
+    const sx = selW / bW0, sy = selH / bH0;
+    selIn.style.transform = `scale(${sx},${sy})`;
+    // 回すときは枠ごと回し、文字は自分の中心で回し戻して立てたままにする（親の rotate·scale に scale⁻¹·rotate⁻¹·scale を重ねると scale だけ残る）
+    st.transform = selA ? `rotate(${selA}rad)` : '';
+    const tt = selA ? `scale(${1 / sx},${1 / sy}) rotate(${-selA}rad) scale(${sx},${sy})` : '';
+    for (const p of selT) p[0].el.style.transform = tt;
     if (!selEl.parentNode) sbox.append(selEl);
   }
   // S の矩形の中の描いた物を浮かせる。withTexts なら、矩形に収まる文字の物も一緒に選ぶ。何もなければ false
@@ -2627,29 +2659,65 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       o.el.style.top = (o.y - bY0) / sdpr + 'px';
       selIn.append(o.el);
     }
-    // 文字だけのときは辺のつまみを出さず、拡大縮小は常に比を保つ
+    // 文字だけのときは辺のつまみを出さず、拡大縮小は常に比を保つ。文字 1 つだけなら回すつまみも出さない（字は立てたまま回すので変わらない）
     selEl.classList.toggle('only', !srcW);
-    selX = bX0; selY = bY0; selW = bW0; selH = bH0;
+    selEl.classList.toggle('nr', !srcW && T.length < 2);
+    selX = bX0; selY = bY0; selW = bW0; selH = bH0; selA = 0;
+    sCopy = false;
     sel = true;
     showSel();
     return true;
   }
   // 浮かせた中身を今の枠に描き込み、文字の物を枠に合わせて動かす。del なら置かずに消す。
-  // 何も変わっていなければ元に戻すだけで、履歴は増やさない。変わっていれば 1 手として積む
+  // 何も変わっていなければ元に戻すだけで、履歴は増やさない。変わっていれば 1 手として積む。
+  // 回していれば、確定のときに一度だけ枠の中心のまわりに回して描く（置く範囲は回した四隅の外接矩形）。文字は立てたまま位置だけ回す（T-020）。
+  // 写し（sCopy。複製・貼り付け）は元の範囲を消していないので、置いた範囲だけを 1 手にする。消したら何も残さない
   function dropSel(del) {
     if (!sel) return;
     sel = false;
     selEl.remove();
+    hideSelMenu();
     updateCursor();
-    const sx = selW / bW0, sy = selH / bH0, k = sqrt(sx * sy);
-    const dx = round(selX + (srcX - bX0) * sx), dy = round(selY + (srcY - bY0) * sy);
+    const sx = selW / bW0, sy = selH / bH0, k = sqrt(sx * sy), A = selA, ca = cos(A), sa = sin(A), copy = sCopy;
+    const cx = selX + selW / 2, cy = selY + selH / 2;
+    selA = 0;
+    sCopy = false;
+    for (const p of selT) p[0].el.style.transform = '';
+    if (copy && del) {
+      for (const p of selT) tApply(p[0], null);
+      selT.length = 0;
+      selC.width = selC.height = 0;
+      return;
+    }
+    const rx = selX + (srcX - bX0) * sx, ry = selY + (srcY - bY0) * sy;
     const dw = max(1, round(srcW * sx)), dh = max(1, round(srcH * sy));
-    let changed = !!del || (srcW > 0 && (dx !== srcX || dy !== srcY || dw !== srcW || dh !== srcH));
+    let dx = round(rx), dy = round(ry), DW = dw, DH = dh;
+    if (A && srcW) {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (let i = 0; i < 4; i++) {
+        const px = (i & 1 ? rx + dw : rx) - cx, py = (i & 2 ? ry + dh : ry) - cy;
+        const qx = cx + px * ca - py * sa, qy = cy + px * sa + py * ca;
+        x0 = min(x0, qx); y0 = min(y0, qy); x1 = max(x1, qx); y1 = max(y1, qy);
+      }
+      dx = floor(x0); dy = floor(y0); DW = ceil(x1) - dx; DH = ceil(y1) - dy;
+      // 文書の上や左にはみ出した所は消える（面は 0 から）
+      if (dx < 0) { DW += dx; dx = 0; }
+      if (dy < 0) { DH += dy; dy = 0; }
+    }
+    const put = !del && srcW > 0 && DW > 0 && DH > 0;
+    let changed = !!del || copy || (srcW > 0 && (A !== 0 || dx !== srcX || dy !== srcY || dw !== srcW || dh !== srcH));
     // 文字は CSS px の整数に丸めた位置と大きさにする（拡大縮小しても描き直すのでぼやけない）
     const next = selT.map(([o, st0]) => {
-      const st = del ? null : [o.s, round((selX + (o.x - bX0) * sx) / sdpr) * sdpr, round((selY + (o.y - bY0) * sy) / sdpr) * sdpr,
-        max(4, round(o.fs / sdpr * k)) * sdpr, o.c, o.a];
-      if (st && !sameSt(st, st0)) changed = true;
+      if (del) return null;
+      const fs = max(4, round(o.fs / sdpr * k)) * sdpr;
+      let x = selX + (o.x - bX0) * sx, y = selY + (o.y - bY0) * sy;
+      if (A) {
+        const r = fs / o.fs, px = x + o.w * sx / 2 - cx, py = y + o.h * sy / 2 - cy;
+        x = cx + px * ca - py * sa - o.w * r / 2;
+        y = cy + px * sa + py * ca - o.h * r / 2;
+      }
+      const st = [o.s, round(x / sdpr) * sdpr, round(y / sdpr) * sdpr, fs, o.c, o.a];
+      if (!st0 || !sameSt(st, st0)) changed = true;
       return st;
     });
     if (!changed) {
@@ -2658,11 +2726,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     } else {
       let R = [], atlas = null;
       if (srcW) {
-        R = del ? rect1(srcX, srcY, srcW, srcH) : [srcX, srcY, srcW, srcH, 0, 0, dx, dy, dw, dh, 0, 0];
+        if (!copy) R.push(srcX, srcY, srcW, srcH, 0, 0);
+        if (put) R.push(dx, dy, DW, DH, 0, 0);
+      }
+      if (R.length) {
         atlas = gather(R, pack(R));
         const c = atlas.getContext('2d');
-        // 保存する画素は「浮かせる前」にそろえる。元の範囲は今は空なので、中身を元の位置に重ねれば戻る
-        for (let i = 0; i < R.length; i += 6) {
+        // 保存する画素は「浮かせる前」にそろえる。元の範囲は今は空なので、中身を元の位置に重ねれば戻る（写しは消していないので重ねない）
+        if (!copy) for (let i = 0; i < R.length; i += 6) {
           c.save();
           c.beginPath();
           c.rect(R[i + 4], R[i + 5], R[i + 2], R[i + 3]);
@@ -2670,11 +2741,11 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
           c.drawImage(selC, R[i + 4] + srcX - R[i], R[i + 5] + srcY - R[i + 1]);
           c.restore();
         }
-        if (!del) paintSel(dx, dy, dw, dh);
+        if (put) A ? paintRot(dx, dy, DW, DH, rx, ry, dw, dh, cx, cy, A) : paintSel(dx, dy, dw, dh);
       }
       const P = selT.map(p => [p[0], p[1]]);
       for (let i = 0; i < selT.length; i++) tApply(selT[i][0], next[i]);
-      push(R, atlas, srcW && !del ? [dx, dy, dx + dw, dy + dh] : null, P.length ? P : null);
+      if (R.length || P.length) push(R, atlas, put ? [dx, dy, dx + DW, dy + DH] : null, P.length ? P : null);
     }
     selT.length = 0;
     selC.width = selC.height = 0;
@@ -2692,10 +2763,33 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       g.restore();
     });
   }
-  // 枠のどこか: 0〜7 つまみ / -1 枠の中 / -2 外。枠の内側はつまみより移動を優先する（小さい枠は全部つまみ）
+  // 回した中身を、置く範囲（X, Y, W2, H2）のタイルに描く。(rx, ry, w, h) は回す前の置き場所、(cx, cy) は回す中心
+  function paintRot(X, Y, W2, H2, rx, ry, w, h, cx, cy, A) {
+    sizeSurface();
+    forTiles(X, Y, W2, H2, true, (t, ox, oy, ix, iy, iw, ih) => {
+      const g = t.x;
+      g.save();
+      g.beginPath();
+      g.rect(ix - ox, iy - oy, iw, ih);
+      g.clip();
+      g.imageSmoothingQuality = 'high';
+      g.translate(cx - ox, cy - oy);
+      g.rotate(A);
+      g.drawImage(selC, rx - cx, ry - cy, w, h);
+      g.restore();
+    });
+  }
+  // 枠のどこか: 0〜7 つまみ / 8 回すつまみ / -1 枠の中 / -2 外。枠の内側はつまみより移動を優先する（小さい枠は全部つまみ）
+  // 8 は回すつまみ。回しているときは、押した所を枠の向きに戻してから比べる
   function selHit(X, Y) {
+    if (selA) {
+      const cx = selX + selW / 2, cy = selY + selH / 2, c = cos(selA), s = sin(selA), dx = X - cx, dy = Y - cy;
+      X = cx + dx * c + dy * s;
+      Y = cy - dx * s + dy * c;
+    }
     const r = 8 * sdpr, px = padX(), py = padY();
     const fx = selX - px, fy = selY - py, fw = selW + 2 * px, fh = selH + 2 * py;
+    if (!selEl.classList.contains('nr') && abs(X - fx - fw / 2) <= r + 2 * sdpr && abs(Y - fy + ROT * sdpr) <= r + 2 * sdpr) return 8;
     if (X > fx + r && X < fx + fw - r && Y > fy + r && Y < fy + fh - r) return -1;
     for (let i = 0; i < 16; i += 2) {
       if (!srcW && i % 4) continue; // 文字だけのときは角のつまみだけ
@@ -2721,8 +2815,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     }
     act = e.pointerId; aType = e.pointerType; mode = 4;
     try { pad.setPointerCapture(act); } catch (_) { }
-    dragX = X; dragY = Y; begX = selX; begY = selY; begW = selW; begH = selH;
+    dragX = X; dragY = Y; begX = selX; begY = selY; begW = selW; begH = selH; begA = selA;
+    altDup = hit === -1 && e.altKey; // Alt を押しながら引くと、写しを引く（元は残る。T-020）
     if (hit === -1) sDrag = 2;
+    else if (hit === 8) { sDrag = 5; rotA0 = atan2(Y - selY - selH / 2, X - selX - selW / 2); }
     else if (hit >= 0) { sDrag = 3; sH = hit; }
     else { sDrag = 1; selX = X; selY = Y; selW = selH = 0; }
   }
@@ -2732,19 +2828,35 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       selX = min(dragX, X); selY = min(dragY, Y); selW = abs(X - dragX); selH = abs(Y - dragY);
       drawBand();
     } else if (sDrag === 2) {
-      selX = max(0, begX + X - dragX);
-      selY = max(0, begY + Y - dragY);
+      if (altDup) {
+        if (abs(X - dragX) + abs(Y - dragY) < 3 * sdpr) return;
+        altDup = false;
+        dupSel(0);
+      }
+      // 動かした量を先に求める（begX + X - dragX だと、枠が小数のとき動かさなくても最後の桁がずれ、引かずに押したと分からなかった）
+      selX = max(0, begX + (X - dragX));
+      selY = max(0, begY + (Y - dragY));
       showSel();
     } else if (sDrag === 3) {
       scaleSel(X, Y, e.shiftKey);
+      showSel();
+    } else if (sDrag === 5) {
+      // 枠の中心のまわりに回す。45° の倍数の近く（4° 以内）で吸い付き、Shift なら 15° ずつ
+      let a = begA + atan2(Y - selY - selH / 2, X - selX - selW / 2) - rotA0;
+      const q = e.shiftKey ? PI / 12 : PI / 4, n = round(a / q) * q;
+      if (e.shiftKey || abs(a - n) < 0.07) a = n;
+      a = atan2(sin(a), cos(a));
+      selA = abs(a) < 1e-9 ? 0 : a;
       showSel();
     }
   }
   // つまみの反対側を固定し、押した所からの移動量だけ伸び縮みさせる。角は縦横比を保つ（free なら保たない）。
   // 比を保つ倍率は (w, h) を (begW, begH) の向きへ射影して求める（細長い物でも少しの縦の動きで暴れない）。裏返しにはしない
+  // 回しているときは、移動量を枠の向きに直して計算し、反対側（固定する側）が画面の上で動かないよう枠の中心をずらす
   function scaleSel(X, Y, free) {
     if (!srcW) free = false;
-    const hx = HND[sH * 2], hy = HND[sH * 2 + 1], m = 2 * sdpr, dX = X - dragX, dY = Y - dragY;
+    const hx = HND[sH * 2], hy = HND[sH * 2 + 1], m = 2 * sdpr, ca = cos(selA), sa = sin(selA);
+    const dX = (X - dragX) * ca + (Y - dragY) * sa, dY = (Y - dragY) * ca - (X - dragX) * sa;
     const fx = begX + (1 - hx) * begW, fy = begY + (1 - hy) * begH;
     let w = hx === 0.5 ? begW : max(m, hx ? begW + dX : begW - dX);
     let h = hy === 0.5 ? begH : max(m, hy ? begH + dY : begH - dY);
@@ -2754,8 +2866,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     }
     selX = hx === 0.5 ? begX : hx ? fx : fx - w;
     selY = hy === 0.5 ? begY : hy ? fy : fy - h;
-    if (selX < 0) { w += selX; selX = 0; }
-    if (selY < 0) { h += selY; selY = 0; }
+    if (selA) {
+      const ex = begX + begW / 2 - selX - w / 2, ey = begY + begH / 2 - selY - h / 2;
+      selX += ex - (ex * ca - ey * sa);
+      selY += ey - (ex * sa + ey * ca);
+    } else {
+      if (selX < 0) { w += selX; selX = 0; }
+      if (selY < 0) { h += selY; selY = 0; }
+    }
     selW = w; selH = h;
   }
   function selUp() {
@@ -2776,13 +2894,90 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       dropSel();
       editText(o);
       return;
-    }
+    } else if (sDrag === 2 && sWas && !mWas && selX === begX && selY === begY) showSelMenu(); // 選んでいる物を引かずに押した: 複製・削除のメニュー（T-020。出ていたなら閉じるだけ）
     sDrag = 0;
+    altDup = false;
   }
   function selAbort() {
     if (sDrag === 1) { if (bdW) lctx.clearRect(bdX, bdY, bdW, bdH); bdW = 0; }
-    else { selX = begX; selY = begY; selW = begW; selH = begH; showSel(); }
+    else { selX = begX; selY = begY; selW = begW; selH = begH; selA = begA; showSel(); }
     sDrag = 0;
+    altDup = false;
+  }
+  // 複製・削除のメニューを、枠（回していれば回した外接矩形）の上の真ん中に出す。上が画面の外なら枠の下に出す
+  function showSelMenu() {
+    mapNow();
+    const px = padX(), py = padY(), cx = selX + selW / 2, cy = selY + selH / 2, c = abs(cos(selA)), s = abs(sin(selA));
+    const hh = (selW / 2 + px) * s + (selH / 2 + py) * c, ms = selM.style, up = cy - hh - (ROT + 14) * sdpr;
+    const dn = up - 44 * sdpr < soy;
+    selM.classList.toggle('dn', dn);
+    ms.left = cx / sdpr + 'px';
+    ms.top = (dn ? cy + hh + 8 * sdpr : up) / sdpr + 'px';
+    sbox.append(selM);
+    selMOn = true;
+  }
+  function hideSelMenu() {
+    if (!selMOn) return;
+    selM.remove();
+    selMOn = false;
+  }
+  // 押した所がメニューのどの項目か（0 複製・1 削除・-1 外）
+  function selMenuHit(cx, cy) {
+    for (const [i, b] of [mDup, mDel].entries()) {
+      const r = b.getBoundingClientRect();
+      if (cx >= r.left && cx <= r.right && cy >= r.top - 4 && cy <= r.bottom + 4) return i;
+    }
+    return -1;
+  }
+  // 浮いている物の写し（画素・置いている枠と向き・文字の状態）
+  function snapSel() {
+    let c = null;
+    if (srcW) { c = newCanvas(srcW, srcH); c.getContext('2d').drawImage(selC, 0, 0); }
+    return { c, g: [srcX, srcY, srcW, srcH], f: [selX, selY, selW, selH, selA], t: selT.map(p => tSnap(p[0])), n: 1 };
+  }
+  // 写しを、新しい物として浮かせる（文字は新しい物を作る。元に戻すと消える）。off だけずらす
+  function floatSnap(q, off) {
+    [srcX, srcY, srcW, srcH] = q.g;
+    if (srcW) {
+      selC.width = srcW;
+      selC.height = srcH;
+      selC.getContext('2d').drawImage(q.c, 0, 0);
+    }
+    const T = q.t.map(st => { const o = tNew(); tApply(o, st); return o; });
+    if (!beginSel(T)) return false;
+    for (const p of selT) p[1] = null;
+    sCopy = true;
+    [selX, selY, selW, selH, selA] = q.f;
+    selX += off;
+    selY += off;
+    showSel();
+    return true;
+  }
+  // 複製: 今の物をそこに確定し、同じ物を off だけずらして浮かせる（Alt で引くときは 0。メニューでは少しずらす）
+  function dupSel(off) {
+    if (!sel) return;
+    const q = snapSel();
+    dropSel();
+    floatSnap(q, off);
+    if (q.c) q.c.width = q.c.height = 0;
+  }
+  // Ctrl+C / Ctrl+X: 浮いている物を写しておく（ページのクリップボードは使わない）。切り取りは消す
+  function copySel(cut) {
+    if (clip && clip.c) clip.c.width = clip.c.height = 0;
+    clip = snapSel();
+    if (cut) { clip.n = 0; dropSel(true); }
+  }
+  // Ctrl+V: 写しを、貼るたびに 16 CSS px ずつずらして浮かせる。見えている所の外なら、画面の中ほどに置く
+  function pasteSel() {
+    settle();
+    mapNow();
+    if (!floatSnap(clip, clip.n++ * 16 * sdpr)) return;
+    const vw = lvW() * sdpr, vh = lvH() * sdpr, cx = selX + selW / 2, cy = selY + selH / 2;
+    if (cx < sox || cx > sox + vw || cy < soy || cy > soy + vh) {
+      selX = max(0, sox + (vw - selW) / 2);
+      selY = max(0, soy + (vh - selH) / 2);
+      showSel();
+    }
   }
   // クリック: その場所に描いた画素がある手のうち、外接矩形がいちばん小さい物を選ぶ
   // （丸で囲んだ文字をクリックすると、丸ではなく文字が選ばれる）
@@ -2803,6 +2998,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (best) liftSel(best[0] - r, best[1] - r, best[2] - best[0] + 2 * r, best[3] - best[1] + 2 * r, false);
   }
   function nudgeSel(k, step) {
+    hideSelMenu();
     const d = step * sdpr;
     if (k === 'ArrowLeft') selX = max(0, selX - d);
     else if (k === 'ArrowRight') selX += d;
@@ -3752,7 +3948,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 3 つ目が 'touch' の行は、文字に触れる（touchText）が入りのときだけツールの中に出す
   const HELP = /*HELP*/[
     ["道具", [
-      ["{S}", "選択。囲むか押して選び、引くと移動、角で拡大縮小、{Delete} で削除、矢印で 1px（{Shift} で 10px）"],
+      ["{S}", "選択。囲むか押して選び、引くと移動、角で拡大縮小、上の丸で回す（{Shift} で 15° ずつ）、{Delete} で削除、矢印で 1px（{Shift} で 10px）"],
       ["{P}", "ペン（筆圧対応）"],
       ["{H}", "蛍光ペン"],
       ["{E}", "消しゴム（右クリック・ペンの消しゴム側でも）"],
@@ -3770,6 +3966,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     ["編集", [
       ["{Ctrl}+{Z}", "元に戻す"],
       ["{Ctrl}+{Y}", "やり直す（{Ctrl}+{Shift}+{Z} でも）"],
+      ["{Ctrl}+{C} {X} {V}", "選んだ物のコピー・切り取り・貼り付け"],
+      ["{Alt}+引く", "選んだ物を複製して動かす"],
       ["{Delete}", "全消去（元に戻せる）"],
       ["{Ctrl}+{S}", "PNG で保存"]
     ]],
@@ -3783,6 +3981,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     ["ボタンと文字", [
       ["ペン・図形をもう一度", "ペンの種類（万年筆・筆・鉛筆）や図形を選ぶ"],
       ["文字を押す", "ペンなどのままでも選んで動かせる。もう一度押すと書き直し", "touch"],
+      ["選んだ物を押す", "複製・削除"],
       ["文字の入力中", "{Esc}・{Ctrl}+{Enter}・外を押すと確定"],
       ["{Tab}", "電卓が入りのとき、= で終わる行に薄く出た答えを書き込む（iPhone・iPad はスペース）。= にカーソルを合わせると、書いた答えを今の式の答えに直す"],
       ["ツールバー", "どこを押しても、引けば動かせる"],
@@ -3847,6 +4046,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (e.ctrlKey || e.metaKey) {
       if (k === 'z') e.shiftKey ? redo() : undo();
       else if (k === 'y') redo();
+      else if (sel && act === -1 && (k === 'c' || k === 'x')) copySel(k === 'x'); // 選んだ物のコピー・切り取り（T-020）
+      else if (k === 'v' && clip && act === -1) pasteSel();
       else if (k === 's') save();
       else ok = false;
     } else if (e.altKey) ok = false;

@@ -2083,6 +2083,47 @@ test('直線・矢印・楕円と Shift 拘束', async () => {
   await page.close();
 });
 
+test('電卓は関数電卓のように sin・cos・tan・√・log・ln・n!・π・e を使える。角は π があればラジアン、なければ度（° と rad が優先）。90 度のちょうど倍は答えもちょうど（T-153）', async () => {
+  const { page, errors } = await fresh();
+  await page.evaluate(() => localStorage.setItem('paint-bookmarklet', JSON.stringify({ calc: true })));
+  await page.evaluate(() => window.__paintBookmarklet.destroy());
+  await runCode(page, CODE);
+  const ghost = () => shadowEval(page, root => { const g = root.querySelector('.gh'); return g ? g.textContent : null; });
+  await page.keyboard.press('t');
+  await page.mouse.click(200, 450);
+  const cases = [
+    // 角: π がなければ度、あればラジアン。° と rad を付ければそちら
+    ['sin30', '=0.5'], ['sin(30)', '=0.5'], ['cos60', '=0.5'], ['tan45', '=1'], ['sin(pi/6)', '=0.5'], ['sin(π/6)', '=0.5'],
+    ['cos(pi/3)', '=0.5'], ['sin 2π', '=0'], ['sin(1)', '=0.0174524064373'], ['sin(1 rad)', '=0.841470984808'], ['sin(30°)', '=0.5'],
+    // 90 度（π/2）のちょうど倍: 倍精度の端数（1.2e-16）を出さない。tan90 は出さない
+    ['sin180', '=0'], ['cos90', '=0'], ['tan180', '=0'], ['cos(pi/2)', '=0'], ['tan90', null], ['tan(pi/2)', null],
+    ['asin(0.5)', '=30'], ['acos(0.5)', '=60'], ['atan(1)', '=45'],
+    // ( ) のある関数の後ろの ^ は答えのべき、かけ算の省略、大文字・全角
+    ['sin(30)^2', '=0.25'], ['2sin30', '=1'], ['sin30cos60', '=0.25'], ['-sin30', '=-0.5'], ['SIN(30)', '=0.5'], ['ｓｉｎ３０', '=0.5'],
+    // √ と ∛ は割り切れれば分数のまま。² ³ も書ける
+    ['√2', '=1.41421356237'], ['√16', '=4'], ['√(1/4)', '=0.5'], ['sqrt(2)', '=1.41421356237'], ['∛27', '=3'], ['cbrt(-8)', '=-2'],
+    ['√(3²+4²)', '=5'], ['√-1', null],
+    ['log(1000)', '=3'], ['ln(e)', '=1'], ['exp(1)', '=2.71828182846'], ['e^2', '=7.38905609893'], ['abs(-3)', '=3'],
+    ['2π', '=6.28318530718'], ['2pi', '=6.28318530718'], ['pi=', '3.14159265359'], ['e=', '2.71828182846'], ['pi', null], ['e', null],
+    ['5!', '=120'], ['20!', '=2432902008176640000'], ['3!+1', '=7'], ['0.5!', null], ['451!', null],
+    // 知らない名前・関数だけ・式でない物は出さない
+    ['2πr', null], ['sin', null], ['constructor(1)', null], ['hello', null], ['12', null], ['2(3)', null]];
+  for (const [ex, want] of cases) {
+    await page.keyboard.press('Control+a');
+    await page.keyboard.press('Backspace');
+    await page.keyboard.insertText(ex);
+    assert.equal(await ghost(), want, ex);
+  }
+  // Tab で書き込める
+  await page.keyboard.press('Control+a');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.insertText('sin30');
+  await page.keyboard.press('Tab');
+  assert.equal((await textBox(page)).value, 'sin30=0.5');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('Simple Preview（CP2）: 開発用でなくてもその他の最後に出て（T-101）、押すと絵と履歴はそのままで CP2 の表示になる（ペン ⇄ 消しゴム・文字〈電卓は入り〉・元に戻す・その他〈全消去・色・本家に戻す〉・閉じる〈中身は隠す〉）。本家に戻せ、サイトごとに覚える（T-088）', async () => {
   const bar = page => shadowEval(page, root => [...root.querySelector('.bar').children].filter(e => e.classList.contains('b'))
     .map(b => b.title.split(/[ （(]/)[0] + (b.classList.contains('on') ? '*' : '')));

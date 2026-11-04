@@ -1438,6 +1438,57 @@ test('指で引き始めても跳ばずに指へ追いつく（ツールバー�
   await page.close();
 });
 
+// T-181: 指でボタンを長押しすると名前が出る（Beta だけ）。名前が出たら離しても押したことにしない。動かす・マウス・Simple では出ない。v1.72.0 では出なかった
+test('Beta: 指でボタンを長押しすると名前が出て、離しても押したことにならない（動かすと出ない・マウスと Simple では出ない）', async () => {
+  const open = async (d) => {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 700 }, hasTouch: true });
+    await page.goto(server.base + '/');
+    await runCode(page, withDefaults(CODE, d));
+    return [page, await page.context().newCDPSession(page)];
+  };
+  const [page, cdp] = await open({});
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  const tch = (cdp, type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
+  const label = p => shadowEval(p, root => { const l = root.querySelector('.lb'); return l && l.isConnected ? [l.textContent, l.getBoundingClientRect().toJSON()] : null; });
+  const center = (p, s) => shadowEval(p, (root, s) => { const r = root.querySelector(s).getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2, r.top, r.bottom]; }, s);
+  const [ex, ey, et, eb] = await center(page, '.bar > [aria-label^="消しゴム"]');
+  await tch(cdp, 'touchStart', ex, ey);
+  await page.waitForTimeout(600);
+  const l = await label(page);
+  assert.equal(l && l[0], '消しゴム');
+  assert.ok(l[1].bottom <= et || l[1].top >= eb, 'above or below the button');
+  await tch(cdp, 'touchEnd');
+  await page.waitForTimeout(100);
+  assert.equal(await label(page), null, 'hidden on release');
+  assert.equal(await toolOn(page), 'ペン (P)', 'not pressed by the long press');
+  // 次のふつうのタップは効く
+  await tch(cdp, 'touchStart', ex, ey); await tch(cdp, 'touchEnd');
+  await page.waitForTimeout(100);
+  assert.equal(await toolOn(page), '消しゴム (E)');
+  // 押したまま動かすと出ない
+  const [tx, ty] = await center(page, '.bar > [aria-label^="文字"]');
+  await tch(cdp, 'touchStart', tx, ty);
+  await tch(cdp, 'touchMove', tx + 10, ty);
+  await page.waitForTimeout(600);
+  assert.equal(await label(page), null, 'moved');
+  await tch(cdp, 'touchEnd');
+  // マウスでは出ない
+  await page.mouse.move(ex, ey); await page.mouse.down(); await page.waitForTimeout(600);
+  assert.equal(await label(page), null, 'mouse');
+  await page.mouse.up();
+  assert.deepEqual(errors, []);
+  await page.close();
+  // Simple では出ない
+  const [ps, cs] = await open({ ui: 'cp2' });
+  const [px, py] = await center(ps, '.bar > [aria-label^="文字"]');
+  await tch(cs, 'touchStart', px, py);
+  await ps.waitForTimeout(600);
+  assert.equal(await label(ps), null, 'Simple');
+  await tch(cs, 'touchEnd');
+  await ps.close();
+});
+
 // T-178: 選んだ物の角・辺のつまみは、指なら枠の外側へ 18 px まで押せる（回すつまみと同じ。内側は 8 px のまま）。マウスは今まで通り 8 px。
 // v1.69.0 では指でもつまみの外 8 px を超えると枠の外になり、拡大縮小できずに選択が外れた
 test('指は角のつまみの外側 18 px までで拡大縮小できる（マウスは 8 px）。小さな物でも中を押せば動かせる', async () => {

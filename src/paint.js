@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.72.0';
+  const VERSION = '1.73.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -160,7 +160,8 @@ canvas{position:absolute;left:0;top:0;pointer-events:none}
 .gauss .bar::before{--gr:12px}.gauss .pn::before{--gr:10px}
 .gauss .bar::before,.gauss .pn::before{inset:calc(var(--gm) * -1 - 1px);padding:var(--gm);border-radius:0;-webkit-mask:${GMASK};mask:${GMASK}}
 .light{color:#1d2026;color-scheme:light;--gc:250 250 252}
-.light .bar,.light .pn,.light .t,.light .hp{background:var(--bb,#fbfbfc);border-color:#0000001a;box-shadow:0 6px 24px #0003}
+.lb{position:absolute;left:0;top:0;padding:6px 10px;border-radius:8px;background:var(--bb,#202228);box-shadow:0 4px 16px #0007;pointer-events:none;white-space:nowrap;font-size:13px}
+.light .bar,.light .pn,.light .t,.light .hp,.light .lb{background:var(--bb,#fbfbfc);border-color:#0000001a;box-shadow:0 6px 24px #0003}
 .light.glass .bar,.light.glass .pn{background:none;border-color:transparent;outline-color:#0000001a;box-shadow:0 6px 24px #0003,inset 0 1px 0 #ffffff99}
 @media (hover:hover){.light .b:hover,.light .t button:hover{background:#0000000f}}.light .b:active,.light .b.open:not(.on){background:#0000001c}
 @media (hover:hover){.b.on:not(.c):hover,.light .b.on:not(.c):hover{background:#2f6bea}}.b.on:not(.c):active,.light .b.on:not(.c):active{background:#2f6bea}
@@ -816,6 +817,40 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     barEnd = () => up({ pointerId: id });
   });
   let barEnd = null; // ツールバーを引いている途中なら、それを終える関数（タブが隠れたときに呼ぶ。T-151）
+  // 長押しで名前（T-181。Beta だけ）: 指ではマウスの title が出ないので、印だけのボタン（ツールバーとパネルの中）を LB_MS 押したままにすると、
+  // ボタンの上（入らなければ下）に名前を出す。名前が出たら、離しても押したことにしない（何のボタンかを見るため。eatClick）。
+  // 引いた（dragPx）・離した・取り消したら消す。文字の付いたメニューの項目と色の見本には出さない
+  const LB_MS = 450, lbl = el('div', 'lb');
+  let lbT = 0;
+  const lbHide = () => { clearTimeout(lbT); lbT = 0; lbl.remove(); };
+  bar.addEventListener('pointerdown', e => {
+    lbHide();
+    const b = cp2 || e.pointerType !== 'touch' ? null : e.target.closest('.b');
+    if (!b || !b.title || b.classList.contains('mi') || b.classList.contains('c')) return;
+    const id = e.pointerId, sx = e.clientX, sy = e.clientY, lim = dragPx('touch');
+    const end = ev => {
+      if (ev.pointerId !== id) return;
+      if (ev.type === 'pointermove' && abs(ev.clientX - sx) < lim && abs(ev.clientY - sy) < lim) return;
+      lbHide();
+      win.removeEventListener('pointermove', end, true);
+      win.removeEventListener('pointerup', end, true);
+      win.removeEventListener('pointercancel', end, true);
+    };
+    win.addEventListener('pointermove', end, true);
+    win.addEventListener('pointerup', end, true);
+    win.addEventListener('pointercancel', end, true);
+    lbT = setTimeout(() => {
+      lbT = 0;
+      lbl.textContent = b.title.replace(/ \(.*\)$/, '');
+      wrap.append(lbl);
+      const r = b.getBoundingClientRect(), w0 = wrap.getBoundingClientRect(), w = lbl.offsetWidth, h = lbl.offsetHeight;
+      const x = r.left - w0.left + r.width / 2 - w / 2, y = r.top - w0.top - h - 8;
+      lbl.style.left = max(4, min(vw - w - 4, x)) + 'px';
+      lbl.style.top = (y >= 4 ? y : r.bottom - w0.top + 8) + 'px';
+      eatClick = true;
+    }, LB_MS);
+  });
+  bar.addEventListener('contextmenu', e => e.preventDefault()); // 長押しで出るブラウザのメニューを出さない
 
   // ---------- UI 同期（ホットパス外でのみ呼ぶ） ----------
   function setTool(t) {
@@ -4296,6 +4331,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   function hide() {
     stopFling();
+    lbHide();
     if (!visible) return;
     if (act !== -1) endStroke();
     settle();

@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.59.0';
+  const VERSION = '1.60.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -2186,14 +2186,46 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     zSoon(); // 履歴の圧縮は、描き終わってから 1 秒待つ（T-114）
   }
 
+  // 筆の書き終わり（T-168、ユーザーが選んだ。監査 T-129: ゆっくり止めると丸く太り、離すと最後の半区間だけ 0.6 倍の段が付いた）:
+  // 最後の半区間を今の太さから細くしながら描き、動かしながら離したら（直近 40 ms の速さが 0.25 CSS px/ms 以上）、その向きに払いを細く伸ばす
+  // （速さ × 30 ms、30 CSS px まで）。止まってから離したら払わない（止まった点は予測の輪に入っているので、速さが落ちている）
+  function brushEnd() {
+    const L = (hN - 1) % HN;
+    let j = L;
+    for (let n = 1; n < min(hN, HN); n++) { const p = (j + HN - 1) % HN; if (hT[L] - hT[p] > 40) break; j = p; }
+    const dt = hT[L] - hT[j];
+    let ux = 0, uy = 0, len = 0;
+    if (dt >= 6) {
+      const vx = (hX[L] - hX[j]) / dt, vy = (hY[L] - hY[j]) / dt, v = hypot(vx, vy);
+      if (v / dpr >= 0.25) { ux = vx / v; uy = vy / v; len = min(v * 30, 30 * dpr); }
+    }
+    const w1 = len ? bw * 0.75 : bw * 0.35;
+    taper(mx, my, bx, by, bw, w1, 4);
+    if (len) taper(bx, by, bx + ux * len, by + uy * len, w1, bw * 0.05, 8);
+  }
+  // (ax, ay) → (ex, ey) を n 本に分け、太さを wa から we へ変えながら描く
+  function taper(ax, ay, ex, ey, wa, we, n) {
+    if (ax === ex && ay === ey) return;
+    let px = ax, py = ay;
+    for (let i = 1; i <= n; i++) {
+      const t = i / n, x = ax + (ex - ax) * t, y = ay + (ey - ay) * t, w = max(0.25, qw(wa + (we - wa) * t));
+      lctx.lineWidth = w;
+      lctx.beginPath(); lctx.moveTo(px, py); lctx.lineTo(x, y); stk(lctx);
+      markSeg(px, py, x, y, w / 2 + 2);
+      px = x; py = y;
+    }
+    if (ex < x0) x0 = ex; else if (ex > x1) x1 = ex;
+    if (ey < y0) y0 = ey; else if (ey > y1) y1 = ey;
+  }
   function endStroke() {
     if (act === -1) return;
     const m = mode;
     stopStroke();
     if (m === 1) {
-      // 最後の半区間（中点→最終点）を確定してから main へ合成
-      if (mx !== bx || my !== by) {
-        lctx.lineWidth = sPen === 2 ? qw(bw * 0.6) : bw; // 筆は離し際を細く
+      // 最後の半区間（中点→最終点）を確定してから main へ合成。筆は細く抜く（T-168）
+      if (sPen === 2) brushEnd();
+      else if (mx !== bx || my !== by) {
+        lctx.lineWidth = bw;
         lctx.beginPath(); lctx.moveTo(mx, my); lctx.lineTo(bx, by); stk(lctx);
         markSeg(mx, my, bx, by, bw / 2 + 2);
       }

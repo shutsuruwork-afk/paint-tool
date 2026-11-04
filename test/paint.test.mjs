@@ -1628,6 +1628,31 @@ const timedStroke = (page, pts, gap) => page.evaluate(async ([pts, gap]) => {
 }, [pts, gap]);
 const line = (x0, y0, x1, y1, n) => Array.from({ length: n + 1 }, (_, i) => [x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n]);
 
+test('筆の書き終わり: 動かしながら離すと、その向きに細い払いが伸びる。止めてから離すと伸ばさない。元に戻すと払いも消える（T-168）', async () => {
+  const { page, errors } = await fresh();
+  await page.keyboard.press('h');
+  await mouseClick(page, '.bar > [aria-label^="ペン"]');
+  await mouseClick(page, '.bar > [aria-label^="ペン"]');
+  await mouseClick(page, '.pn.on [aria-label^="筆"]');
+  const s0 = await checksum(page);
+  // 速さ 10px / 8ms のまま離す: 向き (300, 50) へ 30px ほど払う
+  await timedStroke(page, line(100, 200, 400, 250, 30), 8);
+  const tail = (await alphaStats(page, 410, 250, 14, 8)).count;
+  assert.ok(tail > 0, '払い');
+  const mid = (await alphaStats(page, 250, 215, 1, 20)).count, end = (await alphaStats(page, 418, 245, 1, 20)).count;
+  assert.ok(end < mid, `払いは細い ${end} < ${mid}`);
+  // 止めてから離す: 払わない
+  const slow = line(100, 400, 400, 450, 30);
+  for (let i = 0; i < 6; i++) slow.push([400, 450]);
+  await timedStroke(page, slow, 16);
+  assert.equal((await alphaStats(page, 408, 444, 24, 14)).count, 0);
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('Control+z');
+  assert.equal(await checksum(page), s0);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('ペンの種類: ペンでないときは押してもペンになるだけ、ペンのときにもう一度押すと種類のパネル。万年筆は向き・筆は速さで太さが変わり、鉛筆はかすれる', async () => {
   const { page, errors } = await fresh();
   await page.keyboard.press('h');

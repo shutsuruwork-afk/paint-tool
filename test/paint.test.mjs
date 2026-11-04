@@ -2124,6 +2124,65 @@ test('電卓は関数電卓のように sin・cos・tan・√・log・ln・n!・
   await page.close();
 });
 
+test('iPhone の英語のキーボードが答えを出す所（= で終わる四則の式）は、Paint の答えを出さずに枠だけ広げる（電卓が切りでも）。= のない式・関数・行の途中・日本語の変換・PC は Paint の答え（T-152）', async () => {
+  const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+  const open = async (ua, calc) => {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 700 }, ...(ua ? { userAgent: ua } : {}) });
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.goto(server.base + '/');
+    await runCode(page, withDefaults(CODE, { calc }));
+    await page.keyboard.press('t');
+    await page.mouse.click(200, 450);
+    return { page, errors };
+  };
+  const look = page => shadowEval(page, root => {
+    const g = root.querySelector('.gh'), t = root.querySelector('textarea:not([aria-hidden])');
+    return { ghost: g ? g.textContent : null, w: t.getBoundingClientRect().width };
+  });
+  const type = async (page, t) => {
+    await page.keyboard.press('Control+a');
+    await page.keyboard.press('Backspace');
+    await page.keyboard.insertText(t);
+    return look(page);
+  };
+  // iPhone・電卓が入り
+  let { page, errors } = await open(IPHONE, true);
+  const noEq = await type(page, '2-3'); // = がなければ iPhone は出さないので Paint
+  assert.equal(noEq.ghost, '=-1');
+  const eq = await type(page, '2-3='); // iPhone が「-1」を出す。Paint は出さず、枠は Paint の答えの時より広い
+  assert.equal(eq.ghost, null);
+  assert.ok(eq.w > noEq.w + 10, JSON.stringify([eq, noEq]));
+  assert.equal((await type(page, '11 -13 =')).ghost, null);
+  assert.equal((await type(page, 'sin30=')).ghost, '0.5'); // 関数は Paint
+  assert.equal((await type(page, '2-3= ')).ghost, '-1'); // = の後ろに空白
+  await type(page, '2-3=');
+  await page.keyboard.press('ArrowLeft'); // カーソルが行の途中
+  assert.equal((await look(page)).ghost, '-1');
+  // 日本語の入力（変換を通した入力）は Paint
+  await page.keyboard.press('Control+a');
+  await page.keyboard.press('Backspace');
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.imeSetComposition', { text: '2-3=', selectionStart: 4, selectionEnd: 4 });
+  await cdp.send('Input.insertText', { text: '2-3=' });
+  assert.equal((await look(page)).ghost, '-1');
+  assert.deepEqual(errors, []);
+  await page.close();
+  // iPhone・電卓が切り: Paint の答えは出ないが、= で終わる四則の式では枠を広げる
+  ({ page, errors } = await open(IPHONE, false));
+  const off = await type(page, '2-3'), offEq = await type(page, '2-3=');
+  assert.equal(off.ghost, null);
+  assert.equal(offEq.ghost, null);
+  assert.ok(offEq.w > off.w + 20, JSON.stringify([offEq, off]));
+  assert.deepEqual(errors, []);
+  await page.close();
+  // PC は今まで通り
+  ({ page, errors } = await open(null, true));
+  assert.equal((await type(page, '2-3=')).ghost, '-1');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('Simple Preview（CP2）: 開発用でなくてもその他の最後に出て（T-101）、押すと絵と履歴はそのままで CP2 の表示になる（ペン ⇄ 消しゴム・文字〈電卓は入り〉・元に戻す・その他〈全消去・色・本家に戻す〉・閉じる〈中身は隠す〉）。本家に戻せ、サイトごとに覚える（T-088）', async () => {
   const bar = page => shadowEval(page, root => [...root.querySelector('.bar').children].filter(e => e.classList.contains('b'))
     .map(b => b.title.split(/[ （(]/)[0] + (b.classList.contains('on') ? '*' : '')));

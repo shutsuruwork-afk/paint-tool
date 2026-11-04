@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.44.0';
+  const VERSION = '1.44.1';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -2865,6 +2865,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     ta = el('textarea', 'tx', { spellcheck: 'false', wrap: 'off', rows: '1', 'aria-label': '文字' });
     taX = cx; taCY = cy; // クリックした点が 1 行目の高さの中央になるように置く
     for (const t of TA_STOP) ta.addEventListener(t, stop);
+    // 変換を通った入力（日本語のキーボードなど）か。iPhone のキーボードの計算結果は英語のキーボードだけなので、変換を通ったら Paint の答えを出す（T-152）
+    taIme = false;
+    ta.addEventListener('compositionstart', () => { taIme = true; });
+    ta.addEventListener('input', e => { taIme = e.isComposing || /omposition/.test(e.inputType || ''); });
     ta.addEventListener('input', updateGhost);
     // 日本語入力の変換中も枠を合わせる（変換中の文字で input が来ない環境でも、枠の外にはみ出さないように。T-099）
     ta.addEventListener('compositionupdate', updateGhost);
@@ -2981,7 +2985,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // ---- 電卓: カーソルのある行が計算式なら、行の後ろに答えを薄く出す。Tab で書き込む ----
   // 入力欄の大きさ（fitTa）もここで合わせる。答えの右端（ghostR、行の頭からの CSS px）まで枠を広げるため
   const ghostEl = el('div', 'gh');
-  let ghostTxt = '', ghostEnd = 0, ghostR = 0, mta = null;
+  let ghostTxt = '', ghostEnd = 0, ghostR = 0, mta = null, taIme = false; // taIme: 最後の入力が変換（日本語の入力など）を通ったか
+  // iPhone・iPad（iOS 18 から）の英語のキーボードは、= で終わる四則の式の答えを、カーソルの後ろに薄く出す（キーボードの計算結果）。
+  // その字は入力欄の値にも中身の幅にも入らないので、入力欄の幅で切れて途切れて見えた（T-152、ユーザーの報告）
+  const IOS_MATH = IOS && !(+(/(?:iPhone|CPU) OS (\d+)_/.exec(navigator.userAgent) || [0, 99])[1] < 18);
   // 1 行の幅を、入力欄と同じ測り方（見えない入力欄の scrollWidth）で測る。答えの位置と枠の幅が、Tab で書き込んだ後の入力欄とそろう
   // （canvas の measureText や span は、書体によって「*」などの組み方が入力欄と変わり、数 px ずれた）。測る間だけ置いて外す
   function lineW(t) {
@@ -3002,10 +3009,16 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function updateGhost() {
     ghostTxt = '';
     ghostR = 0;
-    if (ta && (calc || cp2)) { // CP2 は電卓がいつも入り
+    if (ta) {
       const v = ta.value, p = ta.selectionEnd, a = v.lastIndexOf('\n', p - 1) + 1, b = v.indexOf('\n', p), end = b < 0 ? v.length : b;
-      const line = v.slice(a, end), r = calcLine(line);
-      if (r) {
+      const line = v.slice(a, end);
+      // iPhone のキーボードが答えを出す所（英語のキーボードで、行の終わりのカーソルの前が = の四則の式）は、Paint の答えは出さず、
+      // 枠だけ自前の答えと全角 1 文字の分を広げる（電卓が切りでも。T-152、ユーザーの案: 予測してくれる範囲はこっちで出さず、枠を予測して拡張。
+      // 英語の自動修正は残したいので、入力欄の予測は止めない）。iPhone の答えの書き方（桁数）は自前と違うことがあるので 1 文字余らせる
+      const ios = IOS_MATH && !taIme && p === end && /=$/.test(line) && /^[\d\s+\-*/^%().,=]+$/.test(line.normalize('NFKC').replace(/[×÷−–]/g, '*'));
+      const r = ios || calc || cp2 ? calcLine(line) : ''; // CP2 は電卓がいつも入り
+      if (r && ios) ghostR = lineW(line + r.trim()) + ceil(taFs);
+      else if (r) {
         ghostTxt = r;
         ghostEnd = end;
         const s = ghostEl.style, row = v.slice(0, a).split('\n').length - 1;

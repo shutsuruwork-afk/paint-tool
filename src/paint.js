@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.47.0';
+  const VERSION = '1.48.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -1065,12 +1065,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   // b: その手で描いた物の外接矩形 [x0, y0, x1, y1]（S）。選択ツールのクリックで選ぶ物を探すのに使う。
   // t: その手で変わった文字の物と、もう一方の状態の組 [[物, 状態], …]。画素の変化がない手は R を空、c を null にする
+  let lastH = null; // 最後に積んだ手（直線・矢印の端 e を付けるため。T-158）
   function push(R, c, b, t) {
     grow(R);
     while (hist.length > hpos) free(hist.pop());
     let pix = 0;
     for (let i = 0; i < R.length; i += 6) pix += R[i + 2] * R[i + 3];
-    hist.push({ R, c, pix, b, t });
+    hist.push(lastH = { R, c, pix, b, t });
     hpos++;
     hpix += pix;
     trim();
@@ -1387,6 +1388,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     for (const h of hist) {
       for (let i = 0; i < h.R.length; i += 6) { h.R[i] += dx; h.R[i + 1] += dy; }
       if (h.b) { h.b[0] += dx; h.b[1] += dy; h.b[2] += dx; h.b[3] += dy; }
+      if (h.e) { h.e[0] += dx; h.e[1] += dy; h.e[2] += dx; h.e[3] += dy; }
       if (h.t) for (const p of h.t) if (p[1]) st(p[1]);
     }
     for (const o of tlist.slice()) { const q = tSnap(o); st(q); tApply(o, q); }
@@ -1673,6 +1675,11 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         mode = 3;
         shaped = false;
         shShift = e.shiftKey; shAlt = e.altKey;
+        snapN = 0;
+        if (t === 'line' || t === 'arrow') {
+          snapPrep(type);
+          if (snapAt(x, y)) { sx = cx = x0 = x1 = SX; sy = cy = y0 = y1 = SY; sSnap = true; } else sSnap = false;
+        }
         lctx.lineWidth = sW;
         lctx.lineJoin = t === 'rect' ? 'miter' : 'round';
         lctx.globalAlpha = sA; // 図形は毎回描き直すので、そのまま線の濃さで描ける
@@ -1994,17 +2001,59 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     }
   }
 
+  // 直線・矢印の端に吸い付く（T-158、ユーザーの案: 線と線の先を繋げれるようにして、それで図形を作れるようにしたい）。
+  // 相手は見えている手（最後の全消去より後で、元に戻していない手）の直線・矢印の端。押したときに V の座標で詰め、動かす間は割り当てなしで探す
+  let snapV = new Float64Array(64), snapN = 0, snapR = 0, sSnap = false, SX = 0, SY = 0;
+  function snapPrep(type) {
+    snapN = 0;
+    for (let j = hpos - 1; j >= 0 && !hist[j].clr; j--) {
+      const e = hist[j].e;
+      if (!e) continue;
+      if (snapV.length < snapN * 2 + 4) { const v = new Float64Array(snapV.length * 2); v.set(snapV); snapV = v; }
+      for (let k = 0; k < 4; k += 2) { snapV[snapN * 2] = (e[k] - sox) / sk; snapV[snapN * 2 + 1] = (e[k + 1] - soy) / sk; snapN++; }
+    }
+    snapR = (type === 'touch' ? 22 : 12) * dpr;
+  }
+  // (x, y) にいちばん近い端（snapR 以内）を SX, SY に入れる
+  function snapAt(x, y) {
+    let best = snapR * snapR, f = false;
+    for (let i = 0; i < snapN * 2; i += 2) {
+      const dx = snapV[i] - x, dy = snapV[i + 1] - y, d = dx * dx + dy * dy;
+      if (d <= best) { best = d; SX = snapV[i]; SY = snapV[i + 1]; f = true; }
+    }
+    return f;
+  }
+  // 吸い付いた端の印（青い丸）。確定する絵に入らないよう pred に描き、線を終えたら消す
+  let mkA = false, mkB = false, mkAx = 0, mkAy = 0, mkBx = 0, mkBy = 0;
+  function snapMarks(a, ax, ay, b, bx2, by2) {
+    const r = 7 * dpr, p = r + 3 * dpr;
+    if (mkA) pctx.clearRect(mkAx - p, mkAy - p, 2 * p, 2 * p);
+    if (mkB) pctx.clearRect(mkBx - p, mkBy - p, 2 * p, 2 * p);
+    mkA = a; mkB = b; mkAx = ax; mkAy = ay; mkBx = bx2; mkBy = by2;
+    if (!a && !b) return;
+    pctx.save();
+    pctx.globalAlpha = 1;
+    pctx.globalCompositeOperation = 'source-over';
+    pctx.strokeStyle = '#3d7cff';
+    pctx.lineWidth = 2 * dpr;
+    pctx.beginPath();
+    if (a) { pctx.moveTo(ax + r, ay); pctx.arc(ax, ay, r, 0, TAU); }
+    if (b) { pctx.moveTo(bx2 + r, by2); pctx.arc(bx2, by2, r, 0, TAU); }
+    pctx.stroke();
+    pctx.restore();
+  }
   function drawShape() {
     const c = lctx;
     if (dirty()) c.clearRect(dX, dY, dW, dH);
     let ax = sx, ay = sy, ex = cx, ey = cy;
     c.beginPath();
     if (sTool === 'line' || sTool === 'arrow') {
-      let d = hypot(ex - ax, ey - ay);
+      let d = hypot(ex - ax, ey - ay), es = false;
       if (shShift) {
         const a = round(atan2(ey - ay, ex - ax) / (PI / 4)) * (PI / 4);
         ex = ax + cos(a) * d; ey = ay + sin(a) * d;
-      }
+      } else if (snapAt(ex, ey)) { ex = SX; ey = SY; d = hypot(ex - ax, ey - ay); es = true; }
+      if (snapN) snapMarks(sSnap, ax, ay, es, ex, ey);
       c.moveTo(ax, ay);
       c.lineTo(ex, ey);
       G[0] = ax; G[1] = ay; G[2] = ex; G[3] = ey;
@@ -2086,6 +2135,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function stopStroke() {
     const id = act;
     act = -1;
+    if (mkA || mkB) snapMarks(false, 0, 0, false, 0, 0);
     if (recCur) recStop();
     if (sRaw) pad.removeEventListener('pointerrawupdate', onMove);
     cancelAnimationFrame(raf);
@@ -2108,8 +2158,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       clearTail();
       commitLive();
     } else if (m === 3) {
-      if (shaped) { markShape(); commitLive(); }
-      else if (dirty()) lctx.clearRect(dX, dY, dW, dH);
+      if (shaped) {
+        markShape();
+        lastH = null;
+        commitLive();
+        // 直線・矢印の端を、その手に面の座標で覚える（次の線が吸い付く。T-158）
+        if (lastH && (sTool === 'line' || sTool === 'arrow')) lastH.e = [G[0] * sk + sox, G[1] * sk + soy, G[2] * sk + sox, G[3] * sk + soy];
+      } else if (dirty()) lctx.clearRect(dX, dY, dW, dH);
     } else if (m === 4) {
       selUp();
     } else if (m === 2) {
@@ -3617,7 +3672,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       ["{P}", "ペン（筆圧対応）"],
       ["{H}", "蛍光ペン"],
       ["{E}", "消しゴム（右クリック・ペンの消しゴム側でも）"],
-      ["{L} {A} {R} {O}", "直線・矢印・四角形・楕円"],
+      ["{L} {A} {R} {O}", "直線・矢印・四角形・楕円（直線と矢印の端は、近くの線の端に吸い付く）"],
       ["{T}", "文字（日本語入力対応）"],
       ["{F}", "塗りつぶし"],
       ["{I}", "スポイト（描いた絵と文字から。対応するブラウザではページからも）"]

@@ -2282,6 +2282,49 @@ test('電卓で方程式を解く（知らない名前が 1 つ。1 次は分数
   await page.close();
 });
 
+test('直線・矢印の始めと終わりは、近くの線の端に吸い付く（3 本で三角形が閉じ塗りつぶしが漏れない・印は絵に入らない・元に戻した線には吸い付かない）（T-158）', async () => {
+  const { page, errors } = await fresh();
+  const alpha = (x, y) => readMain(page, x, y).then(d => d[3]);
+  const blue = sel => shadowEval(page, (root, sel) => {
+    const q = root.querySelector(sel), d = q.getContext('2d').getImageData(0, 0, q.width, q.height).data;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i + 2] > 200 && d[i] < 120 && d[i + 3] > 128) n++;
+    return n;
+  }, sel);
+  await page.keyboard.press('l');
+  await drag(page, [[300, 300], [500, 300]], 5);
+  // 端から少し離れた所（8 px）から始めても、端から引かれる。吸い付いている間は、端に青い丸の印（pred に描く）
+  await page.mouse.move(506, 305);
+  await page.mouse.down();
+  await page.mouse.move(450, 380, { steps: 3 });
+  await page.mouse.move(400, 450, { steps: 3 });
+  assert.ok(await blue('canvas.q') > 10);
+  await page.mouse.up();
+  assert.equal(await blue('canvas.q'), 0); // 離すと印は消える
+  // 3 本目は始めも終わりも端に吸い付き、三角形が閉じる
+  await drag(page, [[395, 455], [296, 296]], 5);
+  assert.equal(await alpha(500, 300), 255);
+  assert.equal(await alpha(300, 300), 255);
+  // 中を塗りつぶしても外へ漏れない。絵に青い印は入らない
+  await page.keyboard.press('f');
+  await page.mouse.click(400, 340);
+  assert.equal(await alpha(400, 340), 255);
+  assert.equal(await alpha(200, 200), 0);
+  assert.equal(await alpha(600, 400), 0);
+  const d = await readMain(page, 280, 280, 240, 190);
+  let b = 0;
+  for (let i = 0; i < d.length; i += 4) if (d[i + 2] > 200 && d[i] < 120 && d[i + 3] > 128) b++;
+  assert.equal(b, 0);
+  // 全部元に戻すと、消えた線の端には吸い付かない
+  for (let i = 0; i < 4; i++) await page.keyboard.press('Control+z');
+  await page.keyboard.press('l');
+  await drag(page, [[506, 305], [600, 400]], 5);
+  assert.equal(await alpha(500, 300), 0);
+  assert.equal(await alpha(506, 305), 255);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('Simple Preview（CP2）: 開発用でなくてもその他の最後に出て（T-101）、押すと絵と履歴はそのままで CP2 の表示になる（ペン ⇄ 消しゴム・文字〈電卓は入り〉・元に戻す・その他〈全消去・色・本家に戻す〉・閉じる〈中身は隠す〉）。本家に戻せ、サイトごとに覚える（T-088）', async () => {
   const bar = page => shadowEval(page, root => [...root.querySelector('.bar').children].filter(e => e.classList.contains('b'))
     .map(b => b.title.split(/[ （(]/)[0] + (b.classList.contains('on') ? '*' : '')));

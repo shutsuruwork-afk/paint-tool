@@ -1489,6 +1489,43 @@ test('Beta: 指でボタンを長押しすると名前が出て、離しても�
   await ps.close();
 });
 
+// T-182: 長押しで名前が出たら、指を滑らせると指の下のボタンの名前に変わる（ツールバーは動かない。ボタンでない所では消え、戻るとまた出る）。
+// v1.73.0 では動かすと名前が消え、ツールバーが動いた
+test('Beta: 長押しで名前が出たまま指を滑らせると、ほかのボタンの名前も見られる（ツールバーは動かず、離しても押されない）', async () => {
+  const page = await browser.newPage({ viewport: { width: 1000, height: 700 }, hasTouch: true });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(server.base + '/');
+  await runCode(page, withDefaults(CODE, {}));
+  const cdp = await page.context().newCDPSession(page);
+  const raf = () => page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const tch = async (type, x, y) => { await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] }); await raf(); };
+  const label = () => shadowEval(page, root => { const l = root.querySelector('.lb'); return l && l.isConnected ? l.textContent : null; });
+  const center = s => shadowEval(page, (root, s) => { const r = root.querySelector(s).getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }, s);
+  const barXY = () => shadowEval(page, root => { const r = root.querySelector('.bar').getBoundingClientRect(); return [r.x, r.y]; });
+  const b0 = await barXY();
+  const [ex, ey] = await center('.bar > [aria-label^="消しゴム"]');
+  const [tx, ty] = await center('.bar > [aria-label^="文字"]');
+  const [sx, sy] = await center('.bar > .sep');
+  await tch('touchStart', ex, ey);
+  await page.waitForTimeout(600);
+  assert.equal(await label(), '消しゴム');
+  await tch('touchMove', (ex + tx) / 2, ey);
+  await tch('touchMove', tx, ty);
+  assert.equal(await label(), '文字', 'slid to another button');
+  await tch('touchMove', sx, sy);
+  assert.equal(await label(), null, 'not a button');
+  await tch('touchMove', ex, ey);
+  assert.equal(await label(), '消しゴム', 'back again');
+  assert.deepEqual(await barXY(), b0, 'the toolbar does not move');
+  await tch('touchEnd');
+  await page.waitForTimeout(100);
+  assert.equal(await label(), null);
+  assert.equal(await toolOn(page), 'ペン (P)', 'not pressed');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 // T-178: 選んだ物の角・辺のつまみは、指なら枠の外側へ 18 px まで押せる（回すつまみと同じ。内側は 8 px のまま）。マウスは今まで通り 8 px。
 // v1.69.0 では指でもつまみの外 8 px を超えると枠の外になり、拡大縮小できずに選択が外れた
 test('指は角のつまみの外側 18 px までで拡大縮小できる（マウスは 8 px）。小さな物でも中を押せば動かせる', async () => {

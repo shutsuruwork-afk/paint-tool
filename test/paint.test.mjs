@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  CODE, BOOKMARKLET, startServer, launch, openPage, runBookmarklet, shadowEval, readMain, alphaStats, drag, click, toolOn,
+  CODE, BOOKMARKLET, RAW_BOOKMARKLET, startServer, launch, openPage, runBookmarklet, shadowEval, readMain, alphaStats, drag, click, toolOn,
   screenPixel, scrollTo, withDefaults, runCode, clearAll,
 } from './helpers.mjs';
 
@@ -1499,7 +1499,7 @@ test('インストールページの「Paint」ボタンの中身が、そのま
   const m = html.match(/id="bm" class="bm" href="([^"]*)"/);
   assert.ok(m);
   const href = m[1].replace(/&lt;/g, '<').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
-  assert.equal(href, BOOKMARKLET);
+  assert.equal(href, RAW_BOOKMARKLET);
   assert.equal(decodeURIComponent(href.slice(11)), CODE.trim());
 });
 
@@ -1588,7 +1588,7 @@ test('その他の「デフォルトの変更」で、今のブックマーク�
   const [url, target, feat] = opened[0];
   const head = 'https://shutsuruwork-afk.github.io/paint-tool/#defaults=';
   assert.ok(url.startsWith(head), url);
-  assert.deepEqual(JSON.parse(decodeURIComponent(url.slice(head.length))), d);
+  assert.deepEqual(JSON.parse(decodeURIComponent(url.slice(head.length))), { ui: 'main', ...d }); // テストは Beta を既定に埋め込む（helpers.mjs）
   assert.equal(target, '_blank');
   assert.match(feat, /noopener/);
   assert.equal(await openPanels(page), 0);
@@ -2768,22 +2768,30 @@ test('= にカーソルを合わせると、書いてある答えが今の式と
   }
 });
 
-test('Simple Preview（CP2）: 開発用でなくてもその他の最後に出て（T-101）、押すと絵と履歴はそのままで CP2 の表示になる（ペン ⇄ 消しゴム・文字〈電卓は入り〉・元に戻す・その他〈全消去・色・本家に戻す〉・閉じる〈中身は隠す〉）。本家に戻せ、サイトごとに覚える（T-088）', async () => {
+test('表示の版: 組み込みの既定は Simple（T-174）。Beta のその他の最後の「Simple」で、絵と履歴はそのままで Simple の表示になる（ペン ⇄ 消しゴム・文字〈電卓は入り〉・元に戻す・その他〈全消去・色・Beta〉・閉じる〈中身は隠す〉）。「Beta」で戻せ、サイトごとに覚える（T-088）', async () => {
   const bar = page => shadowEval(page, root => [...root.querySelector('.bar').children].filter(e => e.classList.contains('b'))
     .map(b => b.title.split(/[ （(]/)[0] + (b.classList.contains('on') ? '*' : '')));
   const menu = page => shadowEval(page, root => [...root.querySelector('[title^="全消去"]').parentElement.children]
     .map(e => e.classList.contains('mi') ? e.querySelector('span').textContent : e.querySelectorAll('.c').length + ' 色'));
   const toast = page => shadowEval(page, root => { const t = root.querySelector('.t'); return t.classList.contains('on') ? t.textContent : ''; });
   const MAIN = ['選択', 'ペン*', '蛍光ペン', '消しゴム', '直線', '文字', '塗りつぶし', '色・太さ・濃さ', '元に戻す', 'やり直す', 'ページ操作モード', 'その他', '隠す', '閉じる'];
+  // そのままのブックマークレット（インストールページで何も選ばない）は Simple で始まる（T-174）
+  const { page: pr, errors: er } = await openPage(browser, server.base + '/');
+  await runBookmarklet(pr, RAW_BOOKMARKLET);
+  assert.deepEqual(await bar(pr), ['ペン*', '文字', '元に戻す', 'その他', '閉じる']);
+  assert.deepEqual(await menu(pr), ['全消去', '8 色', 'Beta']);
+  assert.equal((await prefs(pr)).ui, 'cp2');
+  assert.deepEqual(er, []);
+  await pr.close();
   // 開発用でなくても、その他の最後に出る（T-101）。開発用なら開発用の項目の後
   const { page: p0 } = await openPage(browser, server.base + '/');
   await runCode(p0, withDefaults(CODE, { dev: true }));
-  assert.equal((await menu(p0)).at(-1), 'Simple Preview');
+  assert.equal((await menu(p0)).at(-1), 'Simple');
   await p0.close();
   const { page, errors } = await openPage(browser, server.base + '/'); // 本家の電卓は切り（既定は入り。T-161）
   await runCode(page, withDefaults(CODE, { calc: false }));
   assert.deepEqual(await bar(page), MAIN);
-  assert.equal((await menu(page)).at(-1), 'Simple Preview');
+  assert.equal((await menu(page)).at(-1), 'Simple');
   await drag(page, [[100, 300], [400, 320]], 10);
   const sum = await checksum(page);
   // 切り替える: 絵と履歴はそのまま。お知らせは出さない（T-103）。CP2 にない道具（塗りつぶし）を選んでいたらペンになる（T-089）
@@ -2813,7 +2821,7 @@ test('Simple Preview（CP2）: 開発用でなくてもその他の最後に出�
   // その他: 全消去・8 色・本家に戻す。色を選ぶとメニューは閉じ、消しゴムのときはペンに戻る
   await mouseClick(page, '.bar > [aria-label^="ペン"]');
   await mouseClick(page, '.bar > [aria-label^="その他"]');
-  assert.deepEqual(await menu(page), ['全消去', '8 色', '本家に戻す']);
+  assert.deepEqual(await menu(page), ['全消去', '8 色', 'Beta']);
   await mouseClick(page, '.pn.on [title="色 7"]');
   assert.deepEqual([(await prefs(page)).color, (await prefs(page)).tool], ['#1e88e5', 'pen']);
   assert.equal(await shadowEval(page, root => !!root.querySelector('.pn.on')), false);
@@ -2842,43 +2850,44 @@ test('Simple Preview（CP2）: 開発用でなくてもその他の最後に出�
   assert.deepEqual(await bar(page), ['ペン*', '文字', '元に戻す', 'その他', '閉じる']);
   assert.equal(await toast(page), '');
   // 本家に戻す: 本家の表示とメニューに戻り、覚えた分も消える
-  await click(page, '[title^="本家に戻す"]');
+  await click(page, '[title="Beta"]');
   assert.deepEqual(await bar(page), MAIN);
   assert.equal(await toast(page), '');
-  assert.equal((await menu(page)).at(-1), 'Simple Preview');
+  assert.equal((await menu(page)).at(-1), 'Simple');
   // CP2 にもある道具（消しゴム・文字）は、切り替えてもそのまま
   for (const [key, want] of [['e', '消しゴム*'], ['t', 'ペン']]) {
     await page.keyboard.press(key);
     await click(page, '[title^="Simple"]');
     assert.equal((await bar(page))[0], want, key);
     if (key === 't') assert.equal((await bar(page))[1], '文字*');
-    await click(page, '[title^="本家に戻す"]');
+    await click(page, '[title="Beta"]');
   }
   await page.waitForTimeout(500);
   assert.equal(JSON.parse(await lsGet(page) || '{}').ui, undefined);
   assert.deepEqual(errors, []);
   await page.close();
-  // インストールページで最初の版を CP2 にすると CP2 で始まり、本家に戻せる（本家のその他から、また Simple Preview にできる）
+  // 最初の版を Simple にすると Simple で始まり、Beta にできる（Beta のその他から、また Simple にできる）
   const { page: p1, errors: e1 } = await openPage(browser, server.base + '/');
   await runCode(p1, withDefaults(CODE, { ui: 'cp2' }));
   assert.deepEqual(await bar(p1), ['ペン*', '文字', '元に戻す', 'その他', '閉じる']);
-  assert.deepEqual(await menu(p1), ['全消去', '8 色', '本家に戻す']);
-  await click(p1, '[title^="本家に戻す"]');
+  assert.deepEqual(await menu(p1), ['全消去', '8 色', 'Beta']);
+  await click(p1, '[title="Beta"]');
   assert.deepEqual(await bar(p1), MAIN);
-  assert.equal((await menu(p1)).at(-1), 'Simple Preview');
+  assert.equal((await menu(p1)).at(-1), 'Simple');
   assert.deepEqual(e1, []);
   await p1.close();
-  // インストールページ: 最初の版を選ぶと、ボタンの名前と中身が変わる
+  // インストールページ: 既定は Simple（ボタンは Paint）。Beta を選ぶと、ボタンの名前と中身が変わる（T-174）
   const { page: ip, errors: ie } = await openPage(browser, server.base + '/install');
   assert.equal((await ip.textContent('#bm')).trim(), 'Paint');
-  assert.ok(await ip.isChecked('#p-ui input[value="main"]'));
+  assert.ok(await ip.isChecked('#p-ui input[value="cp2"]'));
+  assert.deepEqual(await ip.evaluate(() => [...document.querySelectorAll('#p-ui label')].map(l => l.textContent)), ['Simple', 'Beta']);
   // 開発用の節ではなく、ふつうの設定の「最初に出す版」にある（T-101）
   assert.equal(await ip.evaluate(() => document.querySelector('#p-ui').closest('fieldset').querySelector('legend').textContent), '版');
-  await ip.check('#p-ui input[value="cp2"]');
-  assert.equal((await ip.textContent('#bm')).trim(), 'Paint Simple');
-  assert.ok(decodeURIComponent(await ip.getAttribute('#bm', 'href')).includes('{\\"ui\\":\\"cp2\\"}'));
+  await ip.check('#p-ui input[value="main"]');
+  assert.equal((await ip.textContent('#bm')).trim(), 'Paint Beta');
+  assert.ok(decodeURIComponent(await ip.getAttribute('#bm', 'href')).includes('{\\"ui\\":\\"main\\"}'));
   await ip.click('#try');
-  assert.equal(await ip.evaluate(() => window.__paintBookmarklet.stats().prefs.ui), 'cp2');
+  assert.equal(await ip.evaluate(() => window.__paintBookmarklet.stats().prefs.ui), 'main');
   assert.deepEqual(ie, []);
   await ip.close();
 });
@@ -2918,7 +2927,7 @@ test('Simple のペンはいつも太さ 5・濃さ 100%・普通のペン。本
   await page.waitForTimeout(500);
   assert.equal(JSON.parse(await lsGet(page)).size, undefined);
   // 本家に戻すと筆・12（太さは普通のペンに戻してから測る）
-  await click(page, '[title^="本家に戻す"]');
+  await click(page, '[title="Beta"]');
   assert.match(await penB(), /^筆/);
   await click(page, '[title^="ペン (P)"]');
   n = await line(380);
@@ -2999,7 +3008,7 @@ test('（お試し）Simple でペンを選んでいるとき、ペンボタン�
   await page.keyboard.press('p');
   assert.equal((await chip()).bg, 'rgb(30, 136, 229)');
   // 本家では選んでいるペンも青い地
-  await click(page, '[title^="本家に戻す"]');
+  await click(page, '[title="Beta"]');
   const mainPen = await shadowEval(page, root => getComputedStyle(root.querySelector('.bar [aria-label^="ペン"]')).backgroundColor);
   assert.equal(mainPen, BLUE);
   assert.deepEqual(errors, []);
@@ -3212,7 +3221,7 @@ test('スマホの 2 本指: 本家でも Simple でも、2 本指で動かす�
   await page.waitForTimeout(100);
   assert.deepEqual([(await state()).y, (await state()).history], [y, h0 + 1]);
   // Simple でも同じ
-  await click(page, '[title^="Simple Preview"]');
+  await click(page, '[title="Simple"]');
   await twoFingers();
   y += 200;
   assert.deepEqual([(await state()).y, (await state()).history], [y, h0 + 1]);

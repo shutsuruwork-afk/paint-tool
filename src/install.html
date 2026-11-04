@@ -181,8 +181,8 @@ details > .row:first-of-type, details > .check:first-of-type { border-top-color:
       <fieldset class="row">
         <legend>版</legend>
         <div class="choices" id="p-ui" role="radiogroup" aria-label="最初に出す版">
-          <label><input type="radio" name="ui" value="main">本家</label>
-          <label><input type="radio" name="ui" value="cp2">Simple Preview</label>
+          <label><input type="radio" name="ui" value="cp2">Simple</label>
+          <label><input type="radio" name="ui" value="main">Beta</label>
         </div>
       </fieldset>
       <label class="check">ガラス<input type="checkbox" role="switch" id="p-glass"></label>
@@ -244,7 +244,7 @@ function runPaint() {%%INLINE_CODE%%}
   // ---- デフォルトの設定: 選んだ既定をブックマークレットのコードに埋め込む ----
   // 組み込みの既定（src/paint.js の PALETTE と CFG に合わせる。テストで一致を確かめている）
   const PALETTE = ['#111111', '#ffffff', '#e53935', '#fb8c00', '#fdd835', '#43a047', '#1e88e5', '#8e24aa'];
-  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 4, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: true, pickOnce: false, keepPanels: false, glass: true, theme: 'light', blurMode: 'gauss', blur: 18, tint: 80, sat: 200, dev: false, ui: 'main', ppred: 'own', plen: 0.75 };
+  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 4, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: true, pickOnce: false, keepPanels: false, glass: true, theme: 'light', blurMode: 'gauss', blur: 18, tint: 80, sat: 200, dev: false, ui: 'cp2', ppred: 'own', plen: 0.75 };
   const BASE = bm.getAttribute('href'); // 既定の入っていないブックマークレット
   const KEY = 'paint-defaults';
   const $ = id => document.getElementById(id);
@@ -329,7 +329,7 @@ function runPaint() {%%INLINE_CODE%%}
     $('p-gdev').classList.toggle('off', !cur.glass);
     const o = diff(cur);
     bm.setAttribute('href', hrefFor(o));
-    bm.lastChild.textContent = cur.ui === 'cp2' ? 'Paint Simple' : 'Paint'; // ブックマークの名前で版が分かるように
+    bm.lastChild.textContent = cur.ui === 'main' ? 'Paint Beta' : 'Paint'; // ブックマークの名前で版が分かるように（既定の Simple は Paint のまま。T-174）
   }
   // 保存も既定との差分だけにする（あとで組み込みの既定を変えたとき、触っていない所には新しい既定が効く）
   function update() {

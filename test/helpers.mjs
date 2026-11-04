@@ -3,7 +3,13 @@ import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 
 export const CODE = readFileSync(new URL('../dist/paint.min.js', import.meta.url), 'utf8');
-export const BOOKMARKLET = readFileSync(new URL('../dist/bookmarklet.txt', import.meta.url), 'utf8').trim();
+// ビルドしたそのままのブックマークレット（組み込みの既定は Simple。T-174）
+export const RAW_BOOKMARKLET = readFileSync(new URL('../dist/bookmarklet.txt', import.meta.url), 'utf8').trim();
+// テストの多くは Beta（全部の道具を並べた版。前の本家）を確かめるので、既定に ui: 'main' を埋め込む（インストールページで Beta を選んだのと同じ）。
+// Simple を確かめるときは withDefaults で ui: 'cp2' を渡し、組み込みの既定そのものを確かめるときは RAW_BOOKMARKLET を使う
+const MARK = /(["'])__PAINT_DEFAULTS__\1/;
+const TEST_DEF = { ui: 'main' };
+export const BOOKMARKLET = RAW_BOOKMARKLET.replace(MARK, () => JSON.stringify(JSON.stringify(TEST_DEF)).replace(/[%#\s"]/g, ch => encodeURIComponent(ch)));
 
 const PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>test</title></head>
 <body style="margin:0;font:16px sans-serif"><h1>Sample</h1><p>${'Lorem ipsum dolor sit amet. '.repeat(30)}</p>
@@ -43,17 +49,18 @@ export async function openPage(browser, url, viewport = { width: 1000, height: 7
 }
 
 // 実際のブックマークレットと同じく javascript: URL へのナビゲーションで実行する
-export async function runBookmarklet(page) {
+export async function runBookmarklet(page, url = BOOKMARKLET) {
   const had = await page.evaluate(() => !!window.__paintBookmarklet);
-  await page.evaluate(u => { location.href = u; }, BOOKMARKLET);
+  await page.evaluate(u => { location.href = u; }, url);
   if (!had) await page.waitForFunction(() => !!window.__paintBookmarklet);
   else await page.waitForTimeout(50);
 }
 
 // インストールページと同じように、既定（JSON）を埋め込んだコードを作る
-export const withDefaults = (code, d) => code.replace(/(["'])__PAINT_DEFAULTS__\1/, () => JSON.stringify(JSON.stringify(d)));
+export const withDefaults = (code, d) => code.replace(MARK, () => JSON.stringify(JSON.stringify({ ...TEST_DEF, ...d })));
 // コードを直接実行して起動する（CSP を通さない。既定を埋め込んだ版を試すとき用）
 export async function runCode(page, code) {
+  if (MARK.test(code)) code = withDefaults(code, {}); // 既定を埋め込んでいなければ Beta で起動する
   await page.evaluate(c => (0, eval)(c), code);
   await page.waitForFunction(() => !!window.__paintBookmarklet);
 }

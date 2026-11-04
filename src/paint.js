@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.65.0';
+  const VERSION = '1.66.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -307,13 +307,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   const pickOnce = DEF.pickOnce === true;
   // ツールバーを引いて動かしても閉じないパネル: 色と太さ・見た目（開発用）はいつも。keepPanels（インストールページ）ならすべて（T-066・T-068）
   const keepPanels = DEF.keepPanels === true;
-  // 表示の版（T-088）: 本家と CP2（シンプル版のチェックポイント 2。research/simple-cp2 から移した。お試し〈Preview〉。画面では「Simple Preview」と呼ぶ。T-090・T-101）。切り替えても絵と履歴はそのままで、
+  // 表示の版（T-088）: Simple と Beta。Simple はコードでは cp2（シンプル版のチェックポイント 2。research/simple-cp2 から移した）で、普通に使うときの既定（T-174。ユーザーの領分）。
+  // Beta はコードでは main（前の「本家」）で、全部の道具を並べた版（Claude が新しい物を作って見せる場所。T-174）。切り替えても絵と履歴はそのままで、
   // ツールバーに出す物といくつかの動きだけが変わる（layout）。CP2 は、バーにペン（押すたびに消しゴムと入れ替わる）・文字・元に戻す・その他（全消去・色）・
   // 閉じる（× の見た目で、中身は隠す）だけ。押せるボタンのないお知らせは出さず、電卓はいつも入り、ページ操作モードはない（2 本指のスクロールは本家にも入れた。T-104）。
-  // ほかの道具はキーで使える。本家のその他からいつでも CP2 を試せる（T-101 で開発用だけでなくした。CP2 のその他からは、いつでも本家に戻せる）。
+  // ほかの道具はキーで使える。どちらの版のその他からも、いつでももう一方に切り替えられる（その他の最後の「Beta」「Simple」）。
   // 最初の版はインストールページ（DEF.ui）で選び、切り替えるとサイトごとに覚える
   const UIS = ['main', 'cp2'], CP2_TOOLS = ['pen', 'eraser', 'text'];
-  let cp2 = false;
+  let cp2 = true; // 組み込みの既定は Simple（T-174）
   // Simple のペンはいつも太さ 5・濃さ 100%・普通のペン（T-091・T-093・T-097。本家の設定には影響されない）。Simple の間は本家の [太さ, 濃さ, 種類] を mainPen に預かる（null = 預かっていない）。
   // Simple の中でキー（[ ]）で変えた太さは覚えない。サイトに覚えるのは本家の値だけ（snapPrefs）
   const SIMPLE_PEN = 5;
@@ -668,10 +669,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     [hudB] = item('計測表示（開発用）', 'D', I.prefs, toggleHud, true, true);
   }
   const hideB = btn('隠す (Esc)', I.hide, hideHint);
-  // ここまでが本家のその他。CP2 のその他は、全消去・色（選ぶとメニューを閉じ、消しゴムのときはペンに戻す）・本家に戻す
+  // ここまでが Beta のその他。Simple のその他は、全消去・色（選ぶとメニューを閉じ、消しゴムのときはペンに戻す）・Beta
   const mainMore = [...moreP.children];
-  const [cp2Mi] = item('Simple Preview', '', I.swap, () => setUi(true));
-  const [mainMi] = item('本家に戻す', '', I.swap, () => setUi(false));
+  const [cp2Mi] = item('Simple', '', I.swap, () => setUi(true));
+  const [mainMi] = item('Beta', '', I.swap, () => setUi(false));
   const mcBtns = PALETTE.map((c, i) => {
     const b = btn(`色 ${i + 1}`, null, () => { setColor(c); if (tool === 'eraser') setTool('pen'); closePanel(); }, 'c');
     b.style.setProperty('--c', c);

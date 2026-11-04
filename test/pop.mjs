@@ -2,7 +2,7 @@
 // 入力ごとに見えている画素（live と pred を重ねた濃さ × まとめた要素の opacity が 4 を超える所）を取り、前の入力で見えていて次の入力で消えた画素を数える（一度描いた所は消えないのが理想）。
 // あわせて、16 ms・33 ms 後のペン先から線までの隙間（予測で埋めたい遅れ）を測る。
 // 合成のイベントに 8 ms 刻みの timeStamp を与える（計測にかかる時間で速さが狂わないように）。座標は整数、時間は ±1.5 ms ぶらす
-import { CODE, startServer, launch } from './helpers.mjs';
+import { CODE, startServer, launch, withDefaults } from './helpers.mjs';
 
 const { srv, base } = await startServer();
 const browser = await launch();
@@ -69,7 +69,7 @@ await page.goto(base + '/');
       out[name] = [lost / n, g16 / n, g33 / n];
     }
     return out;
-  }, CODE);
+  }, withDefaults(CODE, {})); // Beta で測る（T-174）
   console.log('\n■ 蛍光ペン（太さ 24px、1x）');
   console.log('  経路（速さ）           消える画素/入力  16 ms 後の隙間  33 ms 後の隙間');
   for (const [k, [l, a, b]] of Object.entries(r)) console.log(`  ${k}  ${l.toFixed(1).padStart(12)}  ${a.toFixed(1).padStart(11)} px  ${b.toFixed(1).padStart(11)} px`);

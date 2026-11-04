@@ -1,7 +1,7 @@
 // 性能計測。入力遅延に効くのは「メインスレッドを塞ぐ時間」なので、それを測る
 // （Chrome の Canvas 2D は描画命令を記録するだけで、ラスタライズは GPU プロセスで非同期に行われる）。
 // 比較対象として「毎イベントでパス全体を描き直す」素朴な実装も同じ入力で測る。
-import { CODE, startServer, launch } from './helpers.mjs';
+import { CODE, startServer, launch, withDefaults } from './helpers.mjs';
 
 const N = Number(process.env.N || 3000);
 const { srv, base } = await startServer();
@@ -96,7 +96,7 @@ for (const dpr of [1, 2]) {
     pad.dispatchEvent(ev('pointerdown', [5, 5], { pointerType: 'mouse', pointerId: 1 }));
     const fill = performance.now() - t;
     return { init, strokes, naive, fill, w: main.width, h: main.height };
-  }, [CODE, N]);
+  }, [withDefaults(CODE, {}), N]); // Beta で測る（前の数と比べられるように。T-174）
   results.push({ dpr, ...r });
   await page.close();
 }

@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.56.0';
+  const VERSION = '1.57.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -1462,6 +1462,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // タッチの塗りつぶしと文字は離したときに行う（tapId）ので、2 本指になったら取り消すだけでよい。1 本のときの仕事は、ポインタの番号の比較と座標の代入だけ
   let tI0 = -1, tX0 = 0, tY0 = 0, tI1 = -1, tX1 = 0, tY1 = 0, scr = 0, scrX = 0, scrY = 0; // scr: 1 = スクロール中、2 = 片方を離した（残りを離すまで描かない）
   const KEEP_MS = 150, KEEP_PX = 16; // これ以上描いてから 2 本目が来たら、線を残す（T-109）
+  // 2 本指のタップで元に戻す（T-165）: 2 本をほぼ同時に（KEEP_MS 以内）置き、どちらも TAP_PX 未満の動きで TAP_MS 以内に離したら。
+  // tD0 は 1 本目を置いた時刻、tSX* / tSY* は置いた所、tTap はまだタップでありうるか、tFl は 1 本目が慣性を止めた指か
+  const TAP_PX = 10, TAP_MS = 400;
+  let tD0 = 0, tSX0 = 0, tSY0 = 0, tSX1 = 0, tSY1 = 0, tTap = false, tFl = false;
   let sDown = 0; // 線を押した時刻
   // スクロールの目標は「置いたときのスクロール位置（sbX, sbY）＋ 置いたときの中点（scrX, scrY）からの指の動き」で、1 フレームに 1 回だけ scrollTo する（T-108）。
   // 前の中点からの差を指の動きのたびに scrollBy すると、指 1 本の動きで中点は半分しか動かず端数が出て、iOS が整数に丸めるので 1px と 2px が交互に進んで震え、
@@ -1540,16 +1544,17 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     // パームリジェクション（onDown と同じ）: ペンで描いている間と、ペンを離した・近づけてから 500 ms のタッチは手のひらとみなし、スクロールにも使わない
     if ((act !== -1 && aType === 'pen') || e.timeStamp - lastPen < 500) return;
     const id = e.pointerId;
-    if (e.isPrimary) { tI0 = tI1 = -1; scr = 0; } // 新しいタッチの始まり（離したことを取りこぼしていても数え直す）
-    if (tI0 === -1) { tI0 = id; tX0 = vpX(e); tY0 = vpY(e); }
-    else if (tI1 === -1) { tI1 = id; tX1 = vpX(e); tY1 = vpY(e); }
-    else { if (scr) { e.preventDefault(); e.stopImmediatePropagation(); } return; } // スクロールの間の 3 本目以降の指では描かない
-    if (flung && !scr && tI1 === -1) scr = 2; // 滑っているのを止めた指は、離すまで描かない
+    if (e.isPrimary) { tI0 = tI1 = -1; scr = 0; tTap = tFl = false; } // 新しいタッチの始まり（離したことを取りこぼしていても数え直す）
+    if (tI0 === -1) { tI0 = id; tSX0 = tX0 = vpX(e); tSY0 = tY0 = vpY(e); tD0 = e.timeStamp; }
+    else if (tI1 === -1) { tI1 = id; tSX1 = tX1 = vpX(e); tSY1 = tY1 = vpY(e); }
+    else { tTap = false; if (scr) { e.preventDefault(); e.stopImmediatePropagation(); } return; } // スクロールの間の 3 本目以降の指では描かない
+    if (flung && !scr && tI1 === -1) { scr = 2; tFl = true; } // 滑っているのを止めた指は、離すまで描かない
     if (tI0 === -1 || tI1 === -1) { if (!scr) return; }
     else if (act === -1 || aType === 'touch') {
       // 描いていた線（押してから KEEP_MS 以上・大きさ KEEP_PX 以上）は確定して残し、スクロールに移る。置いてすぐの指はスクロールのつもりなので消す（T-109）
       if (act !== -1) mode === 1 && e.timeStamp - sDown >= KEEP_MS && max(x1 - x0, y1 - y0) >= KEEP_PX * dpr ? endStroke() : abortStroke();
       tapId = -1;
+      tTap = !tFl && e.timeStamp - tD0 < KEEP_MS;
       scr = 1; scrX = (tX0 + tX1) / 2; scrY = (tY0 + tY1) / 2; sbX = win.scrollX; sbY = win.scrollY; sLk = 0;
       kN = 0; kPush(e.timeStamp, scrX, scrY);
       for (const i of [tI0, tI1]) try { pad.setPointerCapture(i); } catch (_) { }
@@ -1559,8 +1564,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   function twoMove(e) {
     const id = e.pointerId;
-    if (id === tI0) { tX0 = vpX(e); tY0 = vpY(e); }
-    else if (id === tI1) { tX1 = vpX(e); tY1 = vpY(e); }
+    if (id === tI0) { tX0 = vpX(e); tY0 = vpY(e); if (tTap && hypot(tX0 - tSX0, tY0 - tSY0) >= TAP_PX) tTap = false; }
+    else if (id === tI1) { tX1 = vpX(e); tY1 = vpY(e); if (tTap && hypot(tX1 - tSX1, tY1 - tSY1) >= TAP_PX) tTap = false; }
     else return;
     if (!scr) return;
     e.stopImmediatePropagation();
@@ -1580,6 +1585,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     e.stopImmediatePropagation();
     if (scr === 1 && e.type === 'pointerup') flingStart(e.timeStamp); // 1 本目を離したところで滑らせる
     scr = tI0 === -1 && tI1 === -1 ? 0 : 2;
+    if (e.type !== 'pointerup' || e.timeStamp - tD0 >= TAP_MS) tTap = false;
+    if (tTap && !scr) { tTap = false; undo(); } // 2 本指のタップ: 元に戻す（T-165）
   }
   const TWO = [['pointerdown', twoDown], ['pointermove', twoMove], ['pointerup', twoUp], ['pointercancel', twoUp]];
 
@@ -3988,7 +3995,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       ["{Alt}", "図形を中心から描く"]
     ]],
     ["編集", [
-      ["{Ctrl}+{Z}", "元に戻す"],
+      ["{Ctrl}+{Z}", "元に戻す（2 本指のタップでも）"],
       ["{Ctrl}+{Y}", "やり直す（{Ctrl}+{Shift}+{Z} でも）"],
       ["{Ctrl}+{C} {X} {V}", "選んだ物のコピー・切り取り・貼り付け"],
       ["{Alt}+引く", "選んだ物を複製して動かす"],

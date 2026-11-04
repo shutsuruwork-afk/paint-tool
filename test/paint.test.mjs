@@ -2918,6 +2918,60 @@ test('文字を入力中に、その上にパネルを開くと、パネルが�
   await page.close();
 });
 
+test('2 本指のタップで元に戻す。動かしたとき・長く置いたとき・3 本目が来たときは元に戻さない。1 本目の点は残らない（T-165）', async () => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 700 }, isMobile: true, hasTouch: true });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(server.base + '/long');
+  await runCode(page, CODE);
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], id) => ({ x, y, id })) });
+  const ink = y => alphaStats(page, 90, y - 6, 180, 12).then(r => r.count > 0);
+  const line = async y => { await touch('touchStart', [[100, y]]); for (let i = 1; i <= 8; i++) await touch('touchMove', [[100 + i * 20, y]]); await touch('touchEnd', []); await page.waitForTimeout(50); };
+  for (const y of [300, 360, 420]) await line(y);
+  assert.deepEqual([await ink(300), await ink(360), await ink(420)], [true, true, true]);
+  // タップ: 置いてすぐ離す
+  await touch('touchStart', [[150, 500]]);
+  await touch('touchStart', [[150, 500], [230, 510]]);
+  await touch('touchEnd', [[150, 500]]);
+  await touch('touchEnd', []);
+  await page.waitForTimeout(50);
+  assert.deepEqual([await ink(300), await ink(360), await ink(420)], [true, true, false]);
+  assert.equal((await alphaStats(page, 140, 490, 20, 20)).count, 0, '1 本目の点は残らない');
+  // 少しのぶれ（5px）はタップのまま
+  await touch('touchStart', [[150, 500]]);
+  await touch('touchStart', [[150, 500], [230, 510]]);
+  await touch('touchMove', [[154, 503], [233, 512]]);
+  await touch('touchEnd', [[154, 503]]);
+  await touch('touchEnd', []);
+  await page.waitForTimeout(50);
+  assert.deepEqual([await ink(300), await ink(360)], [true, false]);
+  // 動かした（スクロール）・長く置いた・3 本目が来た は元に戻さない
+  await touch('touchStart', [[150, 500]]);
+  await touch('touchStart', [[150, 500], [230, 510]]);
+  await touch('touchMove', [[150, 470], [230, 480]]);
+  await page.waitForTimeout(150);
+  await touch('touchEnd', [[150, 470]]);
+  await touch('touchEnd', []);
+  await touch('touchStart', [[150, 500]]);
+  await touch('touchStart', [[150, 500], [230, 510]]);
+  await page.waitForTimeout(500);
+  await touch('touchEnd', [[150, 500]]);
+  await touch('touchEnd', []);
+  await touch('touchStart', [[150, 500]]);
+  await touch('touchStart', [[150, 500], [230, 510]]);
+  await touch('touchStart', [[150, 500], [230, 510], [300, 520]]);
+  await touch('touchEnd', [[150, 500], [230, 510]]);
+  await touch('touchEnd', [[150, 500]]);
+  await touch('touchEnd', []);
+  await page.waitForTimeout(50);
+  const sy = await page.evaluate(() => scrollY);
+  assert.ok(sy > 0, 'スクロールした');
+  assert.equal(await ink(300 - sy), true);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('スマホの 2 本指: 本家でも Simple でも、2 本指で動かすとページがスクロールし、1 本目で始めた線・選択・塗りつぶし・文字は残らない。1 本指では今まで通り描け、タッチの塗りつぶしと文字は離したときに行う（T-088・T-104）', async () => {
   const page = await browser.newPage({ viewport: { width: 390, height: 700 }, isMobile: true, hasTouch: true });
   const errors = [];

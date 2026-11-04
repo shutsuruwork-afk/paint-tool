@@ -39,7 +39,7 @@
 | `F` / `I` | 塗りつぶし / スポイト（EyeDropper 対応ブラウザでは画面のどこからでも。ないブラウザ〈iPhone など〉では、次に押した所の描いた絵と文字から色を拾う） |
 | `1`〜`8` | 色 |
 | `[` / `]` | 太さ |
-| `Ctrl`+`Z` / `Ctrl`+`Shift`+`Z`・`Ctrl`+`Y` | 元に戻す / やり直す（Mac は `⌘` も可） |
+| `Ctrl`+`Z` / `Ctrl`+`Shift`+`Z`・`Ctrl`+`Y` | 元に戻す / やり直す（Mac は `⌘` も可。スマホ・タブレットは 2 本指のタップで元に戻す） |
 | `Delete` | 全消去（元に戻せます。消す物がなければ何もしません） |
 | `B` | 背景を透明・白・黒に切り替え |
 | `V` | ページ操作モード（絵を残したままページをクリック・入力できる。ツールを選ぶと描画に戻る） |
@@ -184,7 +184,7 @@
 ```sh
 npm install
 npm run build   # src/paint.js → dist/paint.min.js, dist/bookmarklet.txt, docs/index.html
-npm test        # Playwright（Chromium）で 127 項目の動作テスト
+npm test        # Playwright（Chromium）で 128 項目の動作テスト
 npm run bench   # 性能計測
 npm run pop     # 蛍光ペンの先端の「ぴょこぴょこ」（消える画素）と隙間の計測
 npm run predict -- paint-input-*.json  # 録った入力で、予測の方法（なし・ブラウザ・曲がりに沿う・直線）ごとの、1 フレーム後のペン先とのずれ・外れた予測・消える線の長さを比べる。負荷の様子（フレームの間隔・入力が届くまでの遅れ・予測線の点滅）も出す

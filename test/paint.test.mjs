@@ -2354,6 +2354,45 @@ test('電卓の答えの形: くり返す小数は循環小数の印、√・π 
   await page.close();
 });
 
+test('= にカーソルを合わせると、書いてある答えが今の式と違えば「 → 新しい答え」を出し、Tab（iPhone はスペース）で入れ替える（代入の = では出さない）（T-159）', async () => {
+  const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+  for (const ua of [null, IPHONE]) {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 700 }, ...(ua ? { userAgent: ua } : {}) });
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.goto(server.base + '/');
+    await runCode(page, withDefaults(CODE, { calc: true }));
+    await page.keyboard.press('t');
+    await page.mouse.click(200, 300);
+    const look = () => shadowEval(page, root => { const g = root.querySelector('.gh'); return [g ? g.textContent : null, root.querySelector('textarea:not([aria-hidden])').value]; });
+    // 最後の行に text を入れ、行の頭から k 文字目にカーソルを置く
+    const put = async (text, k) => {
+      await page.keyboard.press('Control+a');
+      await page.keyboard.press('Backspace');
+      await page.keyboard.insertText(text);
+      await page.keyboard.press('Home');
+      for (let i = 0; i < k; i++) await page.keyboard.press('ArrowRight');
+      return look();
+    };
+    const accept = () => (ua ? page.keyboard.insertText(' ') : page.keyboard.press('Tab'));
+    assert.deepEqual(await put('13*3=36', 5), [' → 39', '13*3=36']); // = の後ろ
+    await accept();
+    assert.deepEqual(await look(), [null, '13*3=39']);
+    assert.deepEqual(await put('13*3=36', 4), [' → 39', '13*3=36']); // = の前
+    assert.deepEqual(await put('13 * 3 = 36', 8), [' → 39', '13 * 3 = 36']);
+    await accept();
+    assert.deepEqual(await look(), [null, '13 * 3 = 39']);
+    assert.deepEqual(await put('12*3=36', 5), [null, '12*3=36']); // 答えが合っていれば出さない
+    assert.deepEqual(await put('13*3=36', 2), [null, '13*3=36']); // = から離れていれば出さない
+    assert.deepEqual(await put('r = 2\n2r=8', 3), [' → 4', 'r = 2\n2r=8']); // 上の行の変数も使う
+    await accept();
+    assert.deepEqual(await look(), [null, 'r = 2\n2r=4']);
+    assert.deepEqual(await put('r = 3\nr = 5', 3), [null, 'r = 3\nr = 5']); // 代入の = では出さない
+    assert.deepEqual(errors, []);
+    await page.close();
+  }
+});
+
 test('Simple Preview（CP2）: 開発用でなくてもその他の最後に出て（T-101）、押すと絵と履歴はそのままで CP2 の表示になる（ペン ⇄ 消しゴム・文字〈電卓は入り〉・元に戻す・その他〈全消去・色・本家に戻す〉・閉じる〈中身は隠す〉）。本家に戻せ、サイトごとに覚える（T-088）', async () => {
   const bar = page => shadowEval(page, root => [...root.querySelector('.bar').children].filter(e => e.classList.contains('b'))
     .map(b => b.title.split(/[ （(]/)[0] + (b.classList.contains('on') ? '*' : '')));

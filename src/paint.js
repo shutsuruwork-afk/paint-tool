@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.49.0';
+  const VERSION = '1.50.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -2928,7 +2928,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     // iPhone・iPad には Tab がないので、薄い答えの出ている行の終わりで打ったスペース 1 回で書き込む（T-154、ユーザーの要望。
     // iPhone のキーボードの計算結果もスペースで確定する。スペース 2 回は iPhone の「. 」を入れる機能とぶつかる）。変換中のスペースは変換に使う
     if (IOS) ta.addEventListener('beforeinput', e => {
-      if (ghostTxt && e.inputType === 'insertText' && e.data === ' ' && !e.isComposing && ta.selectionStart === ghostEnd && ta.selectionEnd === ghostEnd) {
+      if (ghostTxt && e.inputType === 'insertText' && e.data === ' ' && !e.isComposing && ta.selectionStart === ghostAt && ta.selectionEnd === ghostAt) {
         e.preventDefault();
         acceptGhost();
       }
@@ -3048,7 +3048,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // ---- 電卓: カーソルのある行が計算式なら、行の後ろに答えを薄く出す。Tab で書き込む ----
   // 入力欄の大きさ（fitTa）もここで合わせる。答えの右端（ghostR、行の頭からの CSS px）まで枠を広げるため
   const ghostEl = el('div', 'gh');
-  let ghostTxt = '', ghostEnd = 0, ghostR = 0, mta = null, taIme = false; // taIme: 最後の入力が変換（日本語の入力など）を通ったか
+  // ghostTxt は書き込む文字、ghostFrom〜ghostTo を書き込む文字で置き換える（ふつうは行の終わりに足す。= に合わせて直すときは古い答えと入れ替える）。
+  // ghostAt は iPhone のスペースで書き込めるカーソルの位置。taIme: 最後の入力が変換（日本語の入力など）を通ったか
+  let ghostTxt = '', ghostFrom = 0, ghostTo = 0, ghostAt = 0, ghostR = 0, mta = null, taIme = false;
   // iPhone・iPad（iOS 18 から）の英語のキーボードは、= で終わる四則の式の答えを、カーソルの後ろに薄く出す（キーボードの計算結果）。
   // その字は入力欄の値にも中身の幅にも入らないので、入力欄の幅で切れて途切れて見えた（T-152、ユーザーの報告）
   const IOS_MATH = IOS && !(+(/(?:iPhone|CPU) OS (\d+)_/.exec(navigator.userAgent) || [0, 99])[1] < 18);
@@ -3075,37 +3077,50 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (ta) {
       const v = ta.value, p = ta.selectionEnd, a = v.lastIndexOf('\n', p - 1) + 1, b = v.indexOf('\n', p), end = b < 0 ? v.length : b;
       const line = v.slice(a, end);
+      let e0 = null;
+      const env = () => e0 || (e0 = calcEnv(v.slice(0, a))); // 上の行の変数と ans（要るときだけ読む）
+      // = にカーソルを合わせると、書いてある答えを今の式の答えに直す（T-159、ユーザー: = にカーソルを合わせて確定で、答えを修正できるようにしたい）。
+      // カーソルが = のすぐ前か後ろで、= の後ろに答えが書いてあり、今の答えと違えば、行の終わりに「 → 新しい答え」を出し、Tab（iPhone はスペース）で入れ替える。
+      // 代入（r = 5）の = では出さない（値を書き換えてしまうため）
+      const q = p !== ta.selectionStart ? -1 : p > a && /[=≒≈]/.test(v[p - 1]) ? p - 1 : p < end && /[=≒≈]/.test(v[p]) ? p : -1;
+      if (q >= 0 && (calc || cp2) && v.slice(q + 1, end).trim() && !/^\s*[a-z_][a-z0-9_]*\s*$/i.test(v.slice(a, q))) {
+        const r = calcLine(v.slice(a, q + 1), env());
+        if (r && r.trim() !== v.slice(q + 1, end).trim()) {
+          showGhost(' → ' + r.trim(), line, v, a);
+          ghostTxt = r; ghostFrom = q + 1; ghostTo = end; ghostAt = p;
+        }
+      }
       // iPhone のキーボードが答えを出す所（英語のキーボードで、行の終わりのカーソルの前が = の四則の式）は、Paint の答えは出さず、
       // 枠だけ自前の答えと全角 1 文字の分を広げる（電卓が切りでも。T-152、ユーザーの案: 予測してくれる範囲はこっちで出さず、枠を予測して拡張。
       // 英語の自動修正は残したいので、入力欄の予測は止めない）。iPhone の答えの書き方（桁数）は自前と違うことがあるので 1 文字余らせる
       const ios = IOS_MATH && !taIme && p === end && /=$/.test(line) && /^[\d\s+\-*/^%().,=]+$/.test(line.normalize('NFKC').replace(/[×÷−–]/g, '*'));
-      const r = ios || calc || cp2 ? calcLine(line, calcEnv(v.slice(0, a))) : ''; // CP2 は電卓がいつも入り。上の行の変数と ans を使う（T-155）
+      const r = ghostTxt ? '' : ios || calc || cp2 ? calcLine(line, env()) : ''; // CP2 は電卓がいつも入り。上の行の変数と ans を使う（T-155）
       if (r && ios) ghostR = lineW(line + r.trim()) + ceil(taFs);
-      else if (r) {
-        ghostTxt = r;
-        ghostEnd = end;
-        const s = ghostEl.style, row = v.slice(0, a).split('\n').length - 1;
-        ghostEl.textContent = r;
-        ghostR = lineW(line + r);
-        s.setProperty('--c', taC);
-        s.setProperty('--a', taA);
-        s.setProperty('--fs', taFs + 'px');
-        s.left = taX + lineW(line) + 'px';
-        s.top = taCY - taFs * LH / 2 + row * taFs * LH + 'px';
-        if (!ghostEl.parentNode) bar.before(ghostEl); // 入力欄と同じく、ツールバーとパネルの下（T-092）
-      }
+      else if (r) { showGhost(r, line, v, a); ghostTxt = r; ghostFrom = ghostTo = ghostAt = end; }
     }
     if (!ghostTxt) ghostEl.remove();
     if (ta) fitTa();
   }
+  // 薄い答え t を、行 line（入力欄の a 文字目から）の終わりに出す
+  function showGhost(t, line, v, a) {
+    const s = ghostEl.style, row = v.slice(0, a).split('\n').length - 1;
+    ghostEl.textContent = t;
+    ghostR = lineW(line + t);
+    s.setProperty('--c', taC);
+    s.setProperty('--a', taA);
+    s.setProperty('--fs', taFs + 'px');
+    s.left = taX + lineW(line) + 'px';
+    s.top = taCY - taFs * LH / 2 + row * taFs * LH + 'px';
+    if (!ghostEl.parentNode) bar.before(ghostEl); // 入力欄と同じく、ツールバーとパネルの下（T-092）
+  }
   function acceptGhost() {
     if (!ghostTxt) return;
     const t = ghostTxt;
-    ta.setSelectionRange(ghostEnd, ghostEnd);
+    ta.setSelectionRange(ghostFrom, ghostTo);
     // execCommand なら入力欄の元に戻す（Ctrl+Z）で書き込みを取り消せる。使えないブラウザでは setRangeText
     let ok = false;
     try { ok = doc.execCommand('insertText', false, t); } catch (_) { }
-    if (!ok) { ta.setRangeText(t, ghostEnd, ghostEnd, 'end'); updateGhost(); }
+    if (!ok) { ta.setRangeText(t, ghostFrom, ghostTo, 'end'); updateGhost(); }
   }
   // ---- 電卓の計算 ----
   // 1 行の計算式を計算して、薄く出す文字（= で終わる行の答え。「36」か「 36」）を返す。式でなければ ''。
@@ -3751,7 +3766,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       ["ペン・図形をもう一度", "ペンの種類（万年筆・筆・鉛筆）や図形を選ぶ"],
       ["文字を押す", "ペンなどのままでも選んで動かせる。もう一度押すと書き直し", "touch"],
       ["文字の入力中", "{Esc}・{Ctrl}+{Enter}・外を押すと確定"],
-      ["{Tab}", "電卓が入りのとき、= で終わる行に薄く出た答えを書き込む（iPhone・iPad はスペース）"],
+      ["{Tab}", "電卓が入りのとき、= で終わる行に薄く出た答えを書き込む（iPhone・iPad はスペース）。= にカーソルを合わせると、書いた答えを今の式の答えに直す"],
       ["ツールバー", "どこを押しても、引けば動かせる"],
       ["その他（⋯）", "全消去・背景・保存・コピー・電卓・画面に固定・デフォルトの変更"]
     ]]

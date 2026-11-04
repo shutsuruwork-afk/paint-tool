@@ -495,10 +495,10 @@ test('選んでいるボタンは、マウスを重ねても押しても青い�
   }
 });
 
-test('ペンと図形の選択肢: 既定はどちらも、選んでいないときは押すとその道具になるだけで、もう一度押すと出る。インストールページで 1 回押しにできる', async () => {
+test('ペン・図形・文字の選択肢: 既定はどれも、選んでいないときは押すとその道具になるだけで、もう一度押すと出る。インストールページで 1 回押しにできる', async () => {
   const { page, errors } = await fresh();
   const check = async (once) => {
-    for (const [sel, name] of [['.bar > [aria-label^="ペン"]', /^ペン/], ['.bar > .shp', /^直線/]]) {
+    for (const [sel, name] of [['.bar > [aria-label^="ペン"]', /^ペン/], ['.bar > .shp', /^直線/], ['.bar > [aria-label^="文字"]', /^文字/]]) {
       await page.keyboard.press('h');
       await mouseClick(page, sel);
       assert.match(await toolOn(page), name);
@@ -771,7 +771,7 @@ test('文字の入力中は、入力欄の少し外（見えない余白）を�
   await page.mouse.click(200, 300);
   // 入力欄の中身の箱（余白を除いた所）と、点線の枠の外側
   const box = () => shadowEval(page, root => {
-    const t = root.querySelector('.tx'), b = t.getBoundingClientRect(), cs = getComputedStyle(t), p = parseFloat(cs.paddingLeft);
+    const t = root.querySelector('.tx'), b = t.getBoundingClientRect(), cs = getComputedStyle(t), p = parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft);
     return { l: b.x + p, t: b.y + p, r: b.right - p, b: b.bottom - p, pad: p, ring: p + parseFloat(cs.outlineOffset) };
   });
   // 空のときも、1 行・全角 1 文字分の大きさ（1 文字目を打っても枠がほとんど変わらない）
@@ -1261,7 +1261,7 @@ test('Delete・Backspace は選んだ物だけを消し、全消去はしない�
 });
 
 // T-175: Beta の一貫性。全消去も元に戻す・やり直すと同じく、消す物がないときは薄い（Simple は今まで通り）。閉じるの名前は名前だけ（T-148）。
-// 操作の一覧の Beta だけの行（ペン・図形をもう一度・その他の中身）は Simple に出さない。v1.66.0 では全消去がいつも押せた
+// 操作の一覧の Beta だけの行（ペン・図形・文字をもう一度・その他の中身）は Simple に出さない。v1.66.0 では全消去がいつも押せた
 test('消す物がないときは全消去が薄い（描く・元に戻す・やり直す・消しゴム・文字で変わる。Beta・Simple）。閉じるは名前だけ。操作の一覧の Beta だけの行は Simple に出さない', async () => {
   const { page, errors } = await fresh();
   const dis = () => shadowEval(page, root => root.querySelector('[title="全消去"]').disabled);
@@ -1303,7 +1303,7 @@ test('消す物がないときは全消去が薄い（描く・元に戻す・�
   await page.keyboard.press('?');
   const helpB = await shadowEval(page, root => root.querySelector('.hp').textContent);
   assert.ok(helpB.includes('デフォルトの変更・Simple'), helpB);
-  assert.ok(helpB.includes('ペン・図形をもう一度'));
+  assert.ok(helpB.includes('ペン・図形・文字をもう一度'));
   assert.deepEqual(errors, []);
   await page.close();
   // Simple: 全消去は同じく、消す物がないときは薄い（T-176）。Beta だけの行は一覧に出ない
@@ -1320,7 +1320,7 @@ test('消す物がないときは全消去が薄い（描く・元に戻す・�
   assert.equal(await disS(), false, 'Simple, after a line');
   await ps.keyboard.press('?');
   const helpS = await shadowEval(ps, root => root.querySelector('.hp').textContent);
-  assert.ok(!helpS.includes('ペン・図形をもう一度') && !helpS.includes('デフォルトの変更'), helpS);
+  assert.ok(!helpS.includes('ペン・図形・文字をもう一度') && !helpS.includes('デフォルトの変更'), helpS);
   assert.deepEqual(es, []);
   await ps.close();
 });
@@ -1603,6 +1603,97 @@ test('全消去は、消す物がないときは何もしない（履歴が増�
   await page.keyboard.press('Control+z');
   assert.ok((await alphaStats(page, 690, 590, 40, 20)).count > 20);
   assert.equal((await alphaStats(page, 90, 290, 120, 20)).count, 0);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+// T-183: Beta の文字の種類。文字のボタンをもう一度押すと選べ（ペン・図形と同じ）、付箋・枠は文字の位置を変えずに周りに地か枠を付ける
+const TEXT_B = '.bar > [aria-label^="文字"], .bar > [aria-label^="付箋"], .bar > [aria-label^="枠"]';
+// 入力欄の中身（文字）の左上と、付けている種類の class
+const taText = page => shadowEval(page, root => {
+  const t = root.querySelector('.tx'), r = t.getBoundingClientRect(), c = getComputedStyle(t);
+  return { x: r.x + parseFloat(c.borderLeftWidth) + parseFloat(c.paddingLeft), y: r.y + parseFloat(c.borderTopWidth) + parseFloat(c.paddingTop),
+    k: t.classList.contains('k1') ? 1 : t.classList.contains('k2') ? 2 : 0, bg: c.backgroundColor };
+});
+const textKinds = page => page.evaluate(() => [...document.querySelector('paint-bookmarklet-surface').shadowRoot.querySelectorAll('.to')]
+  .map(e => (e.classList.contains('k1') ? 1 : e.classList.contains('k2') ? 2 : 0)));
+
+test('Beta: 文字のボタンをもう一度押すと種類（文字・付箋・枠）を選べ、付箋は文字の位置のまま周りに白い地、枠は文字の色の枠が付く（入力中・確定・書き直し・元に戻す・覚える）', async () => {
+  const { page, errors } = await fresh();
+  await page.keyboard.press('t');
+  assert.match(await toolOn(page), /^文字/);
+  assert.equal(await openPanels(page), 0, '1 回目は道具になるだけ');
+  await mouseClick(page, TEXT_B);
+  assert.equal(await openPanels(page), 1, '2 回目で種類のパネル');
+  assert.deepEqual(await shadowEval(page, root => [...root.querySelectorAll('.pn.on .b')].map(b => b.title)), ['文字 (T)', '付箋 (T)', '枠 (T)']);
+  await mouseClick(page, '.pn.on [title="付箋 (T)"]');
+  assert.equal(await openPanels(page), 0);
+  assert.equal(await shadowEval(page, (root, s) => root.querySelector(s).getAttribute('aria-label'), TEXT_B), '付箋 (T)', 'ボタンの名前は今の種類');
+  // 入力中から地が見え、文字の位置は地なしと同じ（押した所が文字の左端）
+  await page.mouse.click(200, 300);
+  await page.keyboard.type('Hello');
+  const a = await taText(page);
+  assert.equal(a.k, 1);
+  assert.equal(a.bg, 'rgb(255, 255, 255)');
+  assert.ok(near(a.x, 200, 0.5) && near(a.y, 300 - 15, 0.5), JSON.stringify(a));
+  await page.mouse.click(600, 600);
+  // 確定した物は、文字の周りに大きさの 0.3 倍（24px なら 7px）の地を含めた箱
+  const o = await textRect(page);
+  assert.ok(near(o.x, 193, 1) && near(o.y, 278, 1) && near(o.h, 30 + 14, 1), JSON.stringify(o));
+  assert.deepEqual(await textKinds(page), [1]);
+  assert.deepEqual(await readMain(page, o.x + 3, o.y + o.h / 2), [255, 255, 255, 255], '地は白（書き出しにも入る）');
+  assert.ok((await readMain(page, o.x, o.y))[3] < 128, '角は丸い');
+  // 書き直しても同じ所に出て、種類はその物のまま
+  await page.mouse.click(o.x + 20, o.y + o.h / 2);
+  assert.equal((await textBox(page)).value, 'Hello');
+  const b = await taText(page);
+  assert.ok(b.k === 1 && near(b.x, a.x, 0.5) && near(b.y, a.y, 0.5), JSON.stringify(b));
+  await page.keyboard.type('!');
+  await page.keyboard.press('Escape');
+  const o2 = await textRect(page);
+  assert.ok(near(o2.x, o.x, 0.5) && near(o2.y, o.y, 0.5) && o2.w > o.w, JSON.stringify(o2));
+  // 打っている途中に種類を変えると、その文字に効く
+  await page.mouse.click(200, 450);
+  await page.keyboard.type('Box');
+  assert.equal((await taText(page)).k, 1);
+  await mouseClick(page, TEXT_B);
+  await mouseClick(page, '.pn.on [title="枠 (T)"]');
+  const c = await taText(page);
+  assert.ok(c.k === 2 && near(c.x, 200, 0.5), JSON.stringify(c));
+  assert.equal((await textBox(page)).focused, true, '入力は続く');
+  await page.keyboard.press('Escape');
+  assert.deepEqual(await textKinds(page), [1, 2]);
+  const f = await textRect(page, 1), px = await readMain(page, f.x + 1, f.y + f.h / 2);
+  assert.ok(px[0] > 180 && px[1] < 120 && px[3] > 200, `枠は文字の色: ${px}`);
+  assert.equal((await readMain(page, f.x + 4, f.y + f.h / 2))[3], 0, '枠の中は地なし');
+  // 元に戻す・やり直す
+  await page.keyboard.press('Control+z');
+  assert.deepEqual(await textKinds(page), [1]);
+  await page.keyboard.press('Control+Shift+z');
+  assert.deepEqual(await textKinds(page), [1, 2]);
+  // 種類はサイトごとに覚える
+  assert.equal((await prefs(page)).tk, 'box');
+  await page.waitForFunction(() => (JSON.parse(localStorage.getItem('paint-bookmarklet') || '{}')).tk === 'box');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('Simple: 文字のボタンは押しても種類のパネルを出さず、新しい文字はいつも地なし。Beta に戻ると選んでいた種類になる', async () => {
+  const { page, errors } = await openPage(browser, server.base + '/');
+  await runCode(page, withDefaults(CODE, { ui: 'cp2', tk: 'note' }));
+  const tb = '.bar > [aria-label^="文字"]';
+  assert.equal(await shadowEval(page, (root, s) => root.querySelector(s).classList.contains('dd'), tb), false, 'パネルの印はない');
+  await mouseClick(page, tb);
+  await mouseClick(page, tb);
+  assert.match(await toolOn(page), /^文字/);
+  assert.equal(await openPanels(page), 0);
+  await page.mouse.click(300, 300);
+  await page.keyboard.type('S');
+  assert.equal((await taText(page)).k, 0);
+  await page.mouse.click(600, 600);
+  assert.deepEqual(await textKinds(page), [0]);
+  await click(page, '[title="Beta"]');
+  assert.deepEqual(await shadowEval(page, (root, s) => { const b = root.querySelector(s); return [b.getAttribute('aria-label'), b.classList.contains('dd')]; }, TEXT_B), ['付箋 (T)', true]);
   assert.deepEqual(errors, []);
   await page.close();
 });
@@ -2099,13 +2190,13 @@ test('電卓: 入りにすると、文字の行が計算式なら答えが薄く
   await page.keyboard.type('12*3=');
   const g = await shadowEval(page, root => {
     const a = root.querySelector('.gh').getBoundingClientRect(), t = root.querySelector('.tx'), c = getComputedStyle(t);
-    return { gx: a.x, tx: t.getBoundingClientRect().x + parseFloat(c.paddingLeft) };
+    return { gx: a.x, tx: t.getBoundingClientRect().x + parseFloat(c.borderLeftWidth) + parseFloat(c.paddingLeft) };
   });
   assert.ok(g.gx > g.tx + 20, JSON.stringify(g));
   // 点線の枠（入力欄）は答えの右端まで広がり、答えが消えると戻る。Tab で書き込んでも枠の大きさは変わらない
   const box = () => shadowEval(page, root => {
     const t = root.querySelector('.tx'), r = t.getBoundingClientRect(), gh = root.querySelector('.gh');
-    return { right: r.right - parseFloat(getComputedStyle(t).paddingRight), w: r.width, gr: gh ? gh.getBoundingClientRect().right : null };
+    return { right: r.right - parseFloat(getComputedStyle(t).borderRightWidth) - parseFloat(getComputedStyle(t).paddingRight), w: r.width, gr: gh ? gh.getBoundingClientRect().right : null };
   });
   const b1 = await box();
   assert.ok(b1.right >= b1.gr, JSON.stringify(b1));

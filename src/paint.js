@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.74.0';
+  const VERSION = '1.75.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -73,6 +73,13 @@
     brush: '筆 (P)',
     pencil: '鉛筆 (P)',
   };
+  // 文字の種類（T-183）。文字を選んだ状態で文字のボタンをもう一度押すと選べる（ペンと同じ）。付箋は文字の周りに地、枠は文字の色の枠
+  const TKS = ['text', 'note', 'box'];
+  const TK_TITLES = {
+    text: '文字 (T)',
+    note: '付箋 (T)',
+    box: '枠 (T)',
+  };
   const NIB_C = Math.SQRT1_2, NIB_S = -Math.SQRT1_2; // 万年筆のペン先の向き（−45°。右上がりが細く、右下がりが太い）
   const KEYMAP = { p: 'pen', h: 'marker', e: 'eraser', l: 'line', a: 'arrow', r: 'rect', o: 'ellipse', f: 'fill', t: 'text', s: 'select' };
   // 文字の書体。入力欄（CSS）と確定時の fillText で同じものを使う
@@ -91,6 +98,8 @@
     ellipse: 'M3 12a9 6.5 0 1 0 18 0a9 6.5 0 1 0-18 0',
     fill: 'M5 12l7-7 7 7-7 7zM5 12h14M21 18.5a1.5 1.5 0 0 1-3 0c0-1.2 1.5-3 1.5-3s1.5 1.8 1.5 3z',
     text: 'M5 7V5h14v2M12 5v14M9 19h6',
+    note: 'M5 4h14v10l-6 6H5zM13 20v-6h6M8.5 8.5h7M12 8.5v7', // 付箋（角を折った紙と T）
+    box: 'M3.5 5.5h17v13h-17zM8.5 9.5h7M12 9.5v6', // 枠（四角と T）
     select: 'M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3',
     drop: 'M13 6l5 5M15.5 3.5a2.1 2.1 0 0 1 3 0l2 2a2.1 2.1 0 0 1 0 3L18 11M15 8l-9 9v3h3l9-9',
     undo: 'M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3',
@@ -137,6 +146,7 @@
 .gh{position:absolute;white-space:pre;pointer-events:none;color:var(--c);opacity:calc(var(--a) * .45);font:600 var(--fs)/${LH} ${FONT}}
 .to{position:absolute;z-index:1;white-space:pre;pointer-events:none;color:var(--c);opacity:var(--a);font:600 var(--fs)/${LH} ${FONT}}
 .to.gone{opacity:calc(var(--a) * .25)}.to.ed{visibility:hidden}
+.to.k1,.to.k2{padding:var(--p);border-radius:var(--r)}.to.k1,.tx.k1{background:var(--pp) padding-box;box-shadow:inset 0 0 0 1px var(--pl)}.to.k2,.tx.k2{box-shadow:inset 0 0 0 var(--bw) var(--c)}
 .sel i{position:absolute;width:9px;height:9px;margin:-5px 0 0 -5px;box-sizing:border-box;background:#fff;border:1.5px solid #3d7cff;border-radius:2px}
 canvas{position:absolute;left:0;top:0;pointer-events:none}
 .g,.p{position:absolute;inset:0}.g{will-change:opacity}.g.gz{inset:auto;left:0;top:0}
@@ -205,7 +215,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 .bye .t::after{content:"";position:absolute;left:10px;right:10px;bottom:3px;height:2px;border-radius:1px;background:#8fb3ff;transform-origin:left;animation:bye ${BYE_MS}ms linear forwards}
 @keyframes bye{to{transform:scaleX(0)}}
 .bye>:not(.t),.hint>:not(.t){display:none}
-.tx{all:unset;position:absolute;box-sizing:content-box;padding:${TA_PAD}px;white-space:pre;overflow:hidden;resize:none;pointer-events:auto;cursor:text;color:var(--c);opacity:var(--a);caret-color:var(--c);font:600 var(--fs)/${LH} ${FONT};outline:1px dashed #3d7cffb0;outline-offset:${5 - TA_PAD}px;-webkit-user-select:text;user-select:text}
+.tx{all:unset;position:absolute;box-sizing:content-box;border:${TA_PAD}px solid transparent;padding:var(--p,0px);border-radius:var(--tr,0px);white-space:pre;overflow:hidden;resize:none;pointer-events:auto;cursor:text;color:var(--c);opacity:var(--a);caret-color:var(--c);font:600 var(--fs)/${LH} ${FONT};outline:1px dashed #3d7cffb0;outline-offset:${5 - TA_PAD}px;-webkit-user-select:text;user-select:text}
+.tx.k1,.tx.k2{outline-offset:${3 - TA_PAD}px}
 .tx.mx{-webkit-text-fill-color:rgb(from currentcolor r g b / calc(alpha * 4 - 3))}
 .hp{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);box-sizing:border-box;width:min(680px,calc(100% - 32px));max-height:calc(100% - 32px);overflow:auto;padding:12px 18px 6px;background:var(--bb,#202228);border:1px solid #ffffff1f;border-radius:12px;box-shadow:0 6px 24px #0007;pointer-events:auto;font-size:12.5px;line-height:1.5;-webkit-user-select:text;user-select:text}
 .hp .hh{margin-bottom:8px;color:#a9acb8}.hp .hc{columns:2 270px;column-gap:28px}
@@ -303,8 +314,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 
   // ---------- 状態 ----------
   let picking = false; // スポイトで拾う待ち（EyeDropper のないブラウザ。T-147）
-  let tool = 'pen', color = PALETTE[2], bg = 0, pass = false, visible = false, touchText = DEF.touchText !== false, penType = 'pen', calc = true;
-  // 種類のあるボタン（ペン・図形）: 既定は「選んでいないときに押すとその道具、もう一度押すと選択肢」。pickOnce なら 1 回で選択肢も出す
+  let tool = 'pen', color = PALETTE[2], bg = 0, pass = false, visible = false, touchText = DEF.touchText !== false, penType = 'pen', calc = true, textKind = 'text';
+  // 種類のあるボタン（ペン・図形・文字）: 既定は「選んでいないときに押すとその道具、もう一度押すと選択肢」。pickOnce なら 1 回で選択肢も出す
   const pickOnce = DEF.pickOnce === true;
   // ツールバーを引いて動かしても閉じないパネル: 色と太さ・見た目（開発用）はいつも。keepPanels（インストールページ）ならすべて（T-066・T-068）
   const keepPanels = DEF.keepPanels === true;
@@ -524,7 +535,17 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }, 'dd shp');
   const shapeD = shapeB.querySelector('path');
   shapeP.append(row(...SHAPES.map(t => toolBtns[t] = btn(TITLES[t], I[t], () => { setTool(t); closePanel(); }))));
-  toolBtns.text = btn(TITLES.text, I.text, () => setTool('text'));
+  // 文字: 文字でないときに押すと文字になり、文字のときにもう一度押すと種類のパネル（ペン・図形と同じ。T-183）。Simple は押すと文字になるだけ
+  const textP = pnl();
+  const textB = btn(TITLES.text, I.text, () => {
+    if (cp2) setTool('text');
+    else if (tool === 'text') { if (pass) setTool('text'); togglePanel(textP, textB); }
+    else { setTool('text'); if (pickOnce) openPanel(textP, textB); }
+  });
+  const textD = textB.querySelector('path');
+  toolBtns.text = textB;
+  const tkBtns = {};
+  textP.append(row(...TKS.map(k => tkBtns[k] = btn(TK_TITLES[k], I[k], () => { setTk(k); closePanel(); }))));
   toolBtns.fill = btn(TITLES.fill, I.fill, () => setTool('fill'));
 
   // 色と太さ: 今の色・太さ・濃さを点で見せる。パネルにパレット・カスタム色・スポイト・太さ・濃さ
@@ -689,11 +710,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (cp2) bar.replaceChildren(penB, toolBtns.text, sep(), undoB, sep(), moreB, hideCB);
     else bar.replaceChildren(toolBtns.select, penB, toolBtns.marker, toolBtns.eraser, shapeB, toolBtns.text, toolBtns.fill,
       el('div', 'sep brk'), styleB, sep(), undoB, redoB, sep(), passB, moreB, sep(), hideB, closeB); // 1 段に収まらないときは .brk で段を分ける（.two .brk。T-064・T-067）
-    bar.append(shapeP, penP, styleP, moreP, lookP, ci, lci);
+    bar.append(shapeP, penP, textP, styleP, moreP, lookP, ci, lci);
     moreP.replaceChildren(...(cp2 ? [clrMi, mcRow, mainMi] : [...mainMore, cp2Mi]));
     penB.classList.toggle('dd', !cp2);
+    textB.classList.toggle('dd', !cp2);
     helpEl.replaceChildren(); // 操作の一覧は次に開いたときに作り直す（CP2 ではページ操作モードの行を出さない）
     syncPen();
+    syncTk();
     syncTool(false);
   }
   // 版を切り替える。絵・履歴・道具・色はそのまま。CP2 にはページ操作モードがないので外す
@@ -927,6 +950,22 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     penB.setAttribute('aria-label', PEN_TITLES[penType]);
     for (const k of PENS) penBtns[k].classList.toggle('on', k === penType);
     markPen();
+  }
+  // 文字の種類を選ぶ。打っている途中ならその文字にも効く（色と同じ）。選んでいる物には効かない（色と同じ）
+  function setTk(k) {
+    textKind = k;
+    setTool('text');
+    if (ta) { taK = TKS.indexOf(k); styleTa(); }
+    syncTk();
+    remember();
+  }
+  // 文字のボタンの印と名前は今の種類（Simple の新しい文字はいつも地なしなので、文字のまま）
+  function syncTk() {
+    const k = cp2 ? 'text' : textKind;
+    textD.setAttribute('d', I[k]);
+    textB.title = TK_TITLES[k];
+    textB.setAttribute('aria-label', TK_TITLES[k]);
+    for (const j of TKS) tkBtns[j].classList.toggle('on', j === textKind);
   }
   // CP2: ペンのボタンは、消しゴムのときは消しゴムの印と名前にし、ペンか消しゴムのとき選んだ見た目にする（T-088。CP2 ブランチの T-076）
   function markPen() {
@@ -2887,7 +2926,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         x = cx + px * ca - py * sa - o.w * r / 2;
         y = cy + px * sa + py * ca - o.h * r / 2;
       }
-      const st = [o.s, round(x / sdpr) * sdpr, round(y / sdpr) * sdpr, fs, o.c, o.a];
+      const st = [o.s, round(x / sdpr) * sdpr, round(y / sdpr) * sdpr, fs, o.c, o.a, o.k];
       if (!st0 || !sameSt(st, st0)) changed = true;
       return st;
     });
@@ -3214,24 +3253,41 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 確定した文字は「物」として面の中の要素（.to）に置く。あとから選んで動かす・拡大縮小・書き直しができ、拡大してもぼやけない。
   // 物の状態は [文字, x, y, 大きさ, 色, 濃さ]（x, y は行の箱の左上、大きさは文字の高さ。どれも S の px で、CSS px の整数に丸める）
   let ta = null, taX = 0, taCY = 0, taObj = null, mctx = null;
-  let taFs = 24, taC = '', taA = 1; // 入力欄の書式（大きさは CSS px）。新しい文字は今の設定、書き直しはその物の書式
+  let taFs = 24, taC = '', taA = 1, taK = 0; // 入力欄の書式（大きさは CSS px）。新しい文字は今の設定、書き直しはその物の書式
   const tlist = []; // 面に置いている文字の物（重なり順。後ろほど手前）
   let tHit = 0, tShown = 0; // 消しゴムが触れた文字の数と、薄く表示した数
   // 入力欄のキーや文字はページへ渡さない（ページのショートカットやフォーカス管理が反応しないように）
   const TA_STOP = ['keydown', 'keyup', 'keypress', 'beforeinput', 'input', 'compositionstart', 'compositionupdate',
     'compositionend', 'paste', 'copy', 'cut', 'focusin', 'focusout'];
-  const tNew = () => ({ el: el('div', 'to'), s: '', x: 0, y: 0, fs: 0, c: '', a: 1, w: 0, h: 0, on: false, hit: 0 });
-  const tSnap = o => [o.s, o.x, o.y, o.fs, o.c, o.a];
-  const sameSt = (p, q) => p[0] === q[0] && p[1] === q[1] && p[2] === q[2] && p[3] === q[3] && p[4] === q[4] && p[5] === q[5];
+  // 種類（k）は TKS の番号。付箋（1）と枠（2）は文字の周りに余白 tkP を取り、x, y はその箱の左上（選ぶ・消しゴム・書き出しは箱をそのまま使う。T-183）
+  const tNew = () => ({ el: el('div', 'to'), s: '', x: 0, y: 0, fs: 0, c: '', a: 1, k: 0, w: 0, h: 0, on: false, hit: 0 });
+  const tSnap = o => [o.s, o.x, o.y, o.fs, o.c, o.a, o.k];
+  const sameSt = (p, q) => p[0] === q[0] && p[1] === q[1] && p[2] === q[2] && p[3] === q[3] && p[4] === q[4] && p[5] === q[5] && p[6] === q[6];
+  // 付箋・枠の寸法（どれも CSS px の整数。fs は文字の大きさの CSS px）: 余白・角の丸み・枠の太さ。付箋の地は文字が暗ければ白、明るければ黒、縁に細い線
+  const tkP = (fs, k) => (k ? round(fs * 0.3) : 0), tkR = fs => round(fs * 0.25), tkB = fs => max(1, round(fs / 12));
+  const tkPaper = c => (isLite(c) ? ['#1c1c1e', '#ffffff2e'] : ['#ffffff', '#0000002e']);
+  // 文字の要素（物と入力欄で同じ）に種類の見た目を付ける
+  function tkStyle(e, fs, c, k) {
+    const es = e.style, P = tkP(fs, k), pp = tkPaper(c);
+    e.classList.toggle('k1', k === 1);
+    e.classList.toggle('k2', k === 2);
+    es.setProperty('--p', P + 'px');
+    es.setProperty('--r', tkR(fs) + 'px');
+    es.setProperty('--bw', tkB(fs) + 'px');
+    es.setProperty('--pp', pp[0]);
+    es.setProperty('--pl', pp[1]);
+    return P;
+  }
   // 物を状態 st にする（null なら面から外す）
   function tApply(o, st) {
     if (!st) {
       if (o.on) { o.el.remove(); tlist.splice(tlist.indexOf(o), 1); o.on = false; }
       return;
     }
-    [o.s, o.x, o.y, o.fs, o.c, o.a] = st;
+    [o.s, o.x, o.y, o.fs, o.c, o.a, o.k = 0] = st;
     const e = o.el, es = e.style;
     e.textContent = o.s;
+    tkStyle(e, o.fs / sdpr, o.c, o.k);
     es.left = o.x / sdpr + 'px';
     es.top = o.y / sdpr + 'px';
     es.setProperty('--fs', o.fs / sdpr + 'px');
@@ -3260,20 +3316,56 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     return null;
   }
   // 書き出し用に、文字の物を S の px で描く。表示（CSS の行の中央寄せ）と同じ基線にする
+  // 付箋・枠は、地と文字を濃さ 1 で別の canvas に描いてから濃さを掛けて重ねる（表示は要素ごとの opacity なので、地と文字を別々に薄くすると重なりの色が違う）
   function paintText(g, o, X, Y) {
-    const css = o.fs / sdpr;
+    const css = o.fs / sdpr, P = tkP(css, o.k) * sdpr;
     if (!mctx) mctx = newCanvas(1, 1).getContext('2d');
     mctx.font = `600 ${css}px ${FONT}`; // レイアウトは CSS px の書体の寸法で決まる
     const m = mctx.measureText('Hg');
     const A = round(m.fontBoundingBoxAscent || css * 0.8), D = round(m.fontBoundingBoxDescent || css * 0.2);
-    const base = (o.y / sdpr + floor((css * LH - A - D) / 2) + A) * sdpr - Y, lines = o.s.split('\n');
+    let t = g, x = o.x - X, y = o.y - Y, L = null;
+    if (o.k) {
+      L = newCanvas(max(1, ceil(o.w)), max(1, ceil(o.h)));
+      t = L.getContext('2d');
+      x = y = 0;
+      const R = tkR(css) * sdpr;
+      if (o.k === 1) {
+        const pp = tkPaper(o.c);
+        tkRing(t, o.w, o.h, R, 0, pp[0]);
+        tkRing(t, o.w, o.h, R, sdpr, pp[1]);
+      } else tkRing(t, o.w, o.h, R, tkB(css) * sdpr, o.c);
+    }
+    const base = y + P + (floor((css * LH - A - D) / 2) + A) * sdpr, lines = o.s.split('\n');
+    t.save();
+    if (!L) t.globalAlpha = o.a;
+    t.fillStyle = o.c;
+    t.font = `600 ${o.fs}px ${FONT}`;
+    t.textBaseline = 'alphabetic';
+    for (let i = 0; i < lines.length; i++) t.fillText(lines[i], x + P, base + i * o.fs * LH);
+    t.restore();
+    if (!L) return;
     g.save();
     g.globalAlpha = o.a;
-    g.fillStyle = o.c;
-    g.font = `600 ${o.fs}px ${FONT}`;
-    g.textBaseline = 'alphabetic';
-    for (let i = 0; i < lines.length; i++) g.fillText(lines[i], o.x - X, base + i * o.fs * LH);
+    g.drawImage(L, o.x - X, o.y - Y);
     g.restore();
+    L.width = L.height = 0;
+  }
+  // 角を丸めた箱（w × h、丸み r）を塗る。b があれば内側 b の幅の輪だけ（CSS の inset の box-shadow と同じ形。内側の丸みは r − b）
+  function tkRing(g, w, h, r, b, c) {
+    const rr = (x, y, w, h, r) => {
+      r = max(0, min(r, w / 2, h / 2));
+      g.moveTo(x + r, y);
+      g.arcTo(x + w, y, x + w, y + h, r);
+      g.arcTo(x + w, y + h, x, y + h, r);
+      g.arcTo(x, y + h, x, y, r);
+      g.arcTo(x, y, x + w, y, r);
+      g.closePath();
+    };
+    g.beginPath();
+    rr(0, 0, w, h, r);
+    if (b) rr(b, b, w - 2 * b, h - 2 * b, r - b);
+    g.fillStyle = c;
+    g.fill('evenodd');
   }
   // 消しゴムの線分（V）が触れた文字に印を付ける。入力のたびに呼ばれるので、割り当てのない計算だけにする
   let lbA = 0, lbB = 1;
@@ -3316,7 +3408,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
 
   function textAt(cx, cy, value) {
-    if (!value) { taFs = CFG.text.size; taC = color; taA = CFG.text.alpha; }
+    if (!value) { taFs = CFG.text.size; taC = color; taA = CFG.text.alpha; taK = cp2 ? 0 : TKS.indexOf(textKind); }
     // writingsuggestions: iPhone のキーボードが入力欄の中に薄く出す予測を止める（T-160。計算結果は止まらなかったので T-161・T-162 で扱う）。
     // autocorrect: 自動修正を切り、キーボードの上の候補のバーにも計算結果を出さない（T-163、ユーザー: 一旦切っていい。英語の単語の自動修正も出なくなる。
     // = の後のときだけ切る案は、WebKit が焦点のある入力欄の autocorrect の変化を読み直さないのでできない）
@@ -3365,9 +3457,11 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 打っている途中に、点線の枠の縁（見えない余白 TA_PAD の所）を 3px 以上引くと、打ったまま入力欄を動かす（T-146、ideas/new-ideas1: 端を持って移動）。
   // 引かずに離したら、今まで通りその近くにカーソルを置く（caretAt。余白を押しても入力が続く T-024 のまま）。中身の所はブラウザに任せる（カーソルと範囲の選択）。
   // マウスとペンだけ（指はページのスクロールと取り合うので、確定した文字を文字の道具で引いて動かす）
+  // 付箋・枠の入力欄は、地の余白（taP）も縁に数える（見えない余白 TA_PAD は透明な border、地の余白は padding）
+  let taP = 0;
   const taEdge = e => {
-    const r = ta.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
-    return e.pointerType !== 'touch' && (x < TA_PAD || y < TA_PAD || x > r.width - TA_PAD || y > r.height - TA_PAD);
+    const r = ta.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, q = TA_PAD + taP;
+    return e.pointerType !== 'touch' && (x < q || y < q || x > r.width - q || y > r.height - q);
   };
   function taHover(e) {
     if (e.buttons) return;
@@ -3407,7 +3501,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 画面の (cx, cy) にいちばん近い文字の境目にカーソルを置く（余白を押して引かずに離したとき）。行は高さで、行の中は入力欄と同じ測り方（lineW）で決める
   function caretAt(cx, cy) {
     const r = ta.getBoundingClientRect(), L = ta.value.split('\n');
-    const li = min(L.length - 1, max(0, floor((cy - r.top - TA_PAD) / (taFs * LH)))), t = L[li], x = cx - r.left - TA_PAD;
+    const q = TA_PAD + taP, li = min(L.length - 1, max(0, floor((cy - r.top - q) / (taFs * LH)))), t = L[li], x = cx - r.left - q;
     let lo = 0, hi = t.length;
     while (lo < hi) {
       const m = (lo + hi) >> 1;
@@ -3423,17 +3517,22 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     mapNow();
     taObj = o;
     o.el.classList.add('ed');
-    taFs = o.fs / sdpr; taC = o.c; taA = o.a;
-    textAt((o.x - sox) / sdpr, (o.y - soy) / sdpr + taFs * LH / 2, o.s);
+    taFs = o.fs / sdpr; taC = o.c; taA = o.a; taK = o.k;
+    const P = tkP(taFs, taK); // 付箋・枠は箱の左上から余白の分だけ内側が文字
+    textAt((o.x - sox) / sdpr + P, (o.y - soy) / sdpr + P + taFs * LH / 2, o.s);
   }
   function styleTa() {
     const s = ta.style;
     s.setProperty('--c', taC);
     s.setProperty('--a', taA);
     s.setProperty('--fs', taFs + 'px');
+    // 付箋・枠: 確定した物と同じ寸法（大きさは確定と同じく整数に丸めて測る）。外の丸みは見えない余白の分だけ大きくし、地の角を物と同じ丸みにする
+    const fs = max(4, round(taFs));
+    taP = tkStyle(ta, fs, taC, taK);
+    s.setProperty('--tr', taK ? TA_PAD + tkR(fs) + 'px' : '0px');
     // 余白の分だけ外へずらすので、文字の位置と点線の枠の見た目は変わらない
-    s.left = taX - TA_PAD + 'px';
-    s.top = taCY - taFs * LH / 2 - TA_PAD + 'px';
+    s.left = taX - TA_PAD - taP + 'px';
+    s.top = taCY - taFs * LH / 2 - TA_PAD - taP + 'px';
     updateGhost();
   }
   // 中身に合わせて入力欄を広げる（折り返さない。改行でだけ行が増える）
@@ -4026,8 +4125,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (o) o.el.classList.remove('ed');
     mapNow();
     sizeSurface();
-    const st = [v, round(taX + sox / sdpr) * sdpr, round(taCY - taFs * LH / 2 + soy / sdpr) * sdpr,
-      max(4, round(taFs)) * sdpr, taC, taA];
+    const fs = max(4, round(taFs)), P = tkP(fs, taK); // 付箋・枠は、文字の位置から余白の分だけ外が箱の左上
+    const st = [v, (round(taX + sox / sdpr) - P) * sdpr, (round(taCY - taFs * LH / 2 + soy / sdpr) - P) * sdpr,
+      fs * sdpr, taC, taA, taK];
     if (o) {
       const prev = tSnap(o);
       if (v && sameSt(prev, st)) return;
@@ -4184,7 +4284,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       ["{Esc}", "隠す（ブックマークレットで再表示）"]
     ]],
     ["ボタンと文字", [
-      ["ペン・図形をもう一度", "ペンの種類（万年筆・筆・鉛筆）や図形を選ぶ", "main"],
+      ["ペン・図形・文字をもう一度", "ペンの種類（万年筆・筆・鉛筆）・図形・文字の種類（付箋・枠）を選ぶ", "main"],
       ["文字を押す", "ペンなどのままでも選んで動かせる。もう一度押すと書き直し", "touch"],
       ["選んだ物を押す", "複製・削除"],
       ["文字の入力中", "{Esc}・{Ctrl}+{Enter}・外を押すと確定"],
@@ -4451,6 +4551,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (typeof p.color === 'string' && /^#[0-9a-f]{6}$/i.test(p.color)) color = p.color.toLowerCase();
     if (typeof p.tool === 'string' && CFG[p.tool]) tool = p.tool;
     if (PENS.includes(p.pen)) penType = p.pen;
+    if (TKS.includes(p.tk)) textKind = p.tk;
     if (typeof p.calc === 'boolean') calc = p.calc;
     if (UIS.includes(p.ui)) cp2 = p.ui === 'cp2';
     for (const k of PREF_T) {
@@ -4464,7 +4565,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function snapPrefs() {
     const size = {}, alpha = {};
     for (const k of PREF_T) { const held = k === 'pen' && mainPen; size[k] = held ? mainPen[0] : CFG[k].size; alpha[k] = held ? mainPen[1] : CFG[k].alpha; }
-    return { color, tool, pen: mainPen ? mainPen[2] : penType, calc, ui: UIS[+cp2], size, alpha };
+    return { color, tool, pen: mainPen ? mainPen[2] : penType, tk: textKind, calc, ui: UIS[+cp2], size, alpha };
   }
   function remember() {
     if (!ready) return;
@@ -4477,6 +4578,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (cur.color !== base.color) d.color = cur.color;
     if (cur.tool !== base.tool) d.tool = cur.tool;
     if (cur.pen !== base.pen) d.pen = cur.pen;
+    if (cur.tk !== base.tk) d.tk = cur.tk;
     if (cur.calc !== base.calc) d.calc = cur.calc;
     if (cur.ui !== base.ui) d.ui = cur.ui;
     for (const g of ['size', 'alpha']) {
@@ -4519,6 +4621,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   layout();
   setColor(color);
   syncPen();
+  syncTk();
   syncFixed();
   syncLook();
   syncCalc();

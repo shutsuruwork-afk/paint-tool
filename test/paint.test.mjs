@@ -2536,6 +2536,32 @@ test('直線・矢印の始めと終わりは、近くの線の端に吸い付�
   await page.close();
 });
 
+test('消しゴムで消した直線の端には吸い付かない。消しゴムを元に戻すと、また吸い付く（T-169）', async () => {
+  const { page, errors } = await fresh();
+  const alpha = (x, y) => readMain(page, x, y).then(d => d[3]);
+  await page.keyboard.press('l');
+  await drag(page, [[300, 300], [500, 300]], 5);
+  // 右の端のあたりを消しゴムで消す
+  await page.keyboard.press('e');
+  await drag(page, [[520, 260], [480, 340]], 8);
+  assert.equal(await alpha(500, 300), 0);
+  // 消した端（500, 300）には吸い付かない（吸い付けば線が (500, 300) を通る）
+  await page.keyboard.press('l');
+  await drag(page, [[506, 305], [600, 250]], 5);
+  assert.equal(await alpha(500, 300), 0);
+  // 残っている左の端には吸い付く
+  await page.keyboard.press('Control+z');
+  await drag(page, [[294, 305], [200, 250]], 5);
+  assert.ok(await alpha(297, 298) > 0);
+  // 消しゴムを元に戻すと、右の端にまた吸い付く
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('Control+z');
+  await drag(page, [[506, 305], [600, 250]], 5);
+  assert.ok(await alpha(503, 298) > 0);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('選択の回すつまみは、指なら中心から 18 px まで押せる（見た目は同じ。マウスは今まで通り）（T-167）', async () => {
   const page = await browser.newPage({ viewport: { width: 800, height: 700 }, hasTouch: true });
   const errors = [];

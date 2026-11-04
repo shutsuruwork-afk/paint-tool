@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.60.0';
+  const VERSION = '1.61.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -1687,6 +1687,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 
     if (t === 'eraser') {
       mode = 2;
+      erPrep();
       const p = sW / 2 + 2;
       markBox(x - p, y - p, x + p, y + p); // 削る前に該当タイルを退避
       if (tlist.length) eraseText(x, y, x, y, sW / 2);
@@ -2016,6 +2017,18 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // タイルの無い所には消すものも無いので作らない。入力のたびに呼ばれるので割り当てをしない
   function erasePts(n) {
     const w = sW * sk, r = w / 2 + 2;
+    if (erN) {
+      const rr = w * w / 4;
+      for (let k = 0; k < erN; k++) {
+        if (erH[k]) continue;
+        const px = erE[k * 2], py = erE[k * 2 + 1];
+        for (let i = 0; i < n; i++) {
+          const sx0 = ePts[i * 2], sy0 = ePts[i * 2 + 1], dx = i + 1 < n ? ePts[i * 2 + 2] - sx0 : 0, dy = i + 1 < n ? ePts[i * 2 + 3] - sy0 : 0, l2 = dx * dx + dy * dy;
+          const u = l2 ? max(0, min(1, ((px - sx0) * dx + (py - sy0) * dy) / l2)) : 0, qx = sx0 + dx * u - px, qy = sy0 + dy * u - py;
+          if (qx * qx + qy * qy <= rr) { erH[k] = 1; break; }
+        }
+      }
+    }
     let ax = ePts[0], ay = ePts[1], ex = ax, ey = ay;
     for (let i = 2; i < n * 2; i += 2) {
       const x = ePts[i], y = ePts[i + 1];
@@ -2065,6 +2078,19 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       }
       if (h.x) for (const v of h.x) exE.push(v);
     }
+  }
+  // 消しゴムで消した端（T-169）: 押したときに見えている端を erE に詰め、消しゴムの線が太さの半分以内を通った端に erH の印を付ける。
+  // 確定の手の x に入れると、それより古い手の端を相手にしない（選択の削除と同じ）。入力のたびの割り当てはない
+  let erE = new Float64Array(64), erH = new Uint8Array(32), erN = 0;
+  function erPrep() {
+    erN = 0;
+    eachEnd((X, Y) => {
+      if (erE.length < erN * 2 + 2) { const v = new Float64Array(erE.length * 2); v.set(erE); erE = v; erH = new Uint8Array(erE.length / 2); }
+      erE[erN * 2] = X;
+      erE[erN * 2 + 1] = Y;
+      erN++;
+    });
+    erH.fill(0, 0, erN);
   }
   function snapPrep(type) {
     snapN = 0;
@@ -2249,7 +2275,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         ac = pack(R).getContext('2d');
         for (let k = 0, i = 0; i < R.length; k++, i += 6) ac.drawImage(tsave[k].c, 0, 0, R[i + 2], R[i + 3], R[i + 4], R[i + 5], R[i + 2], R[i + 3]);
       }
+      const h0 = lastH;
       if (R.length || P) push(R, ac && ac.canvas, null, P);
+      if (lastH !== h0) {
+        const x = [];
+        for (let k = 0; k < erN; k++) if (erH[k]) x.push(erE[k * 2], erE[k * 2 + 1]);
+        if (x.length) lastH.x = x;
+      }
+      erN = 0;
     }
     resetTiles();
     mode = 0;
@@ -2261,6 +2294,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     stopStroke();
     if (m === 4) selAbort();
     else if (m === 2) {
+      erN = 0;
       takeErased(true);
       // 退避しておいた画素を戻す（表示タイルが無かった所は、何も消していない）
       const R = tileRects(false);

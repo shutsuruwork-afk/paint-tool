@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.45.0';
+  const VERSION = '1.46.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -3024,7 +3024,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       // 枠だけ自前の答えと全角 1 文字の分を広げる（電卓が切りでも。T-152、ユーザーの案: 予測してくれる範囲はこっちで出さず、枠を予測して拡張。
       // 英語の自動修正は残したいので、入力欄の予測は止めない）。iPhone の答えの書き方（桁数）は自前と違うことがあるので 1 文字余らせる
       const ios = IOS_MATH && !taIme && p === end && /=$/.test(line) && /^[\d\s+\-*/^%().,=]+$/.test(line.normalize('NFKC').replace(/[×÷−–]/g, '*'));
-      const r = ios || calc || cp2 ? calcLine(line) : ''; // CP2 は電卓がいつも入り
+      const r = ios || calc || cp2 ? calcLine(line, calcEnv(v.slice(0, a))) : ''; // CP2 は電卓がいつも入り。上の行の変数と ans を使う（T-155）
       if (r && ios) ghostR = lineW(line + r.trim()) + ceil(taFs);
       else if (r) {
         ghostTxt = r;
@@ -3052,41 +3052,51 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     try { ok = doc.execCommand('insertText', false, t); } catch (_) { }
     if (!ok) { ta.setRangeText(t, ghostEnd, ghostEnd, 'end'); updateGhost(); }
   }
-  // 1 行の計算式を計算して、薄く出す文字（「 = 36」か「=36」、行が = で終わっていれば「36」か「 36」）を返す。式でなければ ''。
+  // ---- 電卓の計算 ----
+  // 1 行の計算式を計算して、薄く出す文字（= で終わる行の答え。「36」か「 36」）を返す。式でなければ ''。
   // eval は使わない（CSP で止まるページがあり、安全のためにも）。かけ算・わり算が先、^ は右から、% は百分率。
   // 数は分数 [分子, 分母]（BigInt。分母は正、約分済み）で持ち、桁がいくら多くても正確に計算する（T-150、ideas/paint-tool-calc.md: 巨大な数の計算を正確に）。
   // 整数でない指数（2^0.5 など）だけはふつうの数（倍精度）にする。BigInt のない古いブラウザでは、全部ふつうの数（前と同じ）
   // 関数電卓（T-153、R-020 の答え: 関数電卓みたいなことしたい。sin とか pi, e とか）: sin・cos・tan（角は π があればラジアン、なければ度。
-  // ユーザーが選んだ。° か rad を付ければそちら）・asin・acos・atan（答えは度）・sinh・cosh・tanh・√（sqrt）・∛（cbrt）・ln・log（常用対数）・
-  // exp・abs・n!・π（pi）・e。名前は小文字にして読み、数と名前の間のかけ算は省ける（2π・3sin30）。関数と定数の答えはふつうの数
-  // （√ と ∛ は割り切れれば、n! はいつも分数のまま）。² ³ は NFKC で 2 3 になってしまうので先に ^2 ^3 にする
-  function calcLine(src) {
-    let s = src.replace(/²/g, '^2').replace(/³/g, '^3').normalize('NFKC').toLowerCase()
-      .replace(/[×✕]/g, '*').replace(/÷/g, '/').replace(/[−–]/g, '-').replace(/(\d),(?=\d{3}(?!\d))/g, '$1');
-    // 空白は式の書き方に合わせる: 演算子か = の前後に空白があれば空白を入れ、詰めて書いた式なら詰める。
-    // 最後に自分で打った空白には重ねない（= の前に打った空白は、空白を入れる書き方とみなす）
-    const eq = /=\s*$/.test(s), tw = /\s$/.test(s), sp = tw && !eq || /\s[+\-*/^%=]|[+\-*/^=]\s/.test(s.trim());
-    if (eq) s = s.replace(/=\s*$/, '');
-    // 演算子・関数・%・! が 1 つ以上ある行だけを式とみなす（「12」や「-5」だけでは出さない）。定数だけの行は = で終わるときだけ（pi=）
-    if (!/^[\d\s+\-*/^%().!a-zπ√∛°]+$/.test(s)) return '';
+  // ユーザーが選んだ。° か rad を付ければそちら）・asin・acos・atan（答えは度）・√・∛・ln・log（常用対数）・exp・abs・n!・π（pi）・e。
+  // 名前は小文字にして読み、数と名前の間のかけ算は省ける（2π・3sin30）。関数と定数の答えはふつうの数（√ と ∛ は割り切れれば、n! はいつも分数のまま）。
+  // 変数と前の行・Python と LaTeX の書き方・統計（T-155、2026-11-04 のユーザーの要望: 関数電卓をここまでやるってくらいに強化したい）:
+  // 「r = 5」と書くと下の行で r が使え、ans（_）は上の行の答え。Python の ** // % （後ろに数があれば余り）・mod・[3, 5, 8]・math. を外す・
+  // 1e3・0x1f・1_000、LaTeX の \frac{a}{b}・\sqrt{x}・\sqrt[n]{x}・\cdot・\times・\pi・{ }。統計は mean・median・mode・stdev（標本）・pstdev・
+  // variance・sum・min・max・len など、関数の引数は数を並べても [ ] の並びでもよい。
+  // 式は一度読んで、計算する手順（関数の入れ子）にする。方程式（T-156）は知らない名前に値を入れて何度も計算する
+  const { calcLine, calcEnv } = (() => {
     const N = typeof BigInt === 'function' ? BigInt : null;
-    let i = 0, ops = 0, cst = 0, pc = 0, dc = 0, rc = 0; // 演算の数・定数を使ったか・角の印（π・°・rad の数）
-    const peek = () => { while (s[i] === ' ') i++; return s[i]; };
-    const name = () => { peek(); const w = /^([a-z]+|[π√∛])/.exec(s.slice(i)); return w ? w[1] : ''; };
+    const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
     const I = n => (N ? [N(n), N(1)] : n);
-    const fl = v => (typeof v === 'number' ? v : Number(v[0]) / Number(v[1]));
-    const gcd = (a, b) => { if (a < 0) a = -a; while (b) [a, b] = [b, a % b]; return a; };
+    const isL = v => !!v && v.l !== undefined; // 数の並び { l: [...] }
+    const sc = v => { if (isL(v)) throw 0; return v; };
+    const fl = v => (typeof sc(v) === 'number' ? v : Number(v[0]) / Number(v[1]));
+    const gcd = (a, b) => { if (a < 0) a = -a; if (b < 0) b = -b; while (b) [a, b] = [b, a % b]; return a; };
     const Q = (n, d) => {
       if (!d) throw 0; // 0 で割った
       if (d < 0) { n = -n; d = -d; }
       const g = gcd(n, d);
       return [n / g, d / g];
     };
-    const add = (a, b, k) => (typeof a === 'number' || typeof b === 'number' ? fl(a) + k * fl(b) : Q(a[0] * b[1] + (k < 0 ? -b[0] : b[0]) * a[1], a[1] * b[1]));
-    const mul = (a, b) => (typeof a === 'number' || typeof b === 'number' ? fl(a) * fl(b) : Q(a[0] * b[0], a[1] * b[1]));
-    const div = (a, b) => (typeof a === 'number' || typeof b === 'number' ? fl(a) / fl(b) : Q(a[0] * b[1], a[1] * b[0]));
+    const add = (a, b, k) => (typeof sc(a) === 'number' || typeof sc(b) === 'number' ? fl(a) + k * fl(b) : Q(a[0] * b[1] + (k < 0 ? -b[0] : b[0]) * a[1], a[1] * b[1]));
+    const mul = (a, b) => (typeof sc(a) === 'number' || typeof sc(b) === 'number' ? fl(a) * fl(b) : Q(a[0] * b[0], a[1] * b[1]));
+    const div = (a, b) => (typeof sc(a) === 'number' || typeof sc(b) === 'number' ? fl(a) / fl(b) : Q(a[0] * b[1], a[1] * b[0]));
+    const neg = a => mul(a, I(-1));
+    const cmp = (a, b) => {
+      if (typeof sc(a) === 'number' || typeof sc(b) === 'number') return fl(a) - fl(b);
+      const x = a[0] * b[1], y = b[0] * a[1];
+      return x < y ? -1 : x > y ? 1 : 0;
+    };
+    const floorV = a => {
+      if (typeof sc(a) === 'number') return Math.floor(a);
+      const [n, d] = a;
+      return [n >= 0 ? n / d : -((-n + d - N(1)) / d), N(1)];
+    };
+    const mod = (a, b) => add(a, mul(b, floorV(div(a, b))), -1);
+    const idiv = (a, b) => floorV(div(a, b));
     const pow = (a, b) => {
-      if (typeof a === 'number' || typeof b === 'number' || b[1] !== N(1)) return fl(a) ** fl(b);
+      if (typeof sc(a) === 'number' || typeof sc(b) === 'number' || b[1] !== N(1)) return fl(a) ** fl(b);
       let e = b[0];
       const inv = e < 0;
       if (inv) e = -e;
@@ -3095,6 +3105,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       const r = [a[0] ** e, a[1] ** e];
       return inv ? Q(r[1], r[0]) : r;
     };
+    // 整数の値（BigInt。BigInt のない環境ではふつうの数）
+    const Z = v => {
+      if (typeof sc(v) === 'number') { if (v !== Math.floor(v) || !isFinite(v)) throw 0; return N ? N(v) : v; }
+      if (v[1] !== N(1)) throw 0;
+      return v[0];
+    };
+    const fromZ = z => (N ? [z, N(1)] : z);
+    const B = x => (N ? N(x) : x);
     // n ≥ 0 の k 乗根の整数の部分（上から始めるニュートン法）
     const iroot = (n, k) => {
       if (n < N(2)) return n;
@@ -3104,7 +3122,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     };
     // √ と ∛: 分子と分母がどちらも k 乗の数なら分数のまま（√16 = 4・√(1/4) = 0.5）
     const root = k => a => {
-      if (typeof a !== 'number' && (k === 3 || a[0] >= 0)) {
+      if (typeof sc(a) !== 'number' && (k === 3 || a[0] >= 0)) {
         const g = a[0] < 0 ? -a[0] : a[0], p = iroot(g, k), q = iroot(a[1], k);
         if (p ** N(k) === g && q ** N(k) === a[1]) return [a[0] < 0 ? -p : p, q];
       }
@@ -3113,10 +3131,16 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     // n! は 0〜450 の整数だけ（450! で 1000 桁ほど）
     const fact = a => {
       const x = fl(a);
-      if (!(x >= 0 && x <= 450 && x === floor(x))) throw 0;
+      if (!(x >= 0 && x <= 450 && x === Math.floor(x))) throw 0;
       let r = I(1);
       for (let j = 2; j <= x; j++) r = mul(r, I(j));
       return r;
+    };
+    // 小数 n 桁で四捨五入（0.5 は 0 から遠い方へ。電卓と同じ）
+    const roundV = (a, n) => {
+      if (typeof sc(a) === 'number') { const p = 10 ** n; return Math.sign(a) * Math.round(abs(a) * p) / p; }
+      const p = B(10) ** B(n), t = a[0] * p, s = t < 0 ? -1 : 1, q = ((t < 0 ? -t : t) * B(2) + a[1]) / (B(2) * a[1]);
+      return Q(s < 0 ? -q : q, p);
     };
     // 三角関数: 角が 90 度（π/2）のちょうど倍なら答えもちょうど（sin180 = 0。倍精度だと 1.2e-16 になる）、tan90 は出さない
     const trig = k => (a, rad) => {
@@ -3128,84 +3152,218 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       }
       return [Math.sin, Math.cos, Math.tan][k](rad ? x : x * PI / 180);
     };
-    const deg = f => a => f(fl(a)) * 180 / PI;
-    const fn = f => a => f(fl(a));
+    // 関数の引数の数の決まり。one は数 1 つ、two は 2 つ、many は数をいくつでも（[ ] の並びはほどく）
+    const one = f => (a, r) => { if (a.length !== 1) throw 0; return f(sc(a[0]), r); };
+    const flt = f => one(x => f(fl(x)));
+    const two = f => a => { if (a.length !== 2) throw 0; return f(sc(a[0]), sc(a[1])); };
+    const many = f => a => { const xs = []; for (const v of a) if (isL(v)) xs.push(...v.l.map(sc)); else xs.push(v); if (!xs.length) throw 0; return f(xs); };
+    const DEG = 180 / PI;
+    const sum = xs => xs.reduce((s, x) => add(s, x, 1), I(0));
+    const mean = xs => div(sum(xs), I(xs.length));
+    const vari = (xs, d) => { if (xs.length <= d) throw 0; const m = mean(xs); return div(sum(xs.map(x => { const t = add(x, m, -1); return mul(t, t); })), I(xs.length - d)); };
+    const comb = (n, k, p) => { // p なら順列
+      n = Z(n); k = Z(k);
+      if (k < 0 || n < k || k > B(5000)) throw 0;
+      let r = B(1);
+      for (let j = B(1); j <= k; j += B(1)) r = p ? r * (n - k + j) : r * (n - k + j) / j;
+      return fromZ(r);
+    };
     const FN = {
-      sin: trig(0), cos: trig(1), tan: trig(2), asin: deg(Math.asin), acos: deg(Math.acos), atan: deg(Math.atan),
-      sinh: fn(Math.sinh), cosh: fn(Math.cosh), tanh: fn(Math.tanh), sqrt: root(2), '√': root(2), cbrt: root(3), '∛': root(3),
-      ln: fn(Math.log), log: fn(Math.log10), exp: fn(Math.exp), abs: a => (typeof a === 'number' ? abs(a) : [a[0] < 0 ? -a[0] : a[0], a[1]]),
+      sin: one(trig(0)), cos: one(trig(1)), tan: one(trig(2)),
+      asin: flt(x => Math.asin(x) * DEG), acos: flt(x => Math.acos(x) * DEG), atan: flt(x => Math.atan(x) * DEG),
+      atan2: two((y, x) => Math.atan2(fl(y), fl(x)) * DEG),
+      sinh: flt(Math.sinh), cosh: flt(Math.cosh), tanh: flt(Math.tanh), asinh: flt(Math.asinh), acosh: flt(Math.acosh), atanh: flt(Math.atanh),
+      sqrt: one(root(2)), '√': one(root(2)), cbrt: one(root(3)), '∛': one(root(3)),
+      ln: flt(Math.log), log10: flt(Math.log10), log2: flt(Math.log2), exp: flt(Math.exp),
+      log: a => (a.length === 2 ? Math.log(fl(sc(a[0]))) / Math.log(fl(sc(a[1]))) : flt(Math.log10)(a)), // log(x, 底) は Python と同じ順
+      abs: one(a => (cmp(a, I(0)) < 0 ? neg(a) : a)), floor: one(floorV), ceil: one(a => neg(floorV(neg(a)))),
+      trunc: one(a => (cmp(a, I(0)) < 0 ? neg(floorV(neg(a))) : floorV(a))),
+      round: a => { if (!a.length || a.length > 2) throw 0; return roundV(sc(a[0]), a[1] === undefined ? 0 : Number(Z(a[1]))); },
+      factorial: one(fact), degrees: flt(x => x * DEG), radians: flt(x => x / DEG),
+      pow: two(pow), mod: two(mod), hypot: many(xs => root(2)(sum(xs.map(x => mul(x, x))))),
+      gcd: many(xs => fromZ(xs.map(Z).reduce(gcd))), lcm: many(xs => fromZ(xs.map(Z).reduce((a, b) => (a && b ? (a < 0 ? -a : a) / gcd(a, b) * (b < 0 ? -b : b) : B(0))))),
+      comb: two((n, k) => comb(n, k)), perm: two((n, k) => comb(n, k, 1)),
+      min: many(xs => xs.reduce((a, b) => (cmp(b, a) < 0 ? b : a))), max: many(xs => xs.reduce((a, b) => (cmp(b, a) > 0 ? b : a))),
+      sum: many(sum), prod: many(xs => xs.reduce(mul)), mean: many(mean),
+      median: many(xs => { const t = xs.slice().sort(cmp), h = t.length >> 1; return t.length % 2 ? t[h] : div(add(t[h - 1], t[h], 1), I(2)); }),
+      mode: many(xs => { const c = new Map(); let b = xs[0], n = 0; for (const x of xs) { const k = fmt(x), m = (c.get(k) || 0) + 1; c.set(k, m); if (m > n) { n = m; b = x; } } return b; }),
+      variance: many(xs => vari(xs, 1)), pvariance: many(xs => vari(xs, 0)),
+      stdev: many(xs => root(2)(vari(xs, 1))), pstdev: many(xs => root(2)(vari(xs, 0))),
+      len: a => { let n = 0; for (const v of a) n += isL(v) ? v.l.length : 1; return I(n); },
+      sorted: many(xs => ({ l: xs.slice().sort(cmp) })),
+      range: a => { // Python の range（整数・1 万個まで）
+        if (!a.length || a.length > 3) throw 0;
+        const z = a.map(Z), [s, e] = z.length === 1 ? [B(0), z[0]] : z, st = z[2] === undefined ? B(1) : z[2];
+        if (!st || (e - s) / st > B(10000)) throw 0;
+        const l = [];
+        for (let x = s; st > 0 ? x < e : x > e; x += st) l.push(fromZ(x));
+        return { l };
+      },
     };
-    FN.arcsin = FN.asin; FN.arccos = FN.acos; FN.arctan = FN.atan;
-    const expr = () => {
-      let v = term();
-      for (;;) {
-        const c = peek();
-        if (c === '+') { i++; ops++; v = add(v, term(), 1); } else if (c === '-') { i++; ops++; v = add(v, term(), -1); } else return v;
+    for (const [a, b] of [['arcsin', 'asin'], ['arccos', 'acos'], ['arctan', 'atan'], ['int', 'trunc'], ['ncr', 'comb'], ['npr', 'perm'],
+      ['avg', 'mean'], ['average', 'mean'], ['sd', 'stdev'], ['var', 'variance'], ['count', 'len'], ['product', 'prod']]) FN[a] = FN[b];
+    const CONST = { pi: PI, 'π': PI, tau: 2 * PI, e: Math.E };
+    const KW = { mod: 1, rad: 1 };
+    const reserved = w => has(CONST, w) || has(FN, w) || has(KW, w) || w === 'ans' || w === '_';
+    const num = t => {
+      if (/^0[xbo]/.test(t)) return N ? [N(t), N(1)] : +t;
+      if (!N) return +t;
+      const [m, x = '0'] = t.split('e'), [a, b = ''] = m.split('.'), e = +x;
+      if (abs(e) > 400) throw 0;
+      return Q(N((a || '0') + b) * N(10) ** N(max(0, e)), N(10) ** N(b.length + max(0, -e)));
+    };
+    // LaTeX の書き方を、ふつうの式に直す（\frac{a}{b} → ((a)/(b))、\sqrt[n]{x} → ((x)^(1/(n)))、{ } → ( )）
+    const tex = t => {
+      let o = '', j = 0;
+      const grp = () => {
+        while (t[j] === ' ') j++;
+        if (t[j] !== '{') return t[j] === undefined ? '' : t[j++];
+        for (let k = j, d = 0; k < t.length; k++) {
+          if (t[k] === '{') d++;
+          else if (t[k] === '}' && !--d) { const g = t.slice(j + 1, k); j = k + 1; return g; }
+        }
+        throw 0;
+      };
+      while (j < t.length) {
+        if (t[j] === '\\') {
+          const c = /^\\([a-z]+|.?)/.exec(t.slice(j))[1];
+          j += c.length + 1;
+          if (/^[dt]?frac$/.test(c)) { const a = tex(grp()); o += '((' + a + ')/(' + tex(grp()) + '))'; }
+          else if (c === 'sqrt') {
+            let n = '';
+            if (t[j] === '[') { const k = t.indexOf(']', j); if (k < 0) throw 0; n = t.slice(j + 1, k); j = k + 1; }
+            const a = tex(grp());
+            o += n ? '((' + a + ')^(1/(' + tex(n) + ')))' : '√(' + a + ')';
+          } else if (c === 'cdot' || c === 'times' || c === 'ast') o += '*';
+          else if (c === 'div') o += '/';
+          else if (c === 'mathrm' || c === 'text' || c === 'operatorname') o += tex(grp());
+          else if (!/^(left|right|[,;:! ]|quad|)$/.test(c)) o += c; // \sin・\pi など（\left・\right・空白は外す）
+        } else if (t[j] === '{') o += '(' + tex(grp()) + ')';
+        else o += t[j++];
       }
+      return o;
     };
-    const term = () => {
-      let v = unary();
-      for (;;) {
-        const c = peek();
-        if (c === '*') { i++; ops++; v = mul(v, unary()); } else if (c === '/') { i++; ops++; v = div(v, unary()); }
-        else if (name()) { ops++; v = mul(v, unary()); } // かけ算の省略（2π・3sin30）
-        else return v;
-      }
-    };
-    const unary = () => {
-      const c = peek();
-      if (c === '-') { i++; return mul(unary(), I(-1)); }
-      if (c === '+') { i++; return unary(); }
-      const b = post();
-      if (peek() === '^') { i++; ops++; return pow(b, unary()); }
-      return b;
-    };
-    const post = () => {
-      let v = atom();
-      for (;;) {
-        const c = peek();
-        if (c === '%') { i++; ops++; v = div(v, I(100)); } else if (c === '!') { i++; ops++; v = fact(v); }
-        else if (c === '°') { i++; dc++; } else if (name() === 'rad') { i += 3; rc++; } else return v;
-      }
-    };
-    const atom = () => {
-      if (peek() === '(') {
+    function prep(src) {
+      let s = src.replace(/²/g, '^2').replace(/³/g, '^3').normalize('NFKC').toLowerCase()
+        .replace(/[×✕⋅·]/g, '*').replace(/÷/g, '/').replace(/[−–]/g, '-');
+      if (/[\\{]/.test(s)) s = tex(s);
+      s = s.replace(/\*\*/g, '^').replace(/\b(?:math|cmath|np|numpy|statistics)\./g, '').replace(/(\d)_(?=\d)/g, '$1');
+      // 桁区切りのカンマを外す（関数の引数や [ ] の並びがあるときは、カンマは区切り）
+      return /[a-z_√∛]\s*\(|\[/.test(s) ? s : s.replace(/(\d),(?=\d{3}(?!\d))/g, '$1');
+    }
+    // 式を読んで、計算する手順（引数のない関数）にする。知らない名前は unk に入れ、set で入れた値として計算する（方程式で使う）
+    function compile(s, env) {
+      let i = 0, ops = 0, cst = 0, pc = 0, dc = 0, rc = 0, X = 0;
+      const unk = new Set();
+      const peek = () => { while (s[i] === ' ') i++; return s[i]; };
+      const known = w => has(CONST, w) || has(FN, w) || has(KW, w) || w in env;
+      // 名前を読む。知らない名前は、後ろの数字を外すか頭の知っている名前で切る（sin30 → sin 30、log28 → log 28、pir → pi r）
+      const ident = () => {
+        peek();
+        const m = /^(?:[a-z_][a-z0-9_]*|[π√∛])/.exec(s.slice(i));
+        if (!m) return '';
+        const w = m[0], l = w.replace(/\d+$/, '');
+        if (known(w)) return w;
+        if (known(l)) return l;
+        for (let k = l.length - 1; k > 0; k--) if (known(l.slice(0, k))) return l.slice(0, k);
+        return w;
+      };
+      const opnd = j => { while (s[j] === ' ') j++; return /[\d.([a-zπ√∛_]/.test(s[j] || ''); };
+      const args = close => {
+        const fs = [];
+        if (peek() !== close) for (;;) { fs.push(expr()); if (peek() !== ',') break; i++; }
+        if (peek() !== close) throw 0;
         i++;
-        const v = expr();
-        if (peek() !== ')') throw 0;
-        i++;
-        return v;
-      }
-      const w = name();
-      if (w) {
-        i += w.length;
-        if (w === 'pi' || w === 'π') { pc++; cst = 1; return PI; }
-        if (w === 'e') { cst = 1; return Math.E; }
-        const f = {}.hasOwnProperty.call(FN, w) && FN[w];
-        if (!f) throw 0;
-        ops++;
-        // 引数は ( ) の中か、( ) がなければ続く項（sin30・sin 2π・√2）。角に π があればラジアン、なければ度（° と rad が優先）
-        const p0 = pc, d0 = dc, r0 = rc;
-        let a;
-        if (peek() === '(') a = atom();
-        else for (a = unary(); /^(pi|π|e)$/.test(name());) a = mul(a, unary());
-        return f(a, rc > r0 || pc > p0 && dc === d0);
-      }
-      const m = /^(\d+(\.\d*)?|\.\d+)/.exec(s.slice(i));
-      if (!m) throw 0;
-      i += m[0].length;
-      if (!N) return +m[0];
-      const [a, b = ''] = m[0].split('.');
-      return Q(N((a || '0') + b), N(10) ** N(b.length));
-    };
-    let r;
-    try { r = fmt(expr()); } catch (_) { return ''; }
-    if (peek() !== undefined || !r || !(ops || eq && cst)) return '';
-    // 答えを出すのは行が = で終わるときだけ（T-154、ユーザー: = をトリガーにした方が設計としてはいい。前は = がなくても「=36」と出していた）
-    return eq ? (sp && !tw ? ' ' : '') + r : '';
+        return fs;
+      };
+      const expr = () => {
+        let f = term();
+        for (;;) {
+          const c = peek(), a = f;
+          if (c !== '+' && c !== '-') return f;
+          i++; ops++;
+          const b = term(), k = c === '+' ? 1 : -1;
+          f = () => add(a(), b(), k);
+        }
+      };
+      const term = () => {
+        let f = unary();
+        for (;;) {
+          const c = peek(), a = f;
+          let op = mul;
+          if (c === '*') i++;
+          else if (c === '/') { i++; if (s[i] === '/') { i++; op = idiv; } else op = div; }
+          else if (c === '%') { i++; op = mod; } // 後ろに数がある % は余り（Python と同じ）
+          else { const w = ident(); if (!w || w === 'rad') return f; if (w === 'mod') { i += 3; op = mod; } } // 名前の前の * は省ける（2π・3sin30）
+          ops++;
+          const b = unary();
+          f = () => op(a(), b());
+        }
+      };
+      const unary = () => {
+        const c = peek();
+        if (c === '-') { i++; const a = unary(); return () => neg(a()); }
+        if (c === '+') { i++; return unary(); }
+        const b = post();
+        if (peek() !== '^') return b;
+        i++; ops++;
+        const e = unary();
+        return () => pow(b(), e());
+      };
+      const post = () => {
+        let f = atom();
+        for (;;) {
+          const c = peek(), a = f;
+          if (c === '%' && !opnd(i + 1)) { i++; ops++; f = () => div(a(), I(100)); }
+          else if (c === '!') { i++; ops++; f = () => fact(a()); }
+          else if (c === '°') { i++; dc++; }
+          else if (ident() === 'rad') { i += 3; rc++; }
+          else return f;
+        }
+      };
+      const atom = () => {
+        const c = peek();
+        if (c === '(' || c === '[') {
+          i++;
+          const fs = args(c === '(' ? ')' : ']');
+          if (c === '[') return () => ({ l: fs.map(f => f()) });
+          if (fs.length !== 1) throw 0;
+          return fs[0];
+        }
+        const w = ident();
+        if (w) {
+          i += w.length;
+          if (has(CONST, w)) { cst = 1; if (w !== 'e') pc++; const v = CONST[w]; return () => v; }
+          if (has(FN, w)) {
+            ops++;
+            // 引数は ( ) の中か、( ) がなければ続く項と定数（sin30・sin 2π・√2）。角に π があればラジアン、なければ度（° と rad が優先）
+            const p0 = pc, d0 = dc, r0 = rc;
+            let fs;
+            if (peek() === '(') { i++; fs = args(')'); }
+            else { let a = unary(); while (/^(pi|π|tau|e)$/.test(ident())) { const b = a, u = unary(); a = () => mul(b(), u()); } fs = [a]; }
+            const rad = rc > r0 || pc > p0 && dc === d0, F = FN[w];
+            return () => F(fs.map(f => f()), rad);
+          }
+          if (w in env) { cst = 1; const o = env[w]; if (o.p) pc++; return () => o.v; }
+          if (has(KW, w)) throw 0;
+          unk.add(w);
+          return () => X;
+        }
+        const m = /^(?:0x[0-9a-f]+|0b[01]+|0o[0-7]+|(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)/.exec(s.slice(i));
+        if (!m) throw 0;
+        i += m[0].length;
+        if (/^0[xbo]/.test(m[0])) ops++; // 0x1f= で 10 進に直した答えを出す
+        const v = num(m[0]);
+        return () => v;
+      };
+      const f = expr();
+      if (peek() !== undefined) throw 0;
+      return { f, ops, cst, unk, pc, set: v => { X = v; } };
+    }
     // 答えの書き方: 整数と割り切れる小数（小数 30 桁まで）は正確に。割り切れないときは、整数の部分は全部、小数は前と同じく有効数字 12 桁ほど
-    // （整数の部分が 10 桁を超えても小数 2 桁）。ふつうの数は前と同じ（有効数字 12 桁）。1000 桁を超える答えは出さない
+    // （整数の部分が 10 桁を超えても小数 2 桁）。ふつうの数は前と同じ（有効数字 12 桁）。1000 桁を超える答えは出さない。並びは [1, 2, 3]
     function fmt(v) {
+      if (isL(v)) { const t = v.l.map(fmt); return t.length > 50 || t.some(x => !x) ? '' : '[' + t.join(', ') + ']'; }
       if (typeof v === 'number') return isFinite(v) ? String(+v.toPrecision(12) || 0) : '';
       let [n, d] = v;
       const sg = n < 0 ? '-' : '', T = N(10);
@@ -3226,7 +3384,37 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       const a = q.slice(0, -f), b = q.slice(-f).replace(/0+$/, '');
       return (b || a !== '0' ? sg : '') + a + (b ? '.' + b : '');
     }
-  }
+    // 1 行を読む。env（名前 → { v: 値, p: π から求めたか }）に代入と ans を書き込み、= で終わる行なら答えの文字を返す。
+    // quiet は上の行を読むとき（答えの文字は要らない）
+    function line(src, env, quiet) {
+      let s = prep(src);
+      // 空白は式の書き方に合わせる: 演算子か = の前後に空白があれば空白を入れ、詰めて書いた式なら詰める。
+      // 最後に自分で打った空白には重ねない（= の前に打った空白は、空白を入れる書き方とみなす）
+      const eq = /=\s*$/.test(s), tw = /\s$/.test(s), sp = tw && !eq || /\s[+\-*/^%=]|[+\-*/^=]\s/.test(s.trim());
+      s = s.replace(/#.*/, ''); // Python のコメント
+      if (eq) s = s.replace(/=\s*$/, '');
+      const as = /^\s*([a-z_][a-z0-9_]*)\s*=([^=]*)$/.exec(s);
+      let r = '', c;
+      const ans = () => { env.ans = env._ = { v: c.f(), p: c.pc > 0 }; return env.ans.v; };
+      try {
+        if (as && !reserved(as[1]) && as[2].trim()) { // 代入（r = 5。r = 2*3 = なら答えも出す）
+          c = compile(as[2], env);
+          if (!c.unk.size) { const v = ans(); env[as[1]] = env.ans; if (eq) r = fmt(v); }
+        } else if (s.indexOf('=') < 0 && eq) { // = で終わる式（定数・変数だけの行も出す。12= や -5= は出さない）
+          c = compile(s, env);
+          if (!c.unk.size && (c.ops || c.cst)) r = fmt(ans());
+        }
+      } catch (_) { r = ''; }
+      return r && !quiet ? (sp && !tw ? ' ' : '') + r : '';
+    }
+    // 入力欄の上の行から、名前と ans を集める
+    function envOf(text) {
+      const env = Object.create(null);
+      for (const l of text.split('\n')) if (l.indexOf('=') >= 0) line(l, env, 1);
+      return env;
+    }
+    return { calcLine: line, calcEnv: envOf };
+  })();
 
   // 入力欄の中身を文字の物として面に置く（書き直しなら物を更新し、空なら消す）。1 手として履歴に積む
   function commitText() {

@@ -2212,6 +2212,46 @@ test('答えは行が = で終わるときだけ出す。iPhone・iPad では、
   }
 });
 
+test('電卓の変数と前の行（r = 5、ans）・Python の書き方（** // % mod [ ] math. 1e3 0x1f round log(x, 底) range）・LaTeX の書き方（\\frac \\sqrt { }）・統計（mean median mode stdev …）（T-155）', async () => {
+  const { page, errors } = await fresh();
+  await page.evaluate(() => localStorage.setItem('paint-bookmarklet', JSON.stringify({ calc: true })));
+  await page.evaluate(() => window.__paintBookmarklet.destroy());
+  await runCode(page, CODE);
+  const ghost = () => shadowEval(page, root => { const g = root.querySelector('.gh'); return g ? g.textContent : null; });
+  await page.keyboard.press('t');
+  await page.mouse.click(200, 300);
+  const cases = [
+    // 変数と前の行（答えはカーソルのある最後の行）
+    ['r = 5\n2πr=', '31.4159265359'], ['r = 5\nr = r + 1\nr*2=', '12'], ['r = 5\nr=', '5'], ['r=', null],
+    ['3*4=\nans+1=', '13'], ['3*4=\n_*2=', '24'], ['x = 2*3 =', ' 6'], ['x = 3 # 半径\nx*2=', '6'], ['d = [3, 5, 8]\nmean(d)=', '5.33333333333'],
+    ['y = 2x + 1', null], ['hello=', null], ['2(3)=', null],
+    // Python の書き方
+    ['2**10=', '1024'], ['7//2=', '3'], ['7 % 3 =', ' 1'], ['50%*200=', '100'], ['7 mod 3=', '1'], ['1e3+1=', '1001'], ['0x1f=', '31'],
+    ['1_000_000*2=', '2000000'], ['math.sqrt(16)=', '4'], ['round(3.14159, 2)=', '3.14'], ['round(2.5)=', '3'], ['log(8, 2)=', '3'],
+    ['gcd(12, 18)=', '6'], ['comb(5, 2)=', '10'], ['sum(range(1, 101))=', '5050'], ['sorted([3, 1, 2])=', '[1, 2, 3]'], ['max(3, 5, 1)=', '5'],
+    // 統計（数を並べても [ ] でもよい）
+    ['mean(3, 5, 8)=', '5.33333333333'], ['median(3, 1, 2, 4)=', '2.5'], ['mode(1, 2, 2, 3)=', '2'],
+    ['stdev([2, 4, 4, 4, 5, 5, 7, 9])=', '2.1380899353'], ['pstdev(2, 4, 4, 4, 5, 5, 7, 9)=', '2'], ['variance(1, 2, 3, 4)=', '1.66666666667'],
+    // LaTeX の書き方
+    ['\\frac{1}{2}+\\frac{1}{3}=', '0.833333333333'], ['\\sqrt{16}=', '4'], ['\\sqrt[3]{27}=', '3'], ['2^{10}=', '1024'], ['\\pi=', '3.14159265359'],
+    ['\\frac{\\sqrt{2}}{2}=', '0.707106781187']];
+  for (const [ex, want] of cases) {
+    await page.keyboard.press('Control+a');
+    await page.keyboard.press('Backspace');
+    await page.keyboard.insertText(ex);
+    assert.equal(await ghost(), want, ex);
+  }
+  // 下の行で決めた変数は使わない（上から順に読む）
+  await page.keyboard.press('Control+a');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.insertText('a*2=\na = 3');
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.press('End');
+  assert.equal(await ghost(), null);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('Simple Preview（CP2）: 開発用でなくてもその他の最後に出て（T-101）、押すと絵と履歴はそのままで CP2 の表示になる（ペン ⇄ 消しゴム・文字〈電卓は入り〉・元に戻す・その他〈全消去・色・本家に戻す〉・閉じる〈中身は隠す〉）。本家に戻せ、サイトごとに覚える（T-088）', async () => {
   const bar = page => shadowEval(page, root => [...root.querySelector('.bar').children].filter(e => e.classList.contains('b'))
     .map(b => b.title.split(/[ （(]/)[0] + (b.classList.contains('on') ? '*' : '')));

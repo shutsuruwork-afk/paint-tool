@@ -2127,7 +2127,7 @@ test('電卓は関数電卓のように sin・cos・tan・√・log・ln・n!・
   await page.close();
 });
 
-test('文字の入力欄では iPhone のキーボードの入力欄の中の予測（計算結果）を止め、iPhone でも電卓が入りなら Paint の答えを出す。切りなら答えも枠の広がりもない（T-160）', async () => {
+test('文字の入力欄では iPhone のキーボードの入力欄の中の予測（計算結果）と自動修正を止め（T-163）、iPhone でも電卓が入りなら Paint の答えを出す。切りなら答えも枠の広がりもない（T-160）', async () => {
   const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
   const open = async (ua, calc) => {
     const page = await browser.newPage({ viewport: { width: 1000, height: 700 }, ...(ua ? { userAgent: ua } : {}) });
@@ -2141,7 +2141,7 @@ test('文字の入力欄では iPhone のキーボードの入力欄の中の予
   };
   const look = page => shadowEval(page, root => {
     const g = root.querySelector('.gh'), t = root.querySelector('textarea:not([aria-hidden])');
-    return { ghost: g ? g.textContent : null, w: t.getBoundingClientRect().width, ws: t.getAttribute('writingsuggestions') };
+    return { ghost: g ? g.textContent : null, w: t.getBoundingClientRect().width, ws: t.getAttribute('writingsuggestions'), ac: t.getAttribute('autocorrect') };
   });
   const type = async (page, t) => {
     await page.keyboard.press('Control+a');
@@ -2154,6 +2154,7 @@ test('文字の入力欄では iPhone のキーボードの入力欄の中の予
   const noEq = await type(page, '2-3');
   assert.equal(noEq.ghost, null); // = がなければ出さない（T-154）
   assert.equal(noEq.ws, 'false'); // iPhone のキーボードの入力欄の中の予測を止める
+  assert.equal(noEq.ac, 'off'); // 自動修正も切り、候補のバーにも計算結果を出さない（T-163）
   assert.equal((await type(page, '2-3=')).ghost, '-1');
   assert.equal((await type(page, '11 -13 =')).ghost, ' -2');
   assert.equal((await type(page, '√8=')).ghost, '2√2');

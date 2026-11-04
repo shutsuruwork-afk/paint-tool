@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.53.0';
+  const VERSION = '1.54.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -2918,9 +2918,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 
   function textAt(cx, cy, value) {
     if (!value) { taFs = CFG.text.size; taC = color; taA = CFG.text.alpha; }
-    // writingsuggestions: iPhone のキーボードが入力欄の中に薄く出す予測（= で終わる式の計算結果も）を止める。その字は入力欄の値にも幅にも入らず、
-    // 欄の幅で切れて「-」「2」だけに見えた（T-152・T-160、ユーザーが「いつも Paint の答え」を選んだ）。英語の自動修正と候補のバーは残る
-    ta = el('textarea', 'tx', { spellcheck: 'false', writingsuggestions: 'false', wrap: 'off', rows: '1', 'aria-label': '文字' });
+    // writingsuggestions: iPhone のキーボードが入力欄の中に薄く出す予測を止める（T-160。計算結果は止まらなかったので T-161・T-162 で扱う）。
+    // autocorrect: 自動修正を切り、キーボードの上の候補のバーにも計算結果を出さない（T-163、ユーザー: 一旦切っていい。英語の単語の自動修正も出なくなる。
+    // = の後のときだけ切る案は、WebKit が焦点のある入力欄の autocorrect の変化を読み直さないのでできない）
+    ta = el('textarea', 'tx', { spellcheck: 'false', autocorrect: 'off', writingsuggestions: 'false', wrap: 'off', rows: '1', 'aria-label': '文字' });
     taX = cx; taCY = cy; // クリックした点が 1 行目の高さの中央になるように置く
     for (const t of TA_STOP) ta.addEventListener(t, stop);
     taComp = false; gV = null;

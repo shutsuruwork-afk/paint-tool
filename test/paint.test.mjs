@@ -1574,12 +1574,13 @@ test('電卓: 入りにすると、文字の行が計算式なら答えが薄く
   assert.equal(await shadowEval(page, root => root.querySelector('[aria-label^="電卓"]').getAttribute('aria-checked')), 'true');
   await page.keyboard.press('Escape');
   await page.mouse.click(200, 450);
-  const cases = [['12*3', '=36'], ['2+3*4', '=14'], ['-2^2', '=-4'], ['2^3^2', '=512'], ['50%*200', '=100'],
-    ['0.1+0.2', '=0.3'], ['1,000+1', '=1001'], ['(2+3)^2/5', '=5'], ['１２０×１．５＝', '180'], ['10÷4=', '2.5'],
+  // 答えは行が = で終わるときだけ出す（T-154）
+  const cases = [['12*3', null], ['12*3=', '36'], ['2+3*4=', '14'], ['-2^2=', '-4'], ['2^3^2=', '512'], ['50%*200=', '100'],
+    ['0.1+0.2=', '0.3'], ['1,000+1=', '1001'], ['(2+3)^2/5=', '5'], ['１２０×１．５＝', '180'], ['10÷4=', '2.5'],
     // 空白は式の書き方に合わせる（演算子か = の前後に空白があれば入れる。最後に打った空白には重ねない）
-    ['11 + 1', ' = 12'], ['11+ 1', ' = 12'], ['11　＋　1', ' = 12'], ['11 + 1 =', ' 12'], ['11 + 1 = ', '12'], ['11 + 1 ', '= 12'],
-    ['11+1 ', '= 12'], ['11+1=', '12'], ['11+1= ', '12'], ['(1 + 2)*3', ' = 9'],
-    ['hello', null], ['12', null], ['-5', null], ['1/0', null], ['3+', null], ['2(3)', null]];
+    ['11 + 1', null], ['11 + 1 =', ' 12'], ['11+ 1=', ' 12'], ['11　＋　1　＝', ' 12'], ['11 + 1 = ', '12'],
+    ['11+1=', '12'], ['11+1= ', '12'], ['(1 + 2)*3 =', ' 9'], ['2026-10-15', null],
+    ['hello', null], ['12=', null], ['-5=', null], ['1/0=', null], ['3+=', null], ['2(3)=', null]];
   for (const [ex, want] of cases) {
     await page.keyboard.press('Control+a');
     await page.keyboard.press('Backspace');
@@ -1589,7 +1590,7 @@ test('電卓: 入りにすると、文字の行が計算式なら答えが薄く
   // Tab で書き込む。答えは行の後ろに並び、書き込むと消える
   await page.keyboard.press('Control+a');
   await page.keyboard.press('Backspace');
-  await page.keyboard.type('12*3');
+  await page.keyboard.type('12*3=');
   const g = await shadowEval(page, root => {
     const a = root.querySelector('.gh').getBoundingClientRect(), t = root.querySelector('.tx'), c = getComputedStyle(t);
     return { gx: a.x, tx: t.getBoundingClientRect().x + parseFloat(c.paddingLeft) };
@@ -1603,11 +1604,10 @@ test('電卓: 入りにすると、文字の行が計算式なら答えが薄く
   const b1 = await box();
   assert.ok(b1.right >= b1.gr, JSON.stringify(b1));
   await page.keyboard.press('Backspace');
-  await page.keyboard.press('Backspace');
   const b0 = await box();
   assert.equal(b0.gr, null);
-  assert.ok(b0.w < b1.w - 30, JSON.stringify([b0, b1]));
-  await page.keyboard.type('*3');
+  assert.ok(b0.w < b1.w - 20, JSON.stringify([b0, b1]));
+  await page.keyboard.type('=');
   assert.equal((await box()).w, b1.w);
   await page.keyboard.press('Tab');
   assert.equal(await value(), '12*3=36');
@@ -1991,15 +1991,15 @@ test('電卓は巨大な数も正確に計算する。割り切れる答えは�
   await page.keyboard.press('t');
   await page.mouse.click(200, 450);
   const cases = [
-    ['123456789012345678901234567890*2', '=246913578024691357802469135780'],
-    ['123456789*987654321', '=121932631112635269'], // 前は 121932631113000000
-    ['9007199254740993+0', '=9007199254740993'], // 倍精度では表せない整数
-    ['2^100', '=1267650600228229401496703205376'],
-    ['2^-3', '=0.125'], ['1.5^2', '=2.25'], ['0.1*0.2', '=0.02'], ['1/3', '=0.333333333333'], ['2/3', '=0.666666666667'],
-    ['10/3', '=3.33333333333'], ['-1/3', '=-0.333333333333'], ['1/3000', '=0.000333333333333'],
-    ['10^20/3', '=33333333333333333333.33'], ['1/2^20', '=0.00000095367431640625'],
-    ['2^0.5', '=1.41421356237'], // 整数でない指数はふつうの数
-    ['7/0', null], ['2^10000', null], ['(1-1)^-1', null]];
+    ['123456789012345678901234567890*2=', '246913578024691357802469135780'],
+    ['123456789*987654321=', '121932631112635269'], // 前は 121932631113000000
+    ['9007199254740993+0=', '9007199254740993'], // 倍精度では表せない整数
+    ['2^100=', '1267650600228229401496703205376'],
+    ['2^-3=', '0.125'], ['1.5^2=', '2.25'], ['0.1*0.2=', '0.02'], ['1/3=', '0.333333333333'], ['2/3=', '0.666666666667'],
+    ['10/3=', '3.33333333333'], ['-1/3=', '-0.333333333333'], ['1/3000=', '0.000333333333333'],
+    ['10^20/3=', '33333333333333333333.33'], ['1/2^20=', '0.00000095367431640625'],
+    ['2^0.5=', '1.41421356237'], // 整数でない指数はふつうの数
+    ['7/0=', null], ['2^10000=', null], ['(1-1)^-1=', null]];
   for (const [ex, want] of cases) {
     await page.keyboard.press('Control+a');
     await page.keyboard.press('Backspace');
@@ -2093,21 +2093,21 @@ test('電卓は関数電卓のように sin・cos・tan・√・log・ln・n!・
   await page.mouse.click(200, 450);
   const cases = [
     // 角: π がなければ度、あればラジアン。° と rad を付ければそちら
-    ['sin30', '=0.5'], ['sin(30)', '=0.5'], ['cos60', '=0.5'], ['tan45', '=1'], ['sin(pi/6)', '=0.5'], ['sin(π/6)', '=0.5'],
-    ['cos(pi/3)', '=0.5'], ['sin 2π', '=0'], ['sin(1)', '=0.0174524064373'], ['sin(1 rad)', '=0.841470984808'], ['sin(30°)', '=0.5'],
+    ['sin30=', '0.5'], ['sin(30)=', '0.5'], ['cos60=', '0.5'], ['tan45=', '1'], ['sin(pi/6)=', '0.5'], ['sin(π/6)=', '0.5'],
+    ['cos(pi/3)=', '0.5'], ['sin 2π=', '0'], ['sin(1)=', '0.0174524064373'], ['sin(1 rad)=', '0.841470984808'], ['sin(30°)=', '0.5'],
     // 90 度（π/2）のちょうど倍: 倍精度の端数（1.2e-16）を出さない。tan90 は出さない
-    ['sin180', '=0'], ['cos90', '=0'], ['tan180', '=0'], ['cos(pi/2)', '=0'], ['tan90', null], ['tan(pi/2)', null],
-    ['asin(0.5)', '=30'], ['acos(0.5)', '=60'], ['atan(1)', '=45'],
+    ['sin180=', '0'], ['cos90=', '0'], ['tan180=', '0'], ['cos(pi/2)=', '0'], ['tan90=', null], ['tan(pi/2)=', null],
+    ['asin(0.5)=', '30'], ['acos(0.5)=', '60'], ['atan(1)=', '45'],
     // ( ) のある関数の後ろの ^ は答えのべき、かけ算の省略、大文字・全角
-    ['sin(30)^2', '=0.25'], ['2sin30', '=1'], ['sin30cos60', '=0.25'], ['-sin30', '=-0.5'], ['SIN(30)', '=0.5'], ['ｓｉｎ３０', '=0.5'],
+    ['sin(30)^2=', '0.25'], ['2sin30=', '1'], ['sin30cos60=', '0.25'], ['-sin30=', '-0.5'], ['SIN(30)=', '0.5'], ['ｓｉｎ３０=', '0.5'],
     // √ と ∛ は割り切れれば分数のまま。² ³ も書ける
-    ['√2', '=1.41421356237'], ['√16', '=4'], ['√(1/4)', '=0.5'], ['sqrt(2)', '=1.41421356237'], ['∛27', '=3'], ['cbrt(-8)', '=-2'],
-    ['√(3²+4²)', '=5'], ['√-1', null],
-    ['log(1000)', '=3'], ['ln(e)', '=1'], ['exp(1)', '=2.71828182846'], ['e^2', '=7.38905609893'], ['abs(-3)', '=3'],
-    ['2π', '=6.28318530718'], ['2pi', '=6.28318530718'], ['pi=', '3.14159265359'], ['e=', '2.71828182846'], ['pi', null], ['e', null],
-    ['5!', '=120'], ['20!', '=2432902008176640000'], ['3!+1', '=7'], ['0.5!', null], ['451!', null],
+    ['√2=', '1.41421356237'], ['√16=', '4'], ['√(1/4)=', '0.5'], ['sqrt(2)=', '1.41421356237'], ['∛27=', '3'], ['cbrt(-8)=', '-2'],
+    ['√(3²+4²)=', '5'], ['√-1=', null],
+    ['log(1000)=', '3'], ['ln(e)=', '1'], ['exp(1)=', '2.71828182846'], ['e^2=', '7.38905609893'], ['abs(-3)=', '3'],
+    ['2π=', '6.28318530718'], ['2pi=', '6.28318530718'], ['pi=', '3.14159265359'], ['e=', '2.71828182846'], ['pi', null], ['e', null],
+    ['5!=', '120'], ['20!=', '2432902008176640000'], ['3!+1=', '7'], ['0.5!=', null], ['451!=', null],
     // 知らない名前・関数だけ・式でない物は出さない
-    ['2πr', null], ['sin', null], ['constructor(1)', null], ['hello', null], ['12', null], ['2(3)', null]];
+    ['2πr=', null], ['sin=', null], ['constructor(1)=', null], ['hello=', null], ['12', null], ['2(3)=', null]];
   for (const [ex, want] of cases) {
     await page.keyboard.press('Control+a');
     await page.keyboard.press('Backspace');
@@ -2117,7 +2117,7 @@ test('電卓は関数電卓のように sin・cos・tan・√・log・ln・n!・
   // Tab で書き込める
   await page.keyboard.press('Control+a');
   await page.keyboard.press('Backspace');
-  await page.keyboard.insertText('sin30');
+  await page.keyboard.insertText('sin30=');
   await page.keyboard.press('Tab');
   assert.equal((await textBox(page)).value, 'sin30=0.5');
   assert.deepEqual(errors, []);
@@ -2148,8 +2148,8 @@ test('iPhone の英語のキーボードが答えを出す所（= で終わる�
   };
   // iPhone・電卓が入り
   let { page, errors } = await open(IPHONE, true);
-  const noEq = await type(page, '2-3'); // = がなければ iPhone は出さないので Paint
-  assert.equal(noEq.ghost, '=-1');
+  const noEq = await type(page, '2-3'); // = がなければ、iPhone も Paint も出さない（T-154）
+  assert.equal(noEq.ghost, null);
   const eq = await type(page, '2-3='); // iPhone が「-1」を出す。Paint は出さず、枠は Paint の答えの時より広い
   assert.equal(eq.ghost, null);
   assert.ok(eq.w > noEq.w + 10, JSON.stringify([eq, noEq]));
@@ -2181,6 +2181,35 @@ test('iPhone の英語のキーボードが答えを出す所（= で終わる�
   assert.equal((await type(page, '2-3=')).ghost, '-1');
   assert.deepEqual(errors, []);
   await page.close();
+});
+
+test('答えは行が = で終わるときだけ出す。iPhone・iPad では、答えの出ている行の終わりで打ったスペース 1 回で書き込む（Tab の代わり。PC のスペースは今まで通り）（T-154）', async () => {
+  const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+  for (const ua of [IPHONE, null]) {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 700 }, ...(ua ? { userAgent: ua } : {}) });
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.goto(server.base + '/');
+    await runCode(page, withDefaults(CODE, { calc: true }));
+    await page.keyboard.press('t');
+    await page.mouse.click(200, 450);
+    const look = () => shadowEval(page, root => { const g = root.querySelector('.gh'); return [g ? g.textContent : null, root.querySelector('textarea:not([aria-hidden])').value]; });
+    await page.keyboard.insertText('sin30');
+    assert.deepEqual(await look(), [null, 'sin30']); // = がなければ出さない
+    await page.keyboard.insertText('=');
+    assert.deepEqual(await look(), ['0.5', 'sin30=']);
+    await page.keyboard.insertText(' ');
+    assert.deepEqual(await look(), ua ? [null, 'sin30=0.5'] : ['0.5', 'sin30= '], String(ua));
+    // 行の途中にカーソルがあるときのスペースは、ふつうに入る
+    await page.keyboard.press('Control+a');
+    await page.keyboard.press('Backspace');
+    await page.keyboard.insertText('2*3=');
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.insertText(' ');
+    assert.deepEqual(await look(), [' 6', '2*3 =']);
+    assert.deepEqual(errors, []);
+    await page.close();
+  }
 });
 
 test('Simple Preview（CP2）: 開発用でなくてもその他の最後に出て（T-101）、押すと絵と履歴はそのままで CP2 の表示になる（ペン ⇄ 消しゴム・文字〈電卓は入り〉・元に戻す・その他〈全消去・色・本家に戻す〉・閉じる〈中身は隠す〉）。本家に戻せ、サイトごとに覚える（T-088）', async () => {
@@ -2217,8 +2246,8 @@ test('Simple Preview（CP2）: 開発用でなくてもその他の最後に出�
   // 文字は電卓が入り（本家の設定は切りのまま）
   await mouseClick(page, '.bar > [aria-label^="文字"]');
   await page.mouse.click(300, 450);
-  await page.keyboard.type('12+30');
-  assert.equal(await shadowEval(page, root => root.querySelector('.gh').textContent), '=42');
+  await page.keyboard.type('12+30=');
+  assert.equal(await shadowEval(page, root => root.querySelector('.gh').textContent), '42');
   await page.keyboard.press('Tab');
   assert.equal(await shadowEval(page, root => root.querySelector('textarea').value), '12+30=42');
   await mouseClick(page, '.bar > [aria-label^="ペン"]');
@@ -2458,8 +2487,8 @@ test('文字を入力中に、その上にパネルを開くと、パネルが�
   await page.keyboard.press('Escape');
   await mouseClick(page, '.bar > [aria-label^="文字"]');
   await page.mouse.click(pr[0] + 30, pr[1] + 20);
-  await page.keyboard.type('11+1');
-  assert.equal(await shadowEval(page, root => root.querySelector('.gh').textContent), '=12');
+  await page.keyboard.type('11+1=');
+  assert.equal(await shadowEval(page, root => root.querySelector('.gh').textContent), '12');
   // 入力したままパネルを開く
   await mouseClick(page, '.bar > [aria-label^="その他"]');
   const r = await shadowEval(page, root => {

@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.44.1';
+  const VERSION = '1.45.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -2870,6 +2870,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     ta.addEventListener('compositionstart', () => { taIme = true; });
     ta.addEventListener('input', e => { taIme = e.isComposing || /omposition/.test(e.inputType || ''); });
     ta.addEventListener('input', updateGhost);
+    // iPhone・iPad には Tab がないので、薄い答えの出ている行の終わりで打ったスペース 1 回で書き込む（T-154、ユーザーの要望。
+    // iPhone のキーボードの計算結果もスペースで確定する。スペース 2 回は iPhone の「. 」を入れる機能とぶつかる）。変換中のスペースは変換に使う
+    if (IOS) ta.addEventListener('beforeinput', e => {
+      if (ghostTxt && e.inputType === 'insertText' && e.data === ' ' && !e.isComposing && ta.selectionStart === ghostEnd && ta.selectionEnd === ghostEnd) {
+        e.preventDefault();
+        acceptGhost();
+      }
+    });
     // 日本語入力の変換中も枠を合わせる（変換中の文字で input が来ない環境でも、枠の外にはみ出さないように。T-099）
     ta.addEventListener('compositionupdate', updateGhost);
     ta.addEventListener('compositionend', updateGhost);
@@ -3193,7 +3201,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     let r;
     try { r = fmt(expr()); } catch (_) { return ''; }
     if (peek() !== undefined || !r || !(ops || eq && cst)) return '';
-    return eq ? (sp && !tw ? ' ' : '') + r : sp ? (tw ? '= ' : ' = ') + r : '=' + r;
+    // 答えを出すのは行が = で終わるときだけ（T-154、ユーザー: = をトリガーにした方が設計としてはいい。前は = がなくても「=36」と出していた）
+    return eq ? (sp && !tw ? ' ' : '') + r : '';
     // 答えの書き方: 整数と割り切れる小数（小数 30 桁まで）は正確に。割り切れないときは、整数の部分は全部、小数は前と同じく有効数字 12 桁ほど
     // （整数の部分が 10 桁を超えても小数 2 桁）。ふつうの数は前と同じ（有効数字 12 桁）。1000 桁を超える答えは出さない
     function fmt(v) {
@@ -3389,7 +3398,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       ["ペン・図形をもう一度", "ペンの種類（万年筆・筆・鉛筆）や図形を選ぶ"],
       ["文字を押す", "ペンなどのままでも選んで動かせる。もう一度押すと書き直し", "touch"],
       ["文字の入力中", "{Esc}・{Ctrl}+{Enter}・外を押すと確定"],
-      ["{Tab}", "電卓が入りのとき、薄く出た答えを書き込む"],
+      ["{Tab}", "電卓が入りのとき、= で終わる行に薄く出た答えを書き込む（iPhone・iPad はスペース）"],
       ["ツールバー", "どこを押しても、引けば動かせる"],
       ["その他（⋯）", "全消去・背景・保存・コピー・電卓・画面に固定・デフォルトの変更"]
     ]]

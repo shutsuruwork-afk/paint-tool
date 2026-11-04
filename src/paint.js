@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.50.0';
+  const VERSION = '1.51.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -2917,13 +2917,11 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 
   function textAt(cx, cy, value) {
     if (!value) { taFs = CFG.text.size; taC = color; taA = CFG.text.alpha; }
-    ta = el('textarea', 'tx', { spellcheck: 'false', wrap: 'off', rows: '1', 'aria-label': '文字' });
+    // writingsuggestions: iPhone のキーボードが入力欄の中に薄く出す予測（= で終わる式の計算結果も）を止める。その字は入力欄の値にも幅にも入らず、
+    // 欄の幅で切れて「-」「2」だけに見えた（T-152・T-160、ユーザーが「いつも Paint の答え」を選んだ）。英語の自動修正と候補のバーは残る
+    ta = el('textarea', 'tx', { spellcheck: 'false', writingsuggestions: 'false', wrap: 'off', rows: '1', 'aria-label': '文字' });
     taX = cx; taCY = cy; // クリックした点が 1 行目の高さの中央になるように置く
     for (const t of TA_STOP) ta.addEventListener(t, stop);
-    // 変換を通った入力（日本語のキーボードなど）か。iPhone のキーボードの計算結果は英語のキーボードだけなので、変換を通ったら Paint の答えを出す（T-152）
-    taIme = false;
-    ta.addEventListener('compositionstart', () => { taIme = true; });
-    ta.addEventListener('input', e => { taIme = e.isComposing || /omposition/.test(e.inputType || ''); });
     ta.addEventListener('input', updateGhost);
     // iPhone・iPad には Tab がないので、薄い答えの出ている行の終わりで打ったスペース 1 回で書き込む（T-154、ユーザーの要望。
     // iPhone のキーボードの計算結果もスペースで確定する。スペース 2 回は iPhone の「. 」を入れる機能とぶつかる）。変換中のスペースは変換に使う
@@ -3049,11 +3047,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 入力欄の大きさ（fitTa）もここで合わせる。答えの右端（ghostR、行の頭からの CSS px）まで枠を広げるため
   const ghostEl = el('div', 'gh');
   // ghostTxt は書き込む文字、ghostFrom〜ghostTo を書き込む文字で置き換える（ふつうは行の終わりに足す。= に合わせて直すときは古い答えと入れ替える）。
-  // ghostAt は iPhone のスペースで書き込めるカーソルの位置。taIme: 最後の入力が変換（日本語の入力など）を通ったか
-  let ghostTxt = '', ghostFrom = 0, ghostTo = 0, ghostAt = 0, ghostR = 0, mta = null, taIme = false;
-  // iPhone・iPad（iOS 18 から）の英語のキーボードは、= で終わる四則の式の答えを、カーソルの後ろに薄く出す（キーボードの計算結果）。
-  // その字は入力欄の値にも中身の幅にも入らないので、入力欄の幅で切れて途切れて見えた（T-152、ユーザーの報告）
-  const IOS_MATH = IOS && !(+(/(?:iPhone|CPU) OS (\d+)_/.exec(navigator.userAgent) || [0, 99])[1] < 18);
+  // ghostAt は iPhone のスペースで書き込めるカーソルの位置
+  let ghostTxt = '', ghostFrom = 0, ghostTo = 0, ghostAt = 0, ghostR = 0, mta = null;
   // 1 行の幅を、入力欄と同じ測り方（見えない入力欄の scrollWidth）で測る。答えの位置と枠の幅が、Tab で書き込んだ後の入力欄とそろう
   // （canvas の measureText や span は、書体によって「*」などの組み方が入力欄と変わり、数 px ずれた）。測る間だけ置いて外す
   function lineW(t) {
@@ -3090,13 +3085,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
           ghostTxt = r; ghostFrom = q + 1; ghostTo = end; ghostAt = p;
         }
       }
-      // iPhone のキーボードが答えを出す所（英語のキーボードで、行の終わりのカーソルの前が = の四則の式）は、Paint の答えは出さず、
-      // 枠だけ自前の答えと全角 1 文字の分を広げる（電卓が切りでも。T-152、ユーザーの案: 予測してくれる範囲はこっちで出さず、枠を予測して拡張。
-      // 英語の自動修正は残したいので、入力欄の予測は止めない）。iPhone の答えの書き方（桁数）は自前と違うことがあるので 1 文字余らせる
-      const ios = IOS_MATH && !taIme && p === end && /=$/.test(line) && /^[\d\s+\-*/^%().,=]+$/.test(line.normalize('NFKC').replace(/[×÷−–]/g, '*'));
-      const r = ghostTxt ? '' : ios || calc || cp2 ? calcLine(line, env()) : ''; // CP2 は電卓がいつも入り。上の行の変数と ans を使う（T-155）
-      if (r && ios) ghostR = lineW(line + r.trim()) + ceil(taFs);
-      else if (r) { showGhost(r, line, v, a); ghostTxt = r; ghostFrom = ghostTo = ghostAt = end; }
+      const r = ghostTxt ? '' : calc || cp2 ? calcLine(line, env()) : ''; // CP2 は電卓がいつも入り。上の行の変数と ans を使う（T-155）
+      if (r) { showGhost(r, line, v, a); ghostTxt = r; ghostFrom = ghostTo = ghostAt = end; }
     }
     if (!ghostTxt) ghostEl.remove();
     if (ta) fitTa();

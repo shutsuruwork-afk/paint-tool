@@ -2126,7 +2126,7 @@ test('電卓は関数電卓のように sin・cos・tan・√・log・ln・n!・
   await page.close();
 });
 
-test('iPhone の英語のキーボードが答えを出す所（= で終わる四則の式）は、Paint の答えを出さずに枠だけ広げる（電卓が切りでも）。= のない式・関数・行の途中・日本語の変換・PC は Paint の答え（T-152）', async () => {
+test('文字の入力欄では iPhone のキーボードの入力欄の中の予測（計算結果）を止め、iPhone でも電卓が入りなら Paint の答えを出す。切りなら答えも枠の広がりもない（T-160）', async () => {
   const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
   const open = async (ua, calc) => {
     const page = await browser.newPage({ viewport: { width: 1000, height: 700 }, ...(ua ? { userAgent: ua } : {}) });
@@ -2140,7 +2140,7 @@ test('iPhone の英語のキーボードが答えを出す所（= で終わる�
   };
   const look = page => shadowEval(page, root => {
     const g = root.querySelector('.gh'), t = root.querySelector('textarea:not([aria-hidden])');
-    return { ghost: g ? g.textContent : null, w: t.getBoundingClientRect().width };
+    return { ghost: g ? g.textContent : null, w: t.getBoundingClientRect().width, ws: t.getAttribute('writingsuggestions') };
   });
   const type = async (page, t) => {
     await page.keyboard.press('Control+a');
@@ -2148,20 +2148,15 @@ test('iPhone の英語のキーボードが答えを出す所（= で終わる�
     await page.keyboard.insertText(t);
     return look(page);
   };
-  // iPhone・電卓が入り
+  // iPhone・電卓が入り: = で終わる四則の式も √ の式も Paint の答え
   let { page, errors } = await open(IPHONE, true);
-  const noEq = await type(page, '2-3'); // = がなければ、iPhone も Paint も出さない（T-154）
-  assert.equal(noEq.ghost, null);
-  const eq = await type(page, '2-3='); // iPhone が「-1」を出す。Paint は出さず、枠は Paint の答えの時より広い
-  assert.equal(eq.ghost, null);
-  assert.ok(eq.w > noEq.w + 10, JSON.stringify([eq, noEq]));
-  assert.equal((await type(page, '11 -13 =')).ghost, null);
-  assert.equal((await type(page, 'sin30=')).ghost, '0.5'); // 関数は Paint
-  assert.equal((await type(page, '2-3= ')).ghost, '-1'); // = の後ろに空白
-  await type(page, '2-3=');
-  await page.keyboard.press('ArrowLeft'); // カーソルが行の途中
-  assert.equal((await look(page)).ghost, '-1');
-  // 日本語の入力（変換を通した入力）は Paint
+  const noEq = await type(page, '2-3');
+  assert.equal(noEq.ghost, null); // = がなければ出さない（T-154）
+  assert.equal(noEq.ws, 'false'); // iPhone のキーボードの入力欄の中の予測を止める
+  assert.equal((await type(page, '2-3=')).ghost, '-1');
+  assert.equal((await type(page, '11 -13 =')).ghost, ' -2');
+  assert.equal((await type(page, '√8=')).ghost, '2√2');
+  // 日本語の入力（変換を通した入力）も同じ
   await page.keyboard.press('Control+a');
   await page.keyboard.press('Backspace');
   const cdp = await page.context().newCDPSession(page);
@@ -2170,17 +2165,18 @@ test('iPhone の英語のキーボードが答えを出す所（= で終わる�
   assert.equal((await look(page)).ghost, '-1');
   assert.deepEqual(errors, []);
   await page.close();
-  // iPhone・電卓が切り: Paint の答えは出ないが、= で終わる四則の式では枠を広げる
+  // iPhone・電卓が切り: 答えは出さず、枠も式の幅のまま（前は = で終わる四則の式で枠を広げていた）
   ({ page, errors } = await open(IPHONE, false));
   const off = await type(page, '2-3'), offEq = await type(page, '2-3=');
-  assert.equal(off.ghost, null);
   assert.equal(offEq.ghost, null);
-  assert.ok(offEq.w > off.w + 20, JSON.stringify([offEq, off]));
+  assert.ok(offEq.w < off.w + 20, JSON.stringify([offEq, off]));
   assert.deepEqual(errors, []);
   await page.close();
-  // PC は今まで通り
+  // PC も同じ
   ({ page, errors } = await open(null, true));
-  assert.equal((await type(page, '2-3=')).ghost, '-1');
+  const pc = await type(page, '2-3=');
+  assert.equal(pc.ghost, '-1');
+  assert.equal(pc.ws, 'false');
   assert.deepEqual(errors, []);
   await page.close();
 });

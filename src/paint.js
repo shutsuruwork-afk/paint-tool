@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.58.0';
+  const VERSION = '1.59.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -1663,6 +1663,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     }
     const t = erase ? 'eraser' : tool;
     const x = e.clientX * dpr, y = e.clientY * dpr, X = x * sk + sox, Y = y * sk + soy;
+    hitT = type === 'touch';
     // 文字に触れる: 選んでいる物か文字の上を押したら、どの道具でも選択ツールと同じに扱う
     // 文字の道具でも、文字の上を押したら選択と同じに扱う。引けば動き、引かずに離せば書き直す（sEd。T-146。前は押すと書き直しになるだけで、動かせなかった）
     const onT = (sel && selHit(X, Y) !== -2) || textHit(X, Y);
@@ -2575,6 +2576,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   mDel.textContent = '削除';
   selM.append(mDup, mDel);
   let selA = 0, begA = 0, rotA0 = 0; // 枠の向き（ラジアン。浮いている間は CSS で回し、確定のときに描く）
+  let hitT = false; // 押したのが指か（つまみの当たりを広げる。T-167）
   let sCopy = false, altDup = false, clip = null, selMOn = false; // sCopy: 浮いている物は写し（元の範囲を消していない）
   let selE = []; // 浮かせた範囲の中の直線・矢印の端（S、選んだときの位置）。確定で一緒に動かす（T-164）
   let sel = false, sDrag = 0, sH = 0, sWas = false, sEd = false, hoverCur = '', toolCur = ''; // sEd: 文字の道具で押した（引かずに離せば 1 回目で書き直す。T-146）
@@ -2834,7 +2836,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     }
     const r = 8 * sdpr, px = padX(), py = padY();
     const fx = selX - px, fy = selY - py, fw = selW + 2 * px, fh = selH + 2 * py;
-    if (!selEl.classList.contains('nr') && abs(X - fx - fw / 2) <= r + 2 * sdpr && abs(Y - fy + ROT * sdpr) <= r + 2 * sdpr) return 8;
+    // 回すつまみ: 指は中心から 18 px まで、マウス・ペンは 10 px まで（T-167。見た目は 11 px のまま）。上の辺のつまみとは、間より上だけにして取り合わない
+    if (!selEl.classList.contains('nr') && Y < fy - ROT / 2 * sdpr && hypot(X - fx - fw / 2, Y - fy + ROT * sdpr) <= (hitT ? 18 : 10) * sdpr) return 8;
     if (X > fx + r && X < fx + fw - r && Y > fy + r && Y < fy + fh - r) return -1;
     for (let i = 0; i < 16; i += 2) {
       if (!srcW && i % 4) continue; // 文字だけのときは角のつまみだけ
@@ -2844,6 +2847,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   // ポインタの下が枠のつまみ・枠の中・文字なら、それに合ったカーソルにする（それ以外は道具のカーソル）
   function selHover(e) {
+    hitT = false;
     mapNow(); // 最後に押してからスクロールしているかもしれないので、画面と面の対応を今の位置で求め直す
     const X = e.clientX * sdpr + sox, Y = e.clientY * sdpr + soy, k = sel ? selHit(X, Y) : -2;
     const c = k >= 0 ? HCUR[k] : k === -1 || textHit(X, Y) ? 'move' : toolCur;

@@ -2511,6 +2511,30 @@ test('直線・矢印の始めと終わりは、近くの線の端に吸い付�
   await page.close();
 });
 
+test('選択の回すつまみは、指なら中心から 18 px まで押せる（見た目は同じ。マウスは今まで通り）（T-167）', async () => {
+  const page = await browser.newPage({ viewport: { width: 800, height: 700 }, hasTouch: true });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(server.base + '/');
+  await runCode(page, CODE);
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], id) => ({ x, y, id })) });
+  await drag(page, [[300, 400], [500, 400]], 5);
+  await page.keyboard.press('s');
+  await drag(page, [[280, 380], [520, 420]], 5);
+  const f = await selBox(page, true), cx = f.x + f.w / 2, hy = f.y - 22.5, d = 400 - hy;
+  // つまみの中心から右へ 14 px ずれた所を指で押して、90° 回す
+  await touch('touchStart', [[cx + 14, hy - 2]]);
+  for (let i = 1; i <= 8; i++) { const a = i / 8 * Math.PI / 2; await touch('touchMove', [[400 + 14 * Math.cos(a) + d * Math.sin(a), 400 - d * Math.cos(a) + 14 * Math.sin(a)]]); }
+  await touch('touchEnd', []);
+  const b = await selBox(page);
+  assert.ok(b && b.h > b.w * 10, JSON.stringify(b)); // 縦長に回った
+  await page.keyboard.press('Enter');
+  assert.ok((await alphaStats(page, 390, 300, 20, 200)).count > 600);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('選択で動かした・回した・貼り付けた直線の端にも吸い付き、動かす前の場所には吸い付かない。元に戻すと端も戻る（T-164）', async () => {
   const { page, errors } = await fresh();
   const alpha = (x, y) => readMain(page, x, y).then(d => d[3]);

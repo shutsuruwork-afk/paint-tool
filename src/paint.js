@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.48.0';
+  const VERSION = '1.49.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -3308,7 +3308,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     }
     // 式を読んで、計算する手順（引数のない関数）にする。知らない名前は unk に入れ、set で入れた値として計算する（方程式で使う）
     function compile(s, env) {
-      let i = 0, ops = 0, cst = 0, pc = 0, dc = 0, rc = 0, X = 0;
+      let i = 0, ops = 0, cst = 0, pc = 0, dc = 0, rc = 0, rt = 0, X = 0;
       const unk = new Set();
       const peek = () => { while (s[i] === ' ') i++; return s[i]; };
       const known = w => has(CONST, w) || has(FN, w) || has(KW, w) || w in env;
@@ -3391,6 +3391,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
           if (has(CONST, w)) { cst = 1; if (w !== 'e') pc++; const v = CONST[w]; return () => v; }
           if (has(FN, w)) {
             ops++;
+            if (w === '√' || w === 'sqrt') rt++; // √ を使った式（答えも √ の形にする。T-157）
             // 引数は ( ) の中か、( ) がなければ続く項と定数（sin30・sin 2π・√2）。角に π があればラジアン、なければ度（° と rad が優先）
             const p0 = pc, d0 = dc, r0 = rc;
             let fs;
@@ -3399,7 +3400,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
             const rad = rc > r0 || pc > p0 && dc === d0, F = FN[w];
             return () => F(fs.map(f => f()), rad);
           }
-          if (w in env) { cst = 1; const o = env[w]; if (o.p) pc++; return () => o.v; }
+          if (w in env) { cst = 1; const o = env[w]; if (o.p) pc++; if (o.q) rt++; return () => o.v; }
           if (has(KW, w)) throw 0;
           unk.add(w);
           return () => X;
@@ -3413,12 +3414,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       };
       const f = expr();
       if (peek() !== undefined) throw 0;
-      return { f, ops, cst, unk, pc, set: v => { X = v; } };
+      return { f, ops, cst, unk, pc, rt, set: v => { X = v; } };
     }
     // 答えの書き方: 整数と割り切れる小数（小数 30 桁まで）は正確に。割り切れないときは、整数の部分は全部、小数は前と同じく有効数字 12 桁ほど
     // （整数の部分が 10 桁を超えても小数 2 桁）。ふつうの数は前と同じ（有効数字 12 桁）。1000 桁を超える答えは出さない。並びは [1, 2, 3]
-    function fmt(v) {
-      if (isL(v)) { const t = v.l.map(fmt); return t.length > 50 || t.some(x => !x) ? '' : '[' + t.join(', ') + ']'; }
+    // くり返す小数は、くり返す所の最初と最後の数字に点を付ける（1/3 → 0.3̇、1/7 → 0.1̇42857̇。T-157、ユーザーが選んだ。くり返しが 16 桁まで）。
+    // ap（≒ で終わる行）なら前と同じく丸めた小数
+    function fmt(v, ap) {
+      if (isL(v)) { const t = v.l.map(x => fmt(x, ap)); return t.length > 50 || t.some(x => !x) ? '' : '[' + t.join(', ') + ']'; }
       if (typeof v === 'number') return isFinite(v) ? String(+v.toPrecision(12) || 0) : '';
       let [n, d] = v;
       const sg = n < 0 ? '-' : '', T = N(10);
@@ -3430,6 +3433,16 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       while (k % N(2) === N(0)) { k /= N(2); t2++; }
       while (k % N(5) === N(0)) { k /= N(5); t5++; }
       let f = max(t2, t5);
+      if (k !== N(1) && !ap && f <= 16) {
+        let L = 1, r = N(10) % k;
+        while (r !== N(1) && L <= 16) { r = r * N(10) % k; L++; }
+        if (L <= 16) {
+          let rem = n % d, ds = '';
+          for (let j = 0; j < f + L; j++) { rem *= T; ds += String(rem / d); rem %= d; }
+          const p = ds.slice(f), D = '\u0307';
+          return sg + is + '.' + ds.slice(0, f) + p[0] + D + (L > 1 ? p.slice(1) + D : '');
+        }
+      }
       if (k !== N(1) || f > 30) {
         let z = 0;
         if (!ip) for (let x = n * T; x < d; x *= T) z++;
@@ -3439,10 +3452,40 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       const a = q.slice(0, -f), b = q.slice(-f).replace(/0+$/, '');
       return (b || a !== '0' ? sg : '') + a + (b ? '.' + b : '');
     }
-    // 1 行を読む。env（名前 → { v: 値, p: π から求めたか }）に代入と ans を書き込み、= で終わる行なら答えの文字を返す。
+    // 小さな分母の分数で x にごく近い物（連分数で探す）。なければ null
+    const rat = (x, qm) => {
+      let h1 = 1, h2 = 0, k1 = 0, k2 = 1, y = x;
+      for (let t = 0; t < 64 && isFinite(y); t++) {
+        const a = Math.floor(y), h = a * h1 + h2, k = a * k1 + k2;
+        if (k > qm) break;
+        if (abs(x - h / k) <= 5e-14 * max(1, abs(x))) return [h, k];
+        h2 = h1; h1 = h; k2 = k1; k1 = k;
+        y = 1 / (y - a);
+      }
+      return null;
+    };
+    const gcdN = (a, b) => (b ? gcdN(b, a % b) : a);
+    const coef = (p, q, u) => (p < 0 ? '-' : '') + (abs(p) === 1 ? '' : abs(p)) + u + (q === 1 ? '' : '/' + q);
+    // √・π を使った式の答えを、√・π の形にする（2√2・√3/2・6π・π/2。T-157、ユーザーが選んだ）。形にならなければ ''
+    function sym(x) {
+      if (typeof x !== 'number' || !isFinite(x) || !x) return '';
+      let r = rat(x / PI, 1000);
+      if (r && abs(r[0]) < 1e6) return coef(r[0], r[1], 'π');
+      r = rat(x * x, 10000); // x² = p/q なら x = √(pq)/q。√ の中の平方を外に出す
+      if (!r || r[0] <= 0) return '';
+      let n = r[0] * r[1], a = 1;
+      for (let f = 2; f * f <= n && f < 1e4; f++) while (n % (f * f) === 0) { n /= f * f; a *= f; }
+      if (n < 2 || n > 1e6) return '';
+      const g = gcdN(a, r[1]);
+      return coef((x < 0 ? -1 : 1) * a / g, r[1] / g, '√' + n);
+    }
+    // 1 行を読む。env（名前 → { v: 値, p: π から求めたか, q: √ から求めたか }）に代入と ans を書き込み、= で終わる行なら答えの文字を返す。
     // quiet は上の行を読むとき（答えの文字は要らない）
     function line(src, env, quiet) {
       let s = prep(src);
+      // ≒（≈・~=）で終わる行は、√・π の形や循環小数にせず、丸めた小数を出す（T-157）
+      const ap = /(≒|≈|~=)\s*$/.test(s);
+      if (ap) s = s.replace(/(≒|≈|~=)(\s*)$/, '=$2');
       // 空白は式の書き方に合わせる: 演算子か = の前後に空白があれば空白を入れ、詰めて書いた式なら詰める。
       // 最後に自分で打った空白には重ねない（= の前に打った空白は、空白を入れる書き方とみなす）
       const eq = /=\s*$/.test(s), tw = /\s$/.test(s), sp = tw && !eq || /\s[+\-*/^%=]|[+\-*/^=]\s/.test(s.trim());
@@ -3450,14 +3493,22 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       if (eq) s = s.replace(/=\s*$/, '');
       const as = /^\s*([a-z_][a-z0-9_]*)\s*=([^=]*)$/.exec(s);
       let r = '', c, done = 0;
-      const ans = () => { env.ans = env._ = { v: c.f(), p: c.pc > 0 }; return env.ans.v; };
+      const ans = () => { env.ans = env._ = { v: c.f(), p: c.pc > 0, q: c.rt > 0 }; return env.ans.v; };
+      // 答えの文字。√・π を使った式は √・π の形に（書いた式と同じ形になるだけなら小数。√2= や 2π= は 1.41421356237・6.28318530718）
+      const out = (v, e) => {
+        if (!ap && (c.pc || c.rt)) {
+          const t = sym(v), w = e.replace(/[\s*()]/g, '').replace(/pi/g, 'π').replace(/sqrt/g, '√');
+          if (t && t !== w) return t;
+        }
+        return fmt(v, ap);
+      };
       try {
         if (as && !reserved(as[1]) && as[2].trim()) { // 代入（r = 5。r = 2*3 = なら答えも出す）。右に知らない名前があれば方程式（x = 2x - 3）
           c = compile(as[2], env);
-          if (!c.unk.size) { const v = ans(); env[as[1]] = env.ans; if (eq) r = fmt(v); done = 1; }
+          if (!c.unk.size) { const v = ans(); env[as[1]] = env.ans; if (eq) r = out(v, as[2]); done = 1; }
         }
         if (!done && s.indexOf('=') < 0) { // = で終わる式（定数・変数だけの行も出す。12= や -5= は出さない）
-          if (eq) { c = compile(s, env); if (!c.unk.size && (c.ops || c.cst)) r = fmt(ans()); }
+          if (eq) { c = compile(s, env); if (!c.unk.size && (c.ops || c.cst)) r = out(ans(), s); }
         } else if (!done && !eq && !quiet) { // 方程式（T-156）
           r = solve(s, env);
           return r ? (tw ? '' : ' ') + '→ ' + r : '';

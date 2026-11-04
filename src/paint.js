@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.68.0';
+  const VERSION = '1.69.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -145,7 +145,7 @@ canvas{position:absolute;left:0;top:0;pointer-events:none}
 .bar{position:absolute;left:0;top:0;cursor:grab;display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:4px;max-width:calc(100% - 16px);box-sizing:border-box;background:var(--bb,#202228);border:1px solid #ffffff1f;border-radius:12px;box-shadow:0 6px 24px #0007;pointer-events:auto;touch-action:none;will-change:transform}
 .b{all:unset;box-sizing:border-box;flex:none;width:30px;height:30px;display:grid;place-items:center;border-radius:8px;cursor:pointer;color:inherit}
 .bar.drag,.bar.drag *{cursor:grabbing}
-.b:hover{background:#ffffff1a}.b:active{background:#ffffff2e}
+@media (hover:hover){.b:hover{background:#ffffff1a}}.b:active{background:#ffffff2e}
 .b.on{background:#3d7cff;color:#fff}
 .b.sg{width:auto;padding:0 9px;font:inherit}
 .b:disabled{opacity:.3;cursor:default;background:none}
@@ -162,9 +162,9 @@ canvas{position:absolute;left:0;top:0;pointer-events:none}
 .light{color:#1d2026;color-scheme:light;--gc:250 250 252}
 .light .bar,.light .pn,.light .t,.light .hp{background:var(--bb,#fbfbfc);border-color:#0000001a;box-shadow:0 6px 24px #0003}
 .light.glass .bar,.light.glass .pn{background:none;border-color:transparent;outline-color:#0000001a;box-shadow:0 6px 24px #0003,inset 0 1px 0 #ffffff99}
-.light .b:hover,.light .t button:hover{background:#0000000f}.light .b:active,.light .b.open:not(.on){background:#0000001c}
-.b.on:not(.c):hover,.light .b.on:not(.c):hover,.light .b.on:not(.c):active{background:#2f6bea}
-.b.on.pc,.b.on.pc:hover,.light .b.on.pc:hover,.light .b.on.pc:active{background:var(--pc);color:var(--pi);box-shadow:0 1px 3px #0000003d}
+@media (hover:hover){.light .b:hover,.light .t button:hover{background:#0000000f}}.light .b:active,.light .b.open:not(.on){background:#0000001c}
+@media (hover:hover){.b.on:not(.c):hover,.light .b.on:not(.c):hover{background:#2f6bea}}.b.on:not(.c):active,.light .b.on:not(.c):active{background:#2f6bea}
+.b.on.pc,.b.on.pc:active,.light .b.on.pc:active{background:var(--pc);color:var(--pi);box-shadow:0 1px 3px #0000003d}@media (hover:hover){.b.on.pc:hover,.light .b.on.pc:hover{background:var(--pc)}}
 .light .dot{box-shadow:0 0 0 1px #0000003a}.light .dot.er{box-shadow:inset 0 0 0 1.5px #1d2026}
 .light .mi kbd{color:#7b7f89}.light .mi .sw{background:#00000024}
 .light .c::before{box-shadow:inset 0 0 0 1px #00000026}.light .c.on::before{box-shadow:0 0 0 2px var(--bb,#fbfbfc),0 0 0 4px #1d2026}
@@ -196,7 +196,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 .t{position:absolute;left:50%;bottom:28px;transform:translateX(-50%);padding:8px 14px;border-radius:8px;background:var(--bb,#202228);box-shadow:0 4px 16px #0007;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap;will-change:opacity}
 .t.on{opacity:1}
 .t button{all:unset;display:none;margin:-4px -8px -4px 10px;padding:4px 8px;border-radius:6px;color:#8fb3ff;font-weight:600;cursor:pointer}
-.t button:hover{background:#ffffff1a}.t button:focus-visible{outline:2px solid #3d7cff}
+@media (hover:hover){.t button:hover{background:#ffffff1a}}.t button:focus-visible{outline:2px solid #3d7cff}
 .t.act{pointer-events:auto}.t.act button{display:inline-block}
 .t.act .tc{display:none;margin:-4px -10px -4px 2px;padding:4px 6px;color:#a9acb8;vertical-align:middle}.t.act.cx .tc{display:inline-grid;place-items:center}
 .t .tc svg{width:14px;height:14px}
@@ -759,7 +759,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     vw = wrap.clientWidth; vh = wrap.clientHeight;
     barW = bar.offsetWidth; barH = bar.offsetHeight;
   };
-  // ツールバーはどこを押しても、4px 以上引けば動かせる（引かずに離せば、そのボタンが押される）。
+  // 引いたとみなす動きの大きさ（CSS px）。指は 10、マウスとペンは 4（T-177）。ツールバー・選んだ物・入力欄を引くのはどれもこれで決める（2 本指のタップの TAP_PX と同じ）。
+  // 指で押すと、離すまでに数 px ぶれる（iPhone の座標は端数つき）。小さいと、押したつもりが引いたことになり、ボタンやメニューが効かず物が少し動いていた
+  const dragPx = t => (t === 'touch' ? TAP_PX : 4);
+  // ツールバーはどこを押しても、指で 10px・マウスとペンで 4px 以上引けば動かせる（引かずに離せば、そのボタンが押される）。
   // パネルの中（スライダーなど）は除く。動かし始めるまでポインタを奪わないので、ボタンのクリックはそのまま届く
   // 引いて離したあとのクリックは、ボタンを押したことにしない（次にツールバーを押したら印を消す）
   let eatClick = false;
@@ -770,7 +773,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     offTop();
     if (e.button !== 0 || e.target.closest('.pn')) return;
     measureBar();
-    const sx = e.clientX, sy = e.clientY, ox = sx - barX, oy = sy - barY, id = e.pointerId;
+    const sx = e.clientX, sy = e.clientY, ox = sx - barX, oy = sy - barY, id = e.pointerId, lim = dragPx(e.pointerType);
     // 色と太さ・開発用の見た目のパネルは、動かす間も開いたまま（T-066・T-068）。ほかのパネルは引き始めで閉じる（keepPanels なら閉じない）
     const kp = openP, look = !!kp && keepP(kp), onB = look && openB.contains(e.target);
     let moving = false;
@@ -779,7 +782,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       // ボタンを押していないマウス・ペンの動きなら、離した合図を取りこぼしている（別のタブで離して戻った。T-151）。ここで止める
       if (ev.buttons === 0 && ev.pointerType !== 'touch') { up(ev); return; }
       if (!moving) {
-        if (abs(ev.clientX - sx) < 4 && abs(ev.clientY - sy) < 4) return;
+        if (abs(ev.clientX - sx) < lim && abs(ev.clientY - sy) < lim) return;
         moving = true;
         if (!look) closePanel();
         bar.classList.add('drag');
@@ -2662,7 +2665,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   let hitT = false; // 押したのが指か（つまみの当たりを広げる。T-167）
   let sCopy = false, altDup = false, clip = null, selMOn = false; // sCopy: 浮いている物は写し（元の範囲を消していない）
   let selE = []; // 浮かせた範囲の中の直線・矢印の端（S、選んだときの位置）。確定で一緒に動かす（T-164）
-  let sel = false, sDrag = 0, sH = 0, sWas = false, sEd = false, hoverCur = '', toolCur = ''; // sEd: 文字の道具で押した（引かずに離せば 1 回目で書き直す。T-146）
+  let sel = false, sDrag = 0, sH = 0, sGo = false, sLim = 0, sWas = false, sEd = false, hoverCur = '', toolCur = ''; // sEd: 文字の道具で押した（引かずに離せば 1 回目で書き直す。T-146）
   let selX = 0, selY = 0, selW = 0, selH = 0;     // 今の枠（S、小数のまま持つ）
   let srcX = 0, srcY = 0, srcW = 0, srcH = 0;     // 浮かせた元の範囲（S、整数）
   let dragX = 0, dragY = 0, begX = 0, begY = 0, begW = 0, begH = 0; // ドラッグ開始時のポインタと枠
@@ -2948,6 +2951,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     act = e.pointerId; aType = e.pointerType; mode = 4;
     try { pad.setPointerCapture(act); } catch (_) { }
     dragX = X; dragY = Y; begX = selX; begY = selY; begW = selW; begH = selH; begA = selA;
+    sGo = false; sLim = dragPx(e.pointerType) * sdpr; // 引いたとみなすまで動かさない（指のぶれで物が動き、押したときのメニュー・書き直しが効かなかった。T-177）
     altDup = hit === -1 && e.altKey; // Alt を押しながら引くと、写しを引く（元は残る。T-020）
     if (hit === -1) sDrag = 2;
     else if (hit === 8) { sDrag = 5; rotA0 = atan2(Y - selY - selH / 2, X - selX - selW / 2); }
@@ -2959,9 +2963,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (sDrag === 1) {
       selX = min(dragX, X); selY = min(dragY, Y); selW = abs(X - dragX); selH = abs(Y - dragY);
       drawBand();
-    } else if (sDrag === 2) {
+    } else if (!sGo && abs(X - dragX) < sLim && abs(Y - dragY) < sLim) return;
+    else if (sDrag === 2) {
+      sGo = true;
       if (altDup) {
-        if (abs(X - dragX) + abs(Y - dragY) < 3 * sdpr) return;
         altDup = false;
         dupSel(0);
       }
@@ -2970,9 +2975,11 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       selY = max(0, begY + (Y - dragY));
       showSel();
     } else if (sDrag === 3) {
+      sGo = true;
       scaleSel(X, Y, e.shiftKey);
       showSel();
     } else if (sDrag === 5) {
+      sGo = true;
       // 枠の中心のまわりに回す。45° の倍数の近く（4° 以内）で吸い付き、Shift なら 15° ずつ
       let a = begA + atan2(Y - selY - selH / 2, X - selX - selW / 2) - rotA0;
       const q = e.shiftKey ? PI / 12 : PI / 4, n = round(a / q) * q;
@@ -3015,7 +3022,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         hcx = bdX; hcy = bdY; hcw = bdW; hch = bdH; bdW = 0;
         handoff = requestAnimationFrame(() => { handoff = requestAnimationFrame(finishHandoff); });
       }
-      if (selW > 3 * sdpr || selH > 3 * sdpr) {
+      if (selW >= sLim || selH >= sLim) {
         const x = floor(selX), y = floor(selY);
         liftSel(x, y, ceil(selX + selW) - x, ceil(selY + selH) - y, true);
       } else pickSel(dragX, dragY);
@@ -3307,13 +3314,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function taDrag(e) {
     if (e.button !== 0 || !taEdge(e)) return;
     e.preventDefault();
-    const o = ta, id = e.pointerId, sx = e.clientX, sy = e.clientY, dx = sx - taX, dy = sy - taCY;
+    const o = ta, id = e.pointerId, sx = e.clientX, sy = e.clientY, dx = sx - taX, dy = sy - taCY, lim = dragPx(e.pointerType);
     let moving = false;
     try { o.setPointerCapture(id); } catch (_) { }
     const mv = ev => {
       if (ev.pointerId !== id) return;
       if (!ev.buttons) { up(ev); return; } // 離した合図を取りこぼした（T-151）
-      if (!moving && abs(ev.clientX - sx) < 3 && abs(ev.clientY - sy) < 3) return;
+      if (!moving && abs(ev.clientX - sx) < lim && abs(ev.clientY - sy) < lim) return;
       moving = true;
       taX = ev.clientX - dx; taCY = ev.clientY - dy;
       styleTa();

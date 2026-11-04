@@ -1323,6 +1323,74 @@ test('消す物がないときは全消去が薄い（描く・元に戻す・�
   await ps.close();
 });
 
+// T-177: 指で押したときの細かなぶれ（10 px 未満）は、引いたことにしない（マウスとペンは 4 px）。v1.68.0 では、ツールバーは 4 px、選んだ物は少しでも動くと
+// 引いたことになり、押したつもりのボタン・選んだ物のメニュー・文字の書き直しが効かず、ツールバーや物が少し動いていた。触る画面では :hover の色を残さない
+test('指のぶれ（10 px 未満）は押したことにする: ツールバーのボタン・選んだ物のメニュー・文字の書き直し。マウスは 4 px。:hover の色は (hover: hover) のときだけ', async () => {
+  const page = await browser.newPage({ viewport: { width: 1000, height: 700 }, hasTouch: true });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(server.base + '/');
+  await runCode(page, withDefaults(CODE, {}));
+  const cdp = await page.context().newCDPSession(page);
+  const touch = async (pts) => {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: pts[0][0], y: pts[0][1] }] });
+    for (const [x, y] of pts.slice(1)) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y }] });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  };
+  const jitter = (x, y) => [[x, y], [x + 3, y + 2], [x + 7, y + 5], [x + 6, y + 4]]; // 指を置いて離すまでのぶれ（最大 7 px）
+  const center = s => shadowEval(page, (root, s) => { const r = root.querySelector(s).getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }, s);
+  const barXY = () => shadowEval(page, root => { const r = root.querySelector('.bar').getBoundingClientRect(); return [r.x, r.y]; });
+  const menu = () => page.evaluate(() => { const m = document.querySelector('paint-bookmarklet-surface').shadowRoot.querySelector('.sm'); return !!(m && m.isConnected); });
+  const selXY = () => page.evaluate(() => window.__paintBookmarklet.stats().selection); // [x, y, w, h]
+  // ツールバー: ぶれても押したことになり、ツールバーは動かない。はっきり引けば動く
+  const b0 = await barXY();
+  await touch(jitter(...await center('.bar > [aria-label^="消しゴム"]')));
+  assert.equal(await toolOn(page), '消しゴム (E)', 'toolbar tap');
+  assert.deepEqual(await barXY(), b0);
+  const [tx, ty] = await center('.bar > [aria-label^="文字"]');
+  await touch([[tx, ty], [tx + 10, ty + 6], [tx + 30, ty + 20]]);
+  assert.notDeepEqual(await barXY(), b0, 'a real drag moves the toolbar');
+  assert.equal(await toolOn(page), '消しゴム (E)', 'the drag does not press the button');
+  // 選んだ物: ぶれても動かさず、押したときのメニューが出る
+  await page.keyboard.press('p');
+  await drag(page, [[100, 400], [300, 400]], 5);
+  await page.keyboard.press('s');
+  await drag(page, [[80, 370], [320, 430]], 5);
+  const s0 = await selXY();
+  assert.ok(s0);
+  await touch(jitter(200, 400));
+  assert.deepEqual(await selXY(), s0, 'not moved by the jitter');
+  assert.equal(await menu(), true, 'menu on a tap');
+  await page.keyboard.press('Enter');
+  // 文字の道具: 文字をぶれて押すと、動かさずに書き直しになる
+  await page.keyboard.press('t');
+  await page.mouse.click(500, 300);
+  await page.keyboard.type('ab');
+  await page.keyboard.press('Escape');
+  const to = () => page.evaluate(() => document.querySelector('paint-bookmarklet-surface').shadowRoot.querySelector('.to').getBoundingClientRect().toJSON());
+  const t0 = await to();
+  await touch(jitter(t0.x + t0.width / 2, t0.y + t0.height / 2));
+  assert.equal((await textBox(page) || {}).value, 'ab', 'rewrite on a tap');
+  await page.keyboard.press('Escape');
+  const t1 = await to();
+  assert.deepEqual([t1.x, t1.y], [t0.x, t0.y]);
+  // マウス: 2 px のぶれは押したこと（メニュー）。5 px 引けば動く
+  await page.keyboard.press('s');
+  await drag(page, [[80, 370], [320, 430]], 5);
+  const m0 = await selXY();
+  await drag(page, [[200, 400], [201, 401], [202, 401]], 1);
+  assert.deepEqual(await selXY(), m0);
+  assert.equal(await menu(), true, 'mouse click with a 2 px jitter');
+  await drag(page, [[200, 400], [205, 400], [215, 400]], 1);
+  assert.notDeepEqual(await selXY(), m0, 'mouse drag moves');
+  // :hover の色は、本当に重ねられる（hover: hover）ときだけ（指で押した後に色が残らない）
+  const bare = await shadowEval(page, root => [...root.adoptedStyleSheets[0].cssRules].filter(r => r.selectorText && r.selectorText.includes(':hover')).map(r => r.selectorText));
+  assert.deepEqual(bare, []);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('全消去は、消す物がないときは何もしない（履歴が増えない）。積むのは描いた範囲に掛かるタイルだけ', async () => {
   const { page, errors } = await fresh();
   const st = () => page.evaluate(() => { const s = window.__paintBookmarklet.stats(); return [s.history, s.historyPixels]; });

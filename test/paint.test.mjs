@@ -1557,10 +1557,11 @@ test('ペンの種類: ペンでないときは押してもペンになるだけ
 });
 
 test('電卓: 入りにすると、文字の行が計算式なら答えが薄く出て Tab で書き込める。空白は式の書き方に合わせ、点線の枠は答えまで囲む。式でなければ出ない。切りなら今までどおり', async () => {
-  const { page, errors } = await fresh();
+  const { page, errors } = await openPage(browser, server.base + '/'); // 電卓の既定は入り（T-161）なので、切りで始める
+  await runCode(page, withDefaults(CODE, { calc: false }));
   const ghost = () => shadowEval(page, root => { const g = root.querySelector('.gh'); return g ? g.textContent : null; });
   const value = async () => (await textBox(page)).value;
-  // 切り（既定）: 答えは出ず、Tab でも何も書かれず、入力欄にいたまま
+  // 切り: 答えは出ず、Tab でも何も書かれず、入力欄にいたまま
   await page.keyboard.press('t');
   await page.mouse.click(200, 300);
   await page.keyboard.type('12*3');
@@ -2169,7 +2170,8 @@ test('文字の入力欄では iPhone のキーボードの入力欄の中の予
   ({ page, errors } = await open(IPHONE, false));
   const off = await type(page, '2-3'), offEq = await type(page, '2-3=');
   assert.equal(offEq.ghost, null);
-  assert.ok(offEq.w < off.w + 20, JSON.stringify([offEq, off]));
+  // 広がるのは = 1 文字の分だけ（書体で 16〜20px。全角 1 文字の 24px より狭い。T-152 は答えと全角 1 文字の分で 60px 以上広げていた）
+  assert.ok(offEq.w < off.w + 24, JSON.stringify([offEq, off]));
   assert.deepEqual(errors, []);
   await page.close();
   // PC も同じ
@@ -2179,6 +2181,56 @@ test('文字の入力欄では iPhone のキーボードの入力欄の中の予
   assert.equal(pc.ws, 'false');
   assert.deepEqual(errors, []);
   await page.close();
+});
+
+test('電卓の既定は入り。iPhone・iPad では Paint の答えが出ている間、iPhone のキーボードの薄い計算結果（文字の色の 50%）を透明にし、iPhone が書き込もうとした数も Paint の答えにする（T-161）', async () => {
+  const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+  for (const ua of [IPHONE, null]) {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 700 }, ...(ua ? { userAgent: ua } : {}) });
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.goto(server.base + '/');
+    await runCode(page, CODE);
+    assert.equal((await page.evaluate(() => window.__paintBookmarklet.stats().prefs)).calc, true); // 既定で入り
+    await page.keyboard.press('t');
+    await page.mouse.click(200, 450);
+    await page.keyboard.insertText('√8=');
+    // WebKit が iPhone の薄い字を描くのと同じ形（入力欄の文字の色の 50% の子）を、入力欄と同じ CSS の中に作って塗りの色を読む
+    const look = () => shadowEval(page, root => {
+      const t = root.querySelector('textarea:not([aria-hidden])'), g = root.querySelector('.gh');
+      const d = document.createElement('div'), c = document.createElement('span');
+      d.className = t.className; d.style.cssText = 'position:fixed;left:0;top:0;--c:' + getComputedStyle(t).getPropertyValue('--c');
+      c.style.color = 'color-mix(in srgb, currentColor 50%, transparent)';
+      d.append('8', c); t.after(d);
+      const r = { mx: t.classList.contains('mx'), ghost: g ? g.textContent : null, value: t.value, text: getComputedStyle(d).webkitTextFillColor, sug: getComputedStyle(c).webkitTextFillColor };
+      d.remove();
+      return r;
+    });
+    const a = await look();
+    assert.equal(a.ghost, '2√2');
+    assert.equal(a.mx, !!ua, JSON.stringify(a));
+    if (ua) {
+      assert.ok(!/\/ 0\)$/.test(a.text), JSON.stringify(a)); // 文字は見える
+      assert.ok(/\/ 0\)$/.test(a.sug), JSON.stringify(a)); // 薄い字は透明
+    }
+    // iPhone が自分の答えを書き込もうとしたら、Paint の答えを書き込む（PC では何もしない）
+    await shadowEval(page, root => root.querySelector('textarea:not([aria-hidden])').dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: '2.828', cancelable: true, bubbles: true })));
+    const b = await look();
+    assert.equal(b.value, ua ? '√8=2√2' : '√8=');
+    assert.equal(b.mx, false);
+    // 答えが出ていなければ付けない・数の 1 文字や数でない文字は横取りしない
+    await page.keyboard.press('Control+a');
+    await page.keyboard.press('Backspace');
+    await page.keyboard.insertText('2+3=');
+    await shadowEval(page, root => root.querySelector('textarea:not([aria-hidden])').dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: 'ab', cancelable: true, bubbles: true })));
+    assert.equal((await look()).value, '2+3=');
+    await page.keyboard.press('Control+a');
+    await page.keyboard.press('Backspace');
+    await page.keyboard.insertText('hello');
+    assert.equal((await look()).mx, false);
+    assert.deepEqual(errors, []);
+    await page.close();
+  }
 });
 
 test('答えは行が = で終わるときだけ出す。iPhone・iPad では、答えの出ている行の終わりで打ったスペース 1 回で書き込む（Tab の代わり。PC のスペースは今まで通り）（T-154）', async () => {
@@ -2401,7 +2453,8 @@ test('Simple Preview（CP2）: 開発用でなくてもその他の最後に出�
   await runCode(p0, withDefaults(CODE, { dev: true }));
   assert.equal((await menu(p0)).at(-1), 'Simple Preview');
   await p0.close();
-  const { page, errors } = await fresh();
+  const { page, errors } = await openPage(browser, server.base + '/'); // 本家の電卓は切り（既定は入り。T-161）
+  await runCode(page, withDefaults(CODE, { calc: false }));
   assert.deepEqual(await bar(page), MAIN);
   assert.equal((await menu(page)).at(-1), 'Simple Preview');
   await drag(page, [[100, 300], [400, 320]], 10);

@@ -244,7 +244,7 @@ function runPaint() {%%INLINE_CODE%%}
   // ---- デフォルトの設定: 選んだ既定をブックマークレットのコードに埋め込む ----
   // 組み込みの既定（src/paint.js の PALETTE と CFG に合わせる。テストで一致を確かめている）
   const PALETTE = ['#111111', '#ffffff', '#e53935', '#fb8c00', '#fdd835', '#43a047', '#1e88e5', '#8e24aa'];
-  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 4, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: false, pickOnce: false, keepPanels: false, glass: true, theme: 'light', blurMode: 'gauss', blur: 18, tint: 80, sat: 200, dev: false, ui: 'main', ppred: 'own', plen: 0.75 };
+  const BUILTIN = { color: '#e53935', tool: 'pen', size: { pen: 4, marker: 24, eraser: 32, text: 24 }, bar: 'top', touchText: true, calc: true, pickOnce: false, keepPanels: false, glass: true, theme: 'light', blurMode: 'gauss', blur: 18, tint: 80, sat: 200, dev: false, ui: 'main', ppred: 'own', plen: 0.75 };
   const BASE = bm.getAttribute('href'); // 既定の入っていないブックマークレット
   const KEY = 'paint-defaults';
   const $ = id => document.getElementById(id);

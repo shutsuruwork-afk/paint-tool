@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.51.0';
+  const VERSION = '1.52.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -200,6 +200,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 @keyframes bye{to{transform:scaleX(0)}}
 .bye>:not(.t),.hint>:not(.t){display:none}
 .tx{all:unset;position:absolute;box-sizing:content-box;padding:${TA_PAD}px;white-space:pre;overflow:hidden;resize:none;pointer-events:auto;cursor:text;color:var(--c);opacity:var(--a);caret-color:var(--c);font:600 var(--fs)/${LH} ${FONT};outline:1px dashed #3d7cffb0;outline-offset:${5 - TA_PAD}px;-webkit-user-select:text;user-select:text}
+.tx.mx{-webkit-text-fill-color:rgb(from currentcolor r g b / calc(alpha * 4 - 3))}
 .hp{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);box-sizing:border-box;width:min(680px,calc(100% - 32px));max-height:calc(100% - 32px);overflow:auto;padding:12px 18px 6px;background:var(--bb,#202228);border:1px solid #ffffff1f;border-radius:12px;box-shadow:0 6px 24px #0007;pointer-events:auto;font-size:12.5px;line-height:1.5;-webkit-user-select:text;user-select:text}
 .hp .hh{margin-bottom:8px;color:#a9acb8}.hp .hc{columns:2 270px;column-gap:28px}
 .hp section{break-inside:avoid;padding-bottom:10px}
@@ -296,7 +297,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 
   // ---------- 状態 ----------
   let picking = false; // スポイトで拾う待ち（EyeDropper のないブラウザ。T-147）
-  let tool = 'pen', color = PALETTE[2], bg = 0, pass = false, visible = false, touchText = DEF.touchText !== false, penType = 'pen', calc = false;
+  let tool = 'pen', color = PALETTE[2], bg = 0, pass = false, visible = false, touchText = DEF.touchText !== false, penType = 'pen', calc = true;
   // 種類のあるボタン（ペン・図形）: 既定は「選んでいないときに押すとその道具、もう一度押すと選択肢」。pickOnce なら 1 回で選択肢も出す
   const pickOnce = DEF.pickOnce === true;
   // ツールバーを引いて動かしても閉じないパネル: 色と太さ・見た目（開発用）はいつも。keepPanels（インストールページ）ならすべて（T-066・T-068）
@@ -2924,9 +2925,12 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     for (const t of TA_STOP) ta.addEventListener(t, stop);
     ta.addEventListener('input', updateGhost);
     // iPhone・iPad には Tab がないので、薄い答えの出ている行の終わりで打ったスペース 1 回で書き込む（T-154、ユーザーの要望。
-    // iPhone のキーボードの計算結果もスペースで確定する。スペース 2 回は iPhone の「. 」を入れる機能とぶつかる）。変換中のスペースは変換に使う
+    // iPhone のキーボードの計算結果もスペースで確定する。スペース 2 回は iPhone の「. 」を入れる機能とぶつかる）。変換中のスペースは変換に使う。
+    // iPhone がスペースで自分の計算結果（見えなくした薄い字。2 文字以上の数）を書き込もうとしたときも、Paint の答えを書き込む（T-161）
     if (IOS) ta.addEventListener('beforeinput', e => {
-      if (ghostTxt && e.inputType === 'insertText' && e.data === ' ' && !e.isComposing && ta.selectionStart === ghostAt && ta.selectionEnd === ghostAt) {
+      const d = e.data || '';
+      if (ghostTxt && e.inputType === 'insertText' && !e.isComposing && ta.selectionStart === ghostAt && ta.selectionEnd === ghostAt
+        && (d === ' ' || ghostFrom === ghostTo && d.trim().length > 1 && /^\s*[-−]?[\d.,]+(?:e[-+]?\d+)?\s*$/i.test(d))) {
         e.preventDefault();
         acceptGhost();
       }
@@ -3089,6 +3093,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       if (r) { showGhost(r, line, v, a); ghostTxt = r; ghostFrom = ghostTo = ghostAt = end; }
     }
     if (!ghostTxt) ghostEl.remove();
+    // iPhone のキーボードは、= で終わる行に自分の計算結果を入力欄の中に薄く出す（writingsuggestions では止まらない。T-161）。
+    // WebKit はそれを入力欄の文字の色の 50% で描く（::-internal-writing-suggestions）ので、Paint の答えが出ている間は、
+    // 文字の塗りを「色の濃さ × 4 − 3」にする（文字は 1 のまま、薄い字は 0 になって見えない）。.mx の CSS
+    if (IOS && ta) ta.classList.toggle('mx', !!ghostTxt);
     if (ta) fitTa();
   }
   // 薄い答え t を、行 line（入力欄の a 文字目から）の終わりに出す

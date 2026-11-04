@@ -2536,6 +2536,28 @@ test('直線・矢印の始めと終わりは、近くの線の端に吸い付�
   await page.close();
 });
 
+test('直線・矢印は四角の角・楕円の上下左右の端にも吸い付き、四角を描くときも角が吸い付く（T-170）', async () => {
+  const { page, errors } = await fresh();
+  const alpha = (x, y) => readMain(page, x, y).then(d => d[3]);
+  await page.keyboard.press('r');
+  await drag(page, [[300, 300], [500, 400]], 5);
+  await page.keyboard.press('o');
+  await drag(page, [[300, 500], [500, 600]], 5);
+  await page.keyboard.press('l');
+  // 四角の右下の角（500, 400）に吸い付く
+  await drag(page, [[506, 406], [600, 480]], 5);
+  assert.ok(await alpha(503, 402) > 0);
+  // 楕円の右の端（500, 550）に吸い付く
+  await drag(page, [[506, 556], [600, 620]], 5);
+  assert.ok(await alpha(503, 552) > 0);
+  // 四角を描くとき、押した角が四角の右上の角（500, 300）に吸い付く（左の辺が x = 500 になる）
+  await page.keyboard.press('r');
+  await drag(page, [[506, 306], [600, 200]], 5);
+  assert.ok(await alpha(500, 250) > 0);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('消しゴムで消した直線の端には吸い付かない。消しゴムを元に戻すと、また吸い付く（T-169）', async () => {
   const { page, errors } = await fresh();
   const alpha = (x, y) => readMain(page, x, y).then(d => d[3]);

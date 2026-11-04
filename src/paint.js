@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.61.0';
+  const VERSION = '1.62.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -1724,7 +1724,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         shaped = false;
         shShift = e.shiftKey; shAlt = e.altKey;
         snapN = 0;
-        if (t === 'line' || t === 'arrow') {
+        // 直線・矢印と四角（Alt の中心からでないとき）は、押した所を近くの端・角に合わせる（四角は T-170）
+        if (t === 'line' || t === 'arrow' || (t === 'rect' && !shAlt)) {
           snapPrep(type);
           if (snapAt(x, y)) { sx = cx = x0 = x1 = SX; sy = cy = y0 = y1 = SY; }
         }
@@ -2143,7 +2144,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       if (shShift) {
         const s = max(abs(w), abs(h));
         w = w < 0 ? -s : s; h = h < 0 ? -s : s;
-      }
+      } else if (snapN && !shAlt && snapAt(ex, ey)) { w = SX - ax; h = SY - ay; } // 四角の引いた角も近くの端・角に合わせる（T-170）
       let l, tp, rw, rh;
       if (shAlt) { rw = abs(w) * 2; rh = abs(h) * 2; l = ax - rw / 2; tp = ay - rh / 2; }
       else { rw = abs(w); rh = abs(h); l = min(ax, ax + w); tp = min(ay, ay + h); }
@@ -2262,8 +2263,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         markShape();
         lastH = null;
         commitLive();
-        // 直線・矢印の端を、その手に面の座標で覚える（次の線が吸い付く。T-158）
-        if (lastH && (sTool === 'line' || sTool === 'arrow')) lastH.e = [G[0] * sk + sox, G[1] * sk + soy, G[2] * sk + sox, G[3] * sk + soy];
+        // 直線・矢印の端、四角の 4 つの角、楕円の上下左右の端を、その手に面の座標で覚える（次の線が吸い付く。T-158・T-170）
+        if (lastH) {
+          const X = v => v * sk + sox, Y = v => v * sk + soy, l = G[0], t = G[1], r = G[0] + G[2], b = G[1] + G[3];
+          if (sTool === 'line' || sTool === 'arrow') lastH.e = [X(G[0]), Y(G[1]), X(G[2]), Y(G[3])];
+          else if (sTool === 'rect') lastH.e = [X(l), Y(t), X(r), Y(t), X(r), Y(b), X(l), Y(b)];
+          else lastH.e = [X((l + r) / 2), Y(t), X(r), Y((t + b) / 2), X((l + r) / 2), Y(b), X(l), Y((t + b) / 2)];
+        }
       } else if (dirty()) lctx.clearRect(dX, dY, dW, dH);
     } else if (m === 4) {
       selUp();
@@ -4068,7 +4074,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       ["{P}", "ペン（筆圧対応）"],
       ["{H}", "蛍光ペン"],
       ["{E}", "消しゴム（右クリック・ペンの消しゴム側でも）"],
-      ["{L} {A} {R} {O}", "直線・矢印・四角形・楕円（直線と矢印の端は、近くの線の端に吸い付く）"],
+      ["{L} {A} {R} {O}", "直線・矢印・四角形・楕円（直線・矢印・四角の角は、近くの線の端・四角の角・楕円の端に吸い付く）"],
       ["{T}", "文字（日本語入力対応）"],
       ["{F}", "塗りつぶし"],
       ["{I}", "スポイト（描いた絵と文字から。対応するブラウザではページからも）"]

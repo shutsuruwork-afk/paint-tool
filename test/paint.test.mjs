@@ -2183,7 +2183,7 @@ test('文字の入力欄では iPhone のキーボードの入力欄の中の予
   await page.close();
 });
 
-test('電卓の既定は入り。iPhone・iPad では Paint の答えが出ている間、iPhone のキーボードの薄い計算結果（文字の色の 50%）を透明にし、iPhone が書き込もうとした数も Paint の答えにする（T-161）', async () => {
+test('電卓の既定は入り。iPhone・iPad では Paint の答えが出ている間、iPhone のキーボードの薄い計算結果（文字の色の 50%）を透明にし、iPhone が書き込んだ数も Paint の答えに置き換える（T-161・T-162）', async () => {
   const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
   for (const ua of [IPHONE, null]) {
     const page = await browser.newPage({ viewport: { width: 1000, height: 700 }, ...(ua ? { userAgent: ua } : {}) });
@@ -2213,20 +2213,34 @@ test('電卓の既定は入り。iPhone・iPad では Paint の答えが出て�
       assert.ok(!/\/ 0\)$/.test(a.text), JSON.stringify(a)); // 文字は見える
       assert.ok(/\/ 0\)$/.test(a.sug), JSON.stringify(a)); // 薄い字は透明
     }
-    // iPhone が自分の答えを書き込もうとしたら、Paint の答えを書き込む（PC では何もしない）
-    await shadowEval(page, root => root.querySelector('textarea:not([aria-hidden])').dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: '2.828', cancelable: true, bubbles: true })));
+    // iPhone が自分の答えを書き込んだら（beforeinput を通らない。T-162）、Paint の答えに置き換える（PC では何もしない）
+    await page.keyboard.insertText('2.828');
     const b = await look();
-    assert.equal(b.value, ua ? '√8=2√2' : '√8=');
+    assert.equal(b.value, ua ? '√8=2√2' : '√8=2.828');
     assert.equal(b.mx, false);
-    // 答えが出ていなければ付けない・数の 1 文字や数でない文字は横取りしない
+    // WebKit の自動修正と同じ形（行の頭から = までを選んで「√8=2.828」に置き換える）で入っても同じ
     await page.keyboard.press('Control+a');
     await page.keyboard.press('Backspace');
-    await page.keyboard.insertText('2+3=');
-    await shadowEval(page, root => root.querySelector('textarea:not([aria-hidden])').dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: 'ab', cancelable: true, bubbles: true })));
-    assert.equal((await look()).value, '2+3=');
+    await page.keyboard.insertText('√8=');
+    await shadowEval(page, root => { const t = root.querySelector('textarea:not([aria-hidden])'); t.setSelectionRange(0, 3); });
+    await page.keyboard.insertText('√8=2.828');
+    assert.equal((await look()).value, ua ? '√8=2√2' : '√8=2.828');
+    // 変換の確定で入っても同じ
     await page.keyboard.press('Control+a');
     await page.keyboard.press('Backspace');
-    await page.keyboard.insertText('hello');
+    await page.keyboard.insertText('11 -13 =');
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Input.imeSetComposition', { text: '-2', selectionStart: 2, selectionEnd: 2 });
+    await cdp.send('Input.insertText', { text: '-2' });
+    assert.equal((await look()).value, ua ? '11 -13 = -2' : '11 -13 =-2');
+    // 数を 1 文字ずつ打つ・数でない文字・答えが出ていない所は置き換えない
+    for (const [t, typed] of [['2+3=', '12'], ['2+3=', 'ab'], ['hello', '42']]) {
+      await page.keyboard.press('Control+a');
+      await page.keyboard.press('Backspace');
+      await page.keyboard.insertText(t);
+      if (typed === '12') { await page.keyboard.type('12'); } else await page.keyboard.insertText(typed);
+      assert.equal((await look()).value, t + typed, t + typed);
+    }
     assert.equal((await look()).mx, false);
     assert.deepEqual(errors, []);
     await page.close();

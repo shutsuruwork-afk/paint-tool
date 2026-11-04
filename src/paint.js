@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.52.0';
+  const VERSION = '1.53.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -2923,21 +2923,21 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     ta = el('textarea', 'tx', { spellcheck: 'false', writingsuggestions: 'false', wrap: 'off', rows: '1', 'aria-label': '文字' });
     taX = cx; taCY = cy; // クリックした点が 1 行目の高さの中央になるように置く
     for (const t of TA_STOP) ta.addEventListener(t, stop);
-    ta.addEventListener('input', updateGhost);
+    taComp = false; gV = null;
+    ta.addEventListener('compositionstart', () => { taComp = true; });
+    ta.addEventListener('input', e => { if (!e.isComposing) iosAns(); updateGhost(); });
     // iPhone・iPad には Tab がないので、薄い答えの出ている行の終わりで打ったスペース 1 回で書き込む（T-154、ユーザーの要望。
     // iPhone のキーボードの計算結果もスペースで確定する。スペース 2 回は iPhone の「. 」を入れる機能とぶつかる）。変換中のスペースは変換に使う。
-    // iPhone がスペースで自分の計算結果（見えなくした薄い字。2 文字以上の数）を書き込もうとしたときも、Paint の答えを書き込む（T-161）
+    // iPhone のキーボードが自分の計算結果を出しているときのスペースは、ここを通らずに iPhone の答えを書き込む（iosAns が置き換える。T-162）
     if (IOS) ta.addEventListener('beforeinput', e => {
-      const d = e.data || '';
-      if (ghostTxt && e.inputType === 'insertText' && !e.isComposing && ta.selectionStart === ghostAt && ta.selectionEnd === ghostAt
-        && (d === ' ' || ghostFrom === ghostTo && d.trim().length > 1 && /^\s*[-−]?[\d.,]+(?:e[-+]?\d+)?\s*$/i.test(d))) {
+      if (ghostTxt && e.inputType === 'insertText' && e.data === ' ' && !e.isComposing && ta.selectionStart === ghostAt && ta.selectionEnd === ghostAt) {
         e.preventDefault();
         acceptGhost();
       }
     });
     // 日本語入力の変換中も枠を合わせる（変換中の文字で input が来ない環境でも、枠の外にはみ出さないように。T-099）
     ta.addEventListener('compositionupdate', updateGhost);
-    ta.addEventListener('compositionend', updateGhost);
+    ta.addEventListener('compositionend', () => { taComp = false; iosAns(); updateGhost(); });
     ta.addEventListener('keyup', updateGhost);
     ta.addEventListener('pointerup', updateGhost);
     ta.addEventListener('pointerdown', taDrag);
@@ -3051,8 +3051,24 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 入力欄の大きさ（fitTa）もここで合わせる。答えの右端（ghostR、行の頭からの CSS px）まで枠を広げるため
   const ghostEl = el('div', 'gh');
   // ghostTxt は書き込む文字、ghostFrom〜ghostTo を書き込む文字で置き換える（ふつうは行の終わりに足す。= に合わせて直すときは古い答えと入れ替える）。
-  // ghostAt は iPhone のスペースで書き込めるカーソルの位置
-  let ghostTxt = '', ghostFrom = 0, ghostTo = 0, ghostAt = 0, ghostR = 0, mta = null;
+  // ghostAt は iPhone のスペースで書き込めるカーソルの位置。gV・gA・gT: iPhone で行の終わりに Paint の答えが出ていたときの入力欄の値・位置・答え
+  // （iosAns が、そこに iPhone の答えが入ったかを見る）。taComp: 変換中か
+  let ghostTxt = '', ghostFrom = 0, ghostTo = 0, ghostAt = 0, ghostR = 0, mta = null, gV = null, gA = 0, gT = '', taComp = false;
+  // iPhone のキーボードは、見えなくした自分の計算結果を、スペースで書き込む（T-161 の beforeinput を通らなかった。入力の形は未確認。T-162）。
+  // Paint の答えが出ていた所に、数（2 文字以上）だけが入ったら、Paint の答えに置き換える。入り方（insertText・変換の確定など）は問わない。
+  // 自分で数を 1 文字ずつ打つときは、1 文字目で行が = で終わらなくなり答えが消えるので、置き換わらない
+  function iosAns() {
+    const o = gV;
+    gV = null;
+    if (o == null || !ta) return;
+    const v = ta.value, k = v.length - o.length;
+    if (k < 2 || v.slice(0, gA) !== o.slice(0, gA) || v.slice(gA + k) !== o.slice(gA)) return;
+    if (!/^[\s\-−]*\d[\d.,\s]*(?:e[-+]?\d+)?\s*$/i.test(v.slice(gA, gA + k))) return;
+    ta.setSelectionRange(gA, gA + k);
+    let ok = false;
+    try { ok = doc.execCommand('insertText', false, gT); } catch (_) { }
+    if (!ok) ta.setRangeText(gT, gA, gA + k, 'end');
+  }
   // 1 行の幅を、入力欄と同じ測り方（見えない入力欄の scrollWidth）で測る。答えの位置と枠の幅が、Tab で書き込んだ後の入力欄とそろう
   // （canvas の measureText や span は、書体によって「*」などの組み方が入力欄と変わり、数 px ずれた）。測る間だけ置いて外す
   function lineW(t) {
@@ -3096,7 +3112,10 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     // iPhone のキーボードは、= で終わる行に自分の計算結果を入力欄の中に薄く出す（writingsuggestions では止まらない。T-161）。
     // WebKit はそれを入力欄の文字の色の 50% で描く（::-internal-writing-suggestions）ので、Paint の答えが出ている間は、
     // 文字の塗りを「色の濃さ × 4 − 3」にする（文字は 1 のまま、薄い字は 0 になって見えない）。.mx の CSS
-    if (IOS && ta) ta.classList.toggle('mx', !!ghostTxt);
+    if (IOS && ta) {
+      ta.classList.toggle('mx', !!ghostTxt);
+      if (!taComp) { gV = ghostTxt && ghostFrom === ghostTo ? ta.value : null; gA = ghostAt; gT = ghostTxt; }
+    }
     if (ta) fitTa();
   }
   // 薄い答え t を、行 line（入力欄の a 文字目から）の終わりに出す

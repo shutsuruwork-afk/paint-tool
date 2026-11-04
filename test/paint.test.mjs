@@ -2252,6 +2252,36 @@ test('電卓の変数と前の行（r = 5、ans）・Python の書き方（** //
   await page.close();
 });
 
+test('電卓で方程式を解く（知らない名前が 1 つ。1 次は分数で正確に、ほかは数値で。答えが多いときは 0 以上の小さい方から 4 つと …）（T-156）', async () => {
+  const { page, errors } = await fresh();
+  await page.evaluate(() => localStorage.setItem('paint-bookmarklet', JSON.stringify({ calc: true })));
+  await page.evaluate(() => window.__paintBookmarklet.destroy());
+  await runCode(page, CODE);
+  const ghost = () => shadowEval(page, root => { const g = root.querySelector('.gh'); return g ? g.textContent : null; });
+  await page.keyboard.press('t');
+  await page.mouse.click(200, 300);
+  const cases = [
+    ['2x+3=7', ' → x = 2'], ['2x + 3 = 7', ' → x = 2'], ['x = 2x - 3', ' → x = 3'], ['x/3=5', ' → x = 15'], ['3x=1', ' → x = 0.333333333333'],
+    ['x^2-4=0', ' → x = -2, 2'], ['x^2=2', ' → x = -1.41421356237, 1.41421356237'], ['x^3-6x^2+11x-6=0', ' → x = 1, 2, 3'],
+    ['(x-1.37)^2=0', ' → x = 1.37'], ['(x+2.5)^2=0', ' → x = -2.5'], ['sin(x)=0.5', ' → x = 30, 150, 390, 510, …'], ['cos(x)=0', ' → x = 90, 270, 450, 630, …'],
+    ['2^x=1024', ' → x = 10'], ['r = 5\nr*x = 10', ' → x = 2'],
+    // 解けない・式でない
+    ['x^2=-1', null], ['x+1=x+2', null], ['x+1=x+1', null], ['y = 2x + 1', null], ['1+1=2', null], ['x=5', null], ['2x+3=', null]];
+  for (const [ex, want] of cases) {
+    await page.keyboard.press('Control+a');
+    await page.keyboard.press('Backspace');
+    await page.keyboard.insertText(ex);
+    assert.equal(await ghost(), want, ex);
+  }
+  await page.keyboard.press('Control+a');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.insertText('2x+3=7');
+  await page.keyboard.press('Tab');
+  assert.equal((await textBox(page)).value, '2x+3=7 → x = 2');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('Simple Preview（CP2）: 開発用でなくてもその他の最後に出て（T-101）、押すと絵と履歴はそのままで CP2 の表示になる（ペン ⇄ 消しゴム・文字〈電卓は入り〉・元に戻す・その他〈全消去・色・本家に戻す〉・閉じる〈中身は隠す〉）。本家に戻せ、サイトごとに覚える（T-088）', async () => {
   const bar = page => shadowEval(page, root => [...root.querySelector('.bar').children].filter(e => e.classList.contains('b'))
     .map(b => b.title.split(/[ （(]/)[0] + (b.classList.contains('on') ? '*' : '')));

@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.46.0';
+  const VERSION = '1.47.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -3394,18 +3394,77 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       s = s.replace(/#.*/, ''); // Python のコメント
       if (eq) s = s.replace(/=\s*$/, '');
       const as = /^\s*([a-z_][a-z0-9_]*)\s*=([^=]*)$/.exec(s);
-      let r = '', c;
+      let r = '', c, done = 0;
       const ans = () => { env.ans = env._ = { v: c.f(), p: c.pc > 0 }; return env.ans.v; };
       try {
-        if (as && !reserved(as[1]) && as[2].trim()) { // 代入（r = 5。r = 2*3 = なら答えも出す）
+        if (as && !reserved(as[1]) && as[2].trim()) { // 代入（r = 5。r = 2*3 = なら答えも出す）。右に知らない名前があれば方程式（x = 2x - 3）
           c = compile(as[2], env);
-          if (!c.unk.size) { const v = ans(); env[as[1]] = env.ans; if (eq) r = fmt(v); }
-        } else if (s.indexOf('=') < 0 && eq) { // = で終わる式（定数・変数だけの行も出す。12= や -5= は出さない）
-          c = compile(s, env);
-          if (!c.unk.size && (c.ops || c.cst)) r = fmt(ans());
+          if (!c.unk.size) { const v = ans(); env[as[1]] = env.ans; if (eq) r = fmt(v); done = 1; }
+        }
+        if (!done && s.indexOf('=') < 0) { // = で終わる式（定数・変数だけの行も出す。12= や -5= は出さない）
+          if (eq) { c = compile(s, env); if (!c.unk.size && (c.ops || c.cst)) r = fmt(ans()); }
+        } else if (!done && !eq && !quiet) { // 方程式（T-156）
+          r = solve(s, env);
+          return r ? (tw ? '' : ' ') + '→ ' + r : '';
         }
       } catch (_) { r = ''; }
       return r && !quiet ? (sp && !tw ? ' ' : '') + r : '';
+    }
+    // 方程式を解く（T-156、ユーザーの要望: 方程式を解く。2x+3=7 → x = 2、x^2-4=0 → x = -2, 2）。知らない名前が 1 つだけの式。
+    // 1 次なら分数のまま正確に（4 点で傾きがそろうか見る）。ほかは数値で、0 のまわりから 10 万までの点で符号が変わる所を二分法で詰め、
+    // 0 に触れるだけの所（(x-1)^2=0）は |左辺 − 右辺| の小さい所を黄金分割で探す。答えが 4 つより多い（sin(x)=0.5 など）ときは 0 以上の小さい方から 4 つと「…」
+    function solve(s, env) {
+      const k = s.indexOf('=');
+      if (s.indexOf('=', k + 1) >= 0) return '';
+      const L = compile(s.slice(0, k), env), R = compile(s.slice(k + 1), env), u = new Set([...L.unk, ...R.unk]);
+      if (u.size !== 1) return '';
+      const [x] = u, f = v => { L.set(v); R.set(v); return add(L.f(), R.f(), -1); };
+      if (N) {
+        try {
+          const P = [I(0), I(1), I(2), Q(N(-7), N(3))].map(f);
+          if (P.every(v => typeof v !== 'number')) {
+            const m = add(P[1], P[0], -1);
+            if (!cmp(add(P[2], P[0], -1), mul(m, I(2))) && !cmp(add(P[3], P[0], -1), mul(m, Q(N(-7), N(3))))) {
+              return cmp(m, I(0)) ? x + ' = ' + fmt(neg(div(P[0], m))) : ''; // 傾きが 0 ならどの x でも成り立つか、解がない
+            }
+          }
+        } catch (_) { }
+      }
+      const g = v => { try { const y = fl(f(v)); return typeof y === 'number' ? y : NaN; } catch (_) { return NaN; } };
+      const xs = [0];
+      for (let e = -3; e <= 5; e++) for (let t = 10; t < 100; t += 2) xs.push(t * 10 ** (e - 1), -t * 10 ** (e - 1));
+      xs.sort((a, b) => a - b);
+      const ys = xs.map(g), out = [];
+      // 整数に近ければ整数にする（その方が左辺 − 右辺が小さいときだけ。cos(x)=0 の 450 など、ちょうどの値は幅を持って 0 になる）
+      const near = (a, b, t) => abs(a - b) <= t * max(1, abs(a));
+      const push = v => { const r = round(v); if (near(v, r, 1e-6) && abs(g(r)) <= abs(g(v))) v = r; if (!out.some(o => near(o, v, 1e-9))) out.push(v); };
+      // 0 に近い区間から調べ、答えが 9 つ見つかったらやめる（くり返す式で、遠くの答えまで詰めると重い）
+      const order = xs.slice(0, -1).map((_, j) => j).sort((p, q) => min(abs(xs[p]), abs(xs[p + 1])) - min(abs(xs[q]), abs(xs[q + 1])));
+      for (const j of order) {
+        if (out.length >= 9) break;
+        const a = xs[j], b = xs[j + 1], ya = ys[j], yb = ys[j + 1];
+        if (ya === 0) push(a);
+        if (!isFinite(ya) || !isFinite(yb)) continue;
+        if (ya * yb < 0) { // 符号が変わる所を二分法で詰める（極は除く: 詰めた所の値が両端より大きければ捨てる）
+          let lo = a, hi = b, yl = ya;
+          for (let t = 0; t < 80; t++) { const mid = (lo + hi) / 2, ym = g(mid); if (!ym) { lo = hi = mid; break; } if (ym * yl < 0) hi = mid; else { lo = mid; yl = ym; } }
+          const r = (lo + hi) / 2;
+          if (abs(g(r)) <= 1e-6 * max(1, abs(ya), abs(yb))) push(r);
+        } else if (j && isFinite(ys[j - 1]) && ya * ys[j - 1] > 0 && abs(ya) < abs(ys[j - 1]) && abs(ya) <= abs(yb) && abs(ya) < 0.25 * max(abs(ys[j - 1]), abs(yb))) {
+          // 0 に触れるだけの所: |値| の小さい所を黄金分割で探す
+          let lo = xs[j - 1], hi = b;
+          for (let t = 0; t < 120; t++) {
+            const m1 = hi - (hi - lo) * 0.618, m2 = lo + (hi - lo) * 0.618;
+            if (abs(g(m1)) < abs(g(m2))) hi = m2; else lo = m1;
+          }
+          const r = (lo + hi) / 2;
+          if (abs(g(r)) <= 1e-10 * max(1, abs(ys[j - 1]), abs(yb))) push(r);
+        }
+      }
+      if (!out.length) return '';
+      // 答えが多い（くり返す）ときは 0 以上の小さい方から（sin(x)=0.5 → 30, 150, 390, 510, …）
+      const best = out.sort((a, b) => (out.length > 4 ? (a < 0) - (b < 0) || abs(a) - abs(b) : abs(a) - abs(b))).slice(0, 4).sort((a, b) => a - b);
+      return x + ' = ' + best.map(fmt).join(', ') + (out.length > 4 ? ', …' : '');
     }
     // 入力欄の上の行から、名前と ans を集める
     function envOf(text) {

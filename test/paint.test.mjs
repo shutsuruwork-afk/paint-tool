@@ -1262,7 +1262,7 @@ test('Delete・Backspace は選んだ物だけを消し、全消去はしない�
 
 // T-175: Beta の一貫性。全消去も元に戻す・やり直すと同じく、消す物がないときは薄い（Simple は今まで通り）。閉じるの名前は名前だけ（T-148）。
 // 操作の一覧の Beta だけの行（ペン・図形をもう一度・その他の中身）は Simple に出さない。v1.66.0 では全消去がいつも押せた
-test('Beta: 消す物がないときは全消去が薄い（描く・元に戻す・やり直す・消しゴム・文字で変わる）。閉じるは名前だけ。操作の一覧の Beta だけの行は Simple に出さない', async () => {
+test('消す物がないときは全消去が薄い（描く・元に戻す・やり直す・消しゴム・文字で変わる。Beta・Simple）。閉じるは名前だけ。操作の一覧の Beta だけの行は Simple に出さない', async () => {
   const { page, errors } = await fresh();
   const dis = () => shadowEval(page, root => root.querySelector('[title="全消去"]').disabled);
   const clr = async () => {
@@ -1304,12 +1304,18 @@ test('Beta: 消す物がないときは全消去が薄い（描く・元に戻�
   assert.ok(helpB.includes('ペン・図形をもう一度'));
   assert.deepEqual(errors, []);
   await page.close();
-  // Simple: 全消去は今まで通りいつも押せる。Beta だけの行は一覧に出ない
+  // Simple: 全消去は同じく、消す物がないときは薄い（T-176）。Beta だけの行は一覧に出ない
   const { page: ps, errors: es } = await openPage(browser, server.base + '/');
   await runCode(ps, withDefaults(CODE, { ui: 'cp2' }));
-  await mouseClick(ps, '.bar > [aria-label^="その他"]');
-  assert.equal(await shadowEval(ps, root => root.querySelector('[title="全消去"]').disabled), false, 'Simple');
-  await ps.keyboard.press('Escape');
+  const disS = async () => {
+    await mouseClick(ps, '.bar > [aria-label^="その他"]');
+    const d = await shadowEval(ps, root => root.querySelector('[title="全消去"]').disabled);
+    await ps.keyboard.press('Escape');
+    return d;
+  };
+  assert.equal(await disS(), true, 'Simple, nothing drawn');
+  await drag(ps, [[100, 300], [300, 300]], 5);
+  assert.equal(await disS(), false, 'Simple, after a line');
   await ps.keyboard.press('?');
   const helpS = await shadowEval(ps, root => root.querySelector('.hp').textContent);
   assert.ok(!helpS.includes('ペン・図形をもう一度') && !helpS.includes('デフォルトの変更'), helpS);

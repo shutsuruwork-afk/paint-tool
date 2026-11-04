@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.67.0';
+  const VERSION = '1.68.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -925,9 +925,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     redoB.disabled = hpos >= hist.length;
     if (openP === moreP) syncClr(); // その他を開いたまま元に戻す・やり直す（キー）とき
   }
-  // Beta では、消す物がないとき全消去を薄くする（元に戻す・やり直すと同じ。T-175）。測るのはその他を開くときだけ（消しゴムの後などは読み戻すので、手ごとにはしない）。
+  // 消す物がないとき全消去を薄くする（元に戻す・やり直すと同じ。T-175 で Beta に、T-176 で Simple にも入れた）。測るのはその他を開くときだけ（消しゴムの後などは読み戻すので、手ごとにはしない）。
   // 打っている途中の文字と浮いている選択は、全消去の前に確定する（settle）ので、消す物に数える
-  function syncClr() { clrMi.disabled = !cp2 && !sel && !(ta && ta.value) && !canClear(); }
+  function syncClr() { clrMi.disabled = !sel && !(ta && ta.value) && !canClear(); }
   function cycleBg() {
     bg = (bg + 1) % BGS.length;
     sbox.classList.toggle('bg1', bg === 1);

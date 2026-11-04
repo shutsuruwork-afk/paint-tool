@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.69.0';
+  const VERSION = '1.70.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -2646,6 +2646,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   let bX0 = 0, bY0 = 0, bW0 = 1, bH0 = 1; // 選んだ時の枠（S）
   // つまみの位置（枠に対する割合）: 左上・上・右上・右・右下・下・左下・左
   const HND = [0, 0, 0.5, 0, 1, 0, 1, 0.5, 1, 1, 0.5, 1, 0, 1, 0, 0.5];
+  const HORD = [0, 4, 8, 12, 2, 6, 10, 14];
+  // つまみの当たりの 1 軸分。h は枠の中の位置（0・0.5・1）、d はつまみからの差。端のつまみは外側へ ro・内側へ r、真ん中は辺に沿って ro まで
+  const hAx = (d, h, r, ro) => (h === 0 ? d >= -ro && d <= r : h === 1 ? d >= -r && d <= ro : abs(d) <= ro);
   const HCUR = ['nwse-resize', 'ns-resize', 'nesw-resize', 'ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize', 'ew-resize', 'grab'];
   for (let i = 0; i < 16; i += 2) {
     const h = el('i');
@@ -2920,14 +2923,16 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       X = cx + dx * c + dy * s;
       Y = cy - dx * s + dy * c;
     }
-    const r = 8 * sdpr, px = padX(), py = padY();
+    // つまみの当たり: 内側へは 8 px（小さな物でも中を押せば動かせる）。外側へは、マウス・ペンは 8 px・指は 18 px（回すつまみと同じ。T-178。見た目は 9 px のまま）
+    const r = 8 * sdpr, ro = (hitT ? 18 : 8) * sdpr, px = padX(), py = padY();
     const fx = selX - px, fy = selY - py, fw = selW + 2 * px, fh = selH + 2 * py;
     // 回すつまみ: 指は中心から 18 px まで、マウス・ペンは 10 px まで（T-167。見た目は 11 px のまま）。上の辺のつまみとは、間より上だけにして取り合わない
     if (!selEl.classList.contains('nr') && Y < fy - ROT / 2 * sdpr && hypot(X - fx - fw / 2, Y - fy + ROT * sdpr) <= (hitT ? 18 : 10) * sdpr) return 8;
     if (X > fx + r && X < fx + fw - r && Y > fy + r && Y < fy + fh - r) return -1;
-    for (let i = 0; i < 16; i += 2) {
+    // 角を先に見る（辺の真ん中のつまみが、外側へ広げた角の当たりを取らないように）
+    for (const i of HORD) {
       if (!srcW && i % 4) continue; // 文字だけのときは角のつまみだけ
-      if (abs(X - fx - HND[i] * fw) <= r && abs(Y - fy - HND[i + 1] * fh) <= r) return i / 2;
+      if (hAx(X - fx - HND[i] * fw, HND[i], r, ro) && hAx(Y - fy - HND[i + 1] * fh, HND[i + 1], r, ro)) return i / 2;
     }
     return X >= fx && X <= fx + fw && Y >= fy && Y <= fy + fh ? -1 : -2;
   }

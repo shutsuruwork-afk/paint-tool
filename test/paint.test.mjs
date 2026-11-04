@@ -1391,6 +1391,54 @@ test('指のぶれ（10 px 未満）は押したことにする: ツールバー
   await page.close();
 });
 
+// T-178: 選んだ物の角・辺のつまみは、指なら枠の外側へ 18 px まで押せる（回すつまみと同じ。内側は 8 px のまま）。マウスは今まで通り 8 px。
+// v1.69.0 では指でもつまみの外 8 px を超えると枠の外になり、拡大縮小できずに選択が外れた
+test('指は角のつまみの外側 18 px までで拡大縮小できる（マウスは 8 px）。小さな物でも中を押せば動かせる', async () => {
+  const page = await browser.newPage({ viewport: { width: 1000, height: 700 }, hasTouch: true });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(server.base + '/');
+  await runCode(page, withDefaults(CODE, {}));
+  const cdp = await page.context().newCDPSession(page);
+  const touch = async (pts) => {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: pts[0][0], y: pts[0][1] }] });
+    for (const [x, y] of pts.slice(1)) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y }] });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  };
+  const sel = () => page.evaluate(() => window.__paintBookmarklet.stats().selection);
+  await page.keyboard.press('r');
+  await drag(page, [[200, 300], [300, 380]], 5);
+  await page.keyboard.press('s');
+  await drag(page, [[180, 280], [320, 400]], 5);
+  const f = await selBox(page, true), s0 = await sel();
+  assert.ok(f && s0);
+  // 指: 右下の角の 14 px 外から引くと拡大
+  await touch([[f.r + 14, f.b + 14], [f.r + 30, f.b + 30], [f.r + 54, f.b + 54]]);
+  const s1 = await sel();
+  assert.ok(s1 && s1[2] > s0[2] + 20 && s1[3] > s0[3] + 20, `touch corner ${JSON.stringify([s0, s1])}`);
+  // 小さな物（枠は最低 24 px）: 指で枠の真ん中を押して引くと動く（外側へ広げたつまみが中を取らない）
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('l');
+  await drag(page, [[600, 300], [606, 300]], 1);
+  await page.keyboard.press('s');
+  await drag(page, [[590, 290], [616, 310]], 5);
+  const g = await selBox(page, true), t0 = await sel();
+  assert.ok(g && t0, 'small selection');
+  await touch([[g.x + g.w / 2, g.y + g.h / 2], [g.x + g.w / 2 + 20, g.y + g.h / 2 + 20], [g.x + g.w / 2 + 40, g.y + g.h / 2 + 40]]);
+  const t1 = await sel();
+  assert.ok(t1 && t1[0] > t0[0] + 30 && near(t1[2], t0[2], 1) && near(t1[3], t0[3], 1), `small move ${JSON.stringify([t0, t1])}`);
+  // マウス: 右下の角の 14 px 外は枠の外（拡大縮小しない）
+  await page.keyboard.press('Escape');
+  await drag(page, [[180, 280], [320, 400]], 5);
+  const h = await selBox(page, true), m0 = await sel();
+  await drag(page, [[h.r + 14, h.b + 14], [h.r + 30, h.b + 30], [h.r + 54, h.b + 54]], 1);
+  const m1 = await sel();
+  assert.ok(!m1 || near(m1[2], m0[2], 1), `mouse outside ${JSON.stringify([m0, m1])}`);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('全消去は、消す物がないときは何もしない（履歴が増えない）。積むのは描いた範囲に掛かるタイルだけ', async () => {
   const { page, errors } = await fresh();
   const st = () => page.evaluate(() => { const s = window.__paintBookmarklet.stats(); return [s.history, s.historyPixels]; });

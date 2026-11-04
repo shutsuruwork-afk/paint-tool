@@ -1327,7 +1327,7 @@ test('消す物がないときは全消去が薄い（描く・元に戻す・�
 
 // T-177: 指で押したときの細かなぶれ（10 px 未満）は、引いたことにしない（マウスとペンは 4 px）。v1.68.0 では、ツールバーは 4 px、選んだ物は少しでも動くと
 // 引いたことになり、押したつもりのボタン・選んだ物のメニュー・文字の書き直しが効かず、ツールバーや物が少し動いていた。触る画面では :hover の色を残さない
-test('指のぶれ（10 px 未満）は押したことにする: ツールバーのボタン・選んだ物のメニュー・文字の書き直し。マウスは 4 px。:hover の色は (hover: hover) のときだけ', async () => {
+test('指のぶれ（6 px 未満）は押したことにする: ツールバーのボタン・選んだ物のメニュー・文字の書き直し。マウスは 4 px。:hover の色は (hover: hover) のときだけ', async () => {
   const page = await browser.newPage({ viewport: { width: 1000, height: 700 }, hasTouch: true });
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
@@ -1340,7 +1340,7 @@ test('指のぶれ（10 px 未満）は押したことにする: ツールバー
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
   };
-  const jitter = (x, y) => [[x, y], [x + 3, y + 2], [x + 7, y + 5], [x + 6, y + 4]]; // 指を置いて離すまでのぶれ（最大 7 px）
+  const jitter = (x, y) => [[x, y], [x + 3, y + 2], [x + 5, y + 4], [x + 4, y + 3]]; // 指を置いて離すまでのぶれ（最大 5 px。境目は 6 px。T-180）
   const center = s => shadowEval(page, (root, s) => { const r = root.querySelector(s).getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }, s);
   const barXY = () => shadowEval(page, root => { const r = root.querySelector('.bar').getBoundingClientRect(); return [r.x, r.y]; });
   const menu = () => page.evaluate(() => { const m = document.querySelector('paint-bookmarklet-surface').shadowRoot.querySelector('.sm'); return !!(m && m.isConnected); });
@@ -1389,6 +1389,51 @@ test('指のぶれ（10 px 未満）は押したことにする: ツールバー
   // :hover の色は、本当に重ねられる（hover: hover）ときだけ（指で押した後に色が残らない）
   const bare = await shadowEval(page, root => [...root.adoptedStyleSheets[0].cssRules].filter(r => r.selectorText && r.selectorText.includes(':hover')).map(r => r.selectorText));
   assert.deepEqual(bare, []);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+// T-180: 引き始めに跳ばない。境目（指 6 px）を越えた瞬間は動かさず、そこからさらに 18 px 動く間に指へ追いつく（最後は指の所）。
+// v1.71.0 は境目が 10 px で、越えた瞬間に 10 px ぶん跳んでいた（ユーザー: 引き始めが重い・跳ぶ。ツールバー・選んだ物・文字）
+test('指で引き始めても跳ばずに指へ追いつく（ツールバー・選んだ物）。境目は 6 px', async () => {
+  const page = await browser.newPage({ viewport: { width: 1000, height: 700 }, hasTouch: true });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(server.base + '/');
+  await runCode(page, withDefaults(CODE, {}));
+  const cdp = await page.context().newCDPSession(page);
+  const raf = () => page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const tch = async (type, x, y) => { await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] }); await raf(); };
+  const barX = () => shadowEval(page, root => root.querySelector('.bar').getBoundingClientRect().x);
+  // ツールバー: 区切りの線（ボタンでない所）を押して右へ引く
+  const g = await shadowEval(page, root => { const r = root.querySelector('.bar > .sep').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
+  const b0 = await barX();
+  await tch('touchStart', g[0], g[1]);
+  await tch('touchMove', g[0] + 7, g[1]);
+  assert.ok(Math.abs(await barX() - b0) < 1, 'no jump when crossing');
+  await tch('touchMove', g[0] + 12, g[1]);
+  const b12 = await barX() - b0;
+  assert.ok(b12 > 1 && b12 < 9, `catching up ${b12}`);
+  await tch('touchMove', g[0] + 40, g[1]);
+  await tch('touchEnd');
+  assert.ok(Math.abs(await barX() - b0 - 40) < 1, 'under the finger at the end');
+  // 選んだ物: 同じ
+  const sel = () => page.evaluate(() => window.__paintBookmarklet.stats().selection);
+  await page.keyboard.press('r');
+  await drag(page, [[200, 300], [300, 380]], 5);
+  await page.keyboard.press('s');
+  await drag(page, [[180, 280], [320, 400]], 5);
+  const s0 = await sel();
+  await tch('touchStart', 250, 340);
+  await tch('touchMove', 257, 340);
+  assert.ok(Math.abs((await sel())[0] - s0[0]) < 1, 'selection: no jump when crossing');
+  await tch('touchMove', 262, 340);
+  const d12 = (await sel())[0] - s0[0];
+  assert.ok(d12 > 1 && d12 < 9, `selection: catching up ${d12}`);
+  await tch('touchMove', 290, 340);
+  await tch('touchEnd');
+  const s1 = await sel();
+  assert.ok(Math.abs(s1[0] - s0[0] - 40) < 1 && s1[1] === s0[1], `selection: under the finger ${JSON.stringify([s0, s1])}`);
   assert.deepEqual(errors, []);
   await page.close();
 });

@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.71.0';
+  const VERSION = '1.72.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -760,10 +760,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     vw = wrap.clientWidth; vh = wrap.clientHeight;
     barW = bar.offsetWidth; barH = bar.offsetHeight;
   };
-  // 引いたとみなす動きの大きさ（CSS px）。指は 10、マウスとペンは 4（T-177）。ツールバー・選んだ物・入力欄を引くのはどれもこれで決める（2 本指のタップの TAP_PX と同じ）。
-  // 指で押すと、離すまでに数 px ぶれる（iPhone の座標は端数つき）。小さいと、押したつもりが引いたことになり、ボタンやメニューが効かず物が少し動いていた
-  const dragPx = t => (t === 'touch' ? TAP_PX : 4);
-  // ツールバーはどこを押しても、指で 10px・マウスとペンで 4px 以上引けば動かせる（引かずに離せば、そのボタンが押される）。
+  // 引いたとみなす動きの大きさ（CSS px）。指は 6、マウスとペンは 4（T-177・T-180）。ツールバー・選んだ物・入力欄を引くのはどれもこれで決める。
+  // 指で押すと、離すまでに数 px ぶれる（iPhone の座標は端数つき）。小さいと、押したつもりが引いたことになり、ボタンやメニューが効かず物が少し動いていた。
+  // T-177 で 10 にしたら、ユーザーが「引き始めが重い・跳ぶ」と言ったので 6 にし、跳ばないようにした（catchK）
+  const dragPx = t => (t === 'touch' ? 6 : 4);
+  // 引き始めに跳ばない（T-180）: 境目 lim を越えた所の差を、そこからさらに 3 × lim 動く間に 0 まで減らして引く（越えた瞬間は押した所のまま、
+  // 追いついた後は指の所。最後にずれは残らない）。dx・dy は越えた所からの動き。返すのは、越えた所の差に掛ける割合
+  const catchK = (dx, dy, lim) => max(0, 1 - hypot(dx, dy) / (3 * lim));
+  // ツールバーはどこを押しても、指で 6px・マウスとペンで 4px 以上引けば動かせる（引かずに離せば、そのボタンが押される）。
   // パネルの中（スライダーなど）は除く。動かし始めるまでポインタを奪わないので、ボタンのクリックはそのまま届く
   // 引いて離したあとのクリックは、ボタンを押したことにしない（次にツールバーを押したら印を消す）
   let eatClick = false;
@@ -777,19 +781,20 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     const sx = e.clientX, sy = e.clientY, ox = sx - barX, oy = sy - barY, id = e.pointerId, lim = dragPx(e.pointerType);
     // 色と太さ・開発用の見た目のパネルは、動かす間も開いたまま（T-066・T-068）。ほかのパネルは引き始めで閉じる（keepPanels なら閉じない）
     const kp = openP, look = !!kp && keepP(kp), onB = look && openB.contains(e.target);
-    let moving = false;
+    let moving = false, cx = 0, cy = 0;
     const mv = ev => {
       if (ev.pointerId !== id) return;
       // ボタンを押していないマウス・ペンの動きなら、離した合図を取りこぼしている（別のタブで離して戻った。T-151）。ここで止める
       if (ev.buttons === 0 && ev.pointerType !== 'touch') { up(ev); return; }
       if (!moving) {
         if (abs(ev.clientX - sx) < lim && abs(ev.clientY - sy) < lim) return;
-        moving = true;
+        moving = true; cx = ev.clientX - sx; cy = ev.clientY - sy;
         if (!look) closePanel();
         bar.classList.add('drag');
         try { bar.setPointerCapture(id); } catch (_) { }
       }
-      moveBar(ev.clientX - ox, ev.clientY - oy);
+      const k = catchK(ev.clientX - sx - cx, ev.clientY - sy - cy, lim);
+      moveBar(ev.clientX - cx * k - ox, ev.clientY - cy * k - oy);
       if (look && openP === kp) placePanel();
     };
     const up = ev => {
@@ -2669,7 +2674,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   let hitT = false; // 押したのが指か（つまみの当たりを広げる。T-167）
   let sCopy = false, altDup = false, clip = null, selMOn = false; // sCopy: 浮いている物は写し（元の範囲を消していない）
   let selE = []; // 浮かせた範囲の中の直線・矢印の端（S、選んだときの位置）。確定で一緒に動かす（T-164）
-  let sel = false, sDrag = 0, sH = 0, sGo = false, sLim = 0, sWas = false, sEd = false, hoverCur = '', toolCur = ''; // sEd: 文字の道具で押した（引かずに離せば 1 回目で書き直す。T-146）
+  let sel = false, sDrag = 0, sH = 0, sGo = false, sLim = 0, sOX = 0, sOY = 0, sWas = false, sEd = false, hoverCur = '', toolCur = ''; // sEd: 文字の道具で押した（引かずに離せば 1 回目で書き直す。T-146）
   let selX = 0, selY = 0, selW = 0, selH = 0;     // 今の枠（S、小数のまま持つ）
   let srcX = 0, srcY = 0, srcW = 0, srcH = 0;     // 浮かせた元の範囲（S、整数）
   let dragX = 0, dragY = 0, begX = 0, begY = 0, begW = 0, begH = 0; // ドラッグ開始時のポインタと枠
@@ -2965,13 +2970,20 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     else { sDrag = 1; selX = X; selY = Y; selW = selH = 0; }
   }
   function selMove(e) {
-    const X = e.clientX * sdpr + sox, Y = e.clientY * sdpr + soy;
+    let X = e.clientX * sdpr + sox, Y = e.clientY * sdpr + soy;
     if (sDrag === 1) {
       selX = min(dragX, X); selY = min(dragY, Y); selW = abs(X - dragX); selH = abs(Y - dragY);
       drawBand();
-    } else if (!sGo && abs(X - dragX) < sLim && abs(Y - dragY) < sLim) return;
-    else if (sDrag === 2) {
-      sGo = true;
+      return;
+    }
+    // 移動・拡大縮小・回す: 境目を越えるまで動かさず、越えたら跳ばずに指へ追いつく（T-177・T-180）
+    if (!sGo) {
+      if (abs(X - dragX) < sLim && abs(Y - dragY) < sLim) return;
+      sGo = true; sOX = X - dragX; sOY = Y - dragY;
+    }
+    const k = catchK(X - dragX - sOX, Y - dragY - sOY, sLim);
+    X -= sOX * k; Y -= sOY * k;
+    if (sDrag === 2) {
       if (altDup) {
         altDup = false;
         dupSel(0);
@@ -2981,11 +2993,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       selY = max(0, begY + (Y - dragY));
       showSel();
     } else if (sDrag === 3) {
-      sGo = true;
       scaleSel(X, Y, e.shiftKey);
       showSel();
     } else if (sDrag === 5) {
-      sGo = true;
       // 枠の中心のまわりに回す。45° の倍数の近く（4° 以内）で吸い付き、Shift なら 15° ずつ
       let a = begA + atan2(Y - selY - selH / 2, X - selX - selW / 2) - rotA0;
       const q = e.shiftKey ? PI / 12 : PI / 4, n = round(a / q) * q;
@@ -3032,14 +3042,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         const x = floor(selX), y = floor(selY);
         liftSel(x, y, ceil(selX + selW) - x, ceil(selY + selH) - y, true);
       } else pickSel(dragX, dragY);
-    } else if (sDrag === 2 && (sWas || sEd) && !srcW && selT.length === 1 && selX === begX && selY === begY) {
+    } else if (sDrag === 2 && (sWas || sEd) && !srcW && selT.length === 1 && !sGo) {
       // 選んでいる文字をもう一度押して、動かさずに離した: 書き直す（ダブルクリックもこれになる）。文字の道具なら 1 回目で書き直す
       const o = selT[0][0];
       sDrag = 0;
       dropSel();
       editText(o);
       return;
-    } else if (sDrag === 2 && sWas && !mWas && selX === begX && selY === begY) showSelMenu(); // 選んでいる物を引かずに押した: 複製・削除のメニュー（T-020。出ていたなら閉じるだけ）
+    } else if (sDrag === 2 && sWas && !mWas && !sGo) showSelMenu(); // 選んでいる物を引かずに押した: 複製・削除のメニュー（T-020。出ていたなら閉じるだけ）
     sDrag = 0;
     altDup = false;
   }
@@ -3321,14 +3331,17 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (e.button !== 0 || !taEdge(e)) return;
     e.preventDefault();
     const o = ta, id = e.pointerId, sx = e.clientX, sy = e.clientY, dx = sx - taX, dy = sy - taCY, lim = dragPx(e.pointerType);
-    let moving = false;
+    let moving = false, cx = 0, cy = 0;
     try { o.setPointerCapture(id); } catch (_) { }
     const mv = ev => {
       if (ev.pointerId !== id) return;
       if (!ev.buttons) { up(ev); return; } // 離した合図を取りこぼした（T-151）
-      if (!moving && abs(ev.clientX - sx) < lim && abs(ev.clientY - sy) < lim) return;
-      moving = true;
-      taX = ev.clientX - dx; taCY = ev.clientY - dy;
+      if (!moving) {
+        if (abs(ev.clientX - sx) < lim && abs(ev.clientY - sy) < lim) return;
+        moving = true; cx = ev.clientX - sx; cy = ev.clientY - sy;
+      }
+      const k = catchK(ev.clientX - sx - cx, ev.clientY - sy - cy, lim);
+      taX = ev.clientX - cx * k - dx; taCY = ev.clientY - cy * k - dy;
       styleTa();
     };
     const up = ev => {

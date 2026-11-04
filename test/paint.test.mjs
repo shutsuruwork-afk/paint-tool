@@ -1216,25 +1216,36 @@ test('全消去は、消しゴム・選択の削除で全部消した後や、�
   await page.close();
 });
 
-// T-171: Mac・iPad のキーボードの delete は Backspace。v1.62.0 では Backspace で全消去しない
-test('Backspace でも全消去する（元に戻せる）。文字の入力中の Backspace は文字だけを消す', async () => {
+// T-172: Backspace（Mac・iPad のキーボードの delete）は選んだ物を消すだけで、全消去しない。v1.63.0（T-171）では全消去していた
+test('Backspace は選んだ物だけを消し、全消去はしない。文字の入力中は文字だけを消す。Delete は全消去', async () => {
   const { page, errors } = await fresh();
+  const n = () => page.evaluate(() => window.__paintBookmarklet.stats().history);
   await drag(page, [[100, 300], [300, 300]], 5);
-  assert.ok((await alphaStats(page, 80, 280, 240, 40)).count > 0);
+  await drag(page, [[100, 500], [300, 500]], 5);
+  // 何も選んでいなければ、Backspace では何も消えない
+  await page.keyboard.press('Backspace');
+  assert.ok((await alphaStats(page, 80, 280, 240, 40)).count > 0, 'Backspace without a selection');
+  assert.equal(await n(), 2);
   // 文字の入力中は、入力欄の文字だけが消える
   await page.keyboard.press('t');
-  await page.mouse.click(400, 450);
+  await page.mouse.click(500, 450);
   await page.keyboard.type('ab');
   await page.keyboard.press('Backspace');
   assert.equal((await textBox(page)).value, 'a');
-  assert.ok((await alphaStats(page, 80, 280, 240, 40)).count > 0, 'Backspace in the text box');
   await page.keyboard.press('Escape');
   await page.keyboard.press('Backspace');
-  assert.equal((await alphaStats(page, 0, 0, 1000, 700)).count, 0, 'Backspace clears');
+  assert.equal(await page.evaluate(() => window.__paintBookmarklet.stats().texts), 1, 'Backspace after the text');
+  assert.ok((await alphaStats(page, 80, 280, 240, 40)).count > 0);
+  // 選んだ物は Backspace で消える。ほかは残る
+  await page.keyboard.press('s');
+  await drag(page, [[80, 270], [320, 330]], 5);
+  await page.keyboard.press('Backspace');
+  assert.equal((await alphaStats(page, 80, 280, 240, 40)).count, 0, 'selection deleted');
+  assert.ok((await alphaStats(page, 80, 480, 240, 40)).count > 0, 'the other line stays');
+  // Delete は全消去
+  await page.keyboard.press('Delete');
+  assert.equal((await alphaStats(page, 0, 0, 1000, 700)).count, 0, 'Delete clears');
   assert.equal(await page.evaluate(() => window.__paintBookmarklet.stats().texts), 0);
-  await page.keyboard.press('Control+z');
-  assert.ok((await alphaStats(page, 80, 280, 240, 40)).count > 0, 'undo');
-  assert.equal(await page.evaluate(() => window.__paintBookmarklet.stats().texts), 1);
   assert.deepEqual(errors, []);
   await page.close();
 });

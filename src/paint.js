@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.57.0';
+  const VERSION = '1.58.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -1465,7 +1465,14 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 2 本指のタップで元に戻す（T-165）: 2 本をほぼ同時に（KEEP_MS 以内）置き、どちらも TAP_PX 未満の動きで TAP_MS 以内に離したら。
   // tD0 は 1 本目を置いた時刻、tSX* / tSY* は置いた所、tTap はまだタップでありうるか、tFl は 1 本目が慣性を止めた指か
   const TAP_PX = 10, TAP_MS = 400;
-  let tD0 = 0, tSX0 = 0, tSY0 = 0, tSX1 = 0, tSY1 = 0, tTap = false, tFl = false;
+  let tD0 = 0, tSX0 = 0, tSY0 = 0, tSX1 = 0, tSY1 = 0, tTap = false, tFl = false, tE0 = false;
+  // 画面の端（左右と下から EDGE px。拡大していれば見えている所の端）に触れた指（T-166、監査 T-125: 端に親指や手のひらが触れたまま描くと、
+  // 書く指が 2 本指のスクロールになって線が残らなかった）。2 本目なら数えず、端で動かずに置いていた 1 本目なら外して、新しい指で描く
+  const EDGE = 20;
+  const atEdge = e => {
+    const m = EDGE / (VV ? VV.scale : 1), x = vpX(e), y = vpY(e);
+    return x < m || x > (VV ? VV.width : win.innerWidth) - m || y > (VV ? VV.height : win.innerHeight) - m;
+  };
   let sDown = 0; // 線を押した時刻
   // スクロールの目標は「置いたときのスクロール位置（sbX, sbY）＋ 置いたときの中点（scrX, scrY）からの指の動き」で、1 フレームに 1 回だけ scrollTo する（T-108）。
   // 前の中点からの差を指の動きのたびに scrollBy すると、指 1 本の動きで中点は半分しか動かず端数が出て、iOS が整数に丸めるので 1px と 2px が交互に進んで震え、
@@ -1545,7 +1552,15 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if ((act !== -1 && aType === 'pen') || e.timeStamp - lastPen < 500) return;
     const id = e.pointerId;
     if (e.isPrimary) { tI0 = tI1 = -1; scr = 0; tTap = tFl = false; } // 新しいタッチの始まり（離したことを取りこぼしていても数え直す）
-    if (tI0 === -1) { tI0 = id; tSX0 = tX0 = vpX(e); tSY0 = tY0 = vpY(e); tD0 = e.timeStamp; }
+    if (tI0 === -1) { tI0 = id; tSX0 = tX0 = vpX(e); tSY0 = tY0 = vpY(e); tD0 = e.timeStamp; tE0 = atEdge(e); }
+    else if (tI1 === -1 && !scr && atEdge(e)) { e.preventDefault(); e.stopImmediatePropagation(); return; } // 端に触れた 2 本目は数えず、描く処理にも渡さない
+    else if (tI1 === -1 && !scr && tE0 && hypot(tX0 - tSX0, tY0 - tSY0) < TAP_PX) {
+      // 端で動かずに置いていた 1 本目は持っている指とみなして外し（その点は取り消す）、新しい指を 1 本目にして描く（onDown に渡す）
+      if (act === tI0) abortStroke();
+      if (tapId === tI0) tapId = -1;
+      tI0 = id; tSX0 = tX0 = vpX(e); tSY0 = tY0 = vpY(e); tD0 = e.timeStamp; tE0 = false;
+      return;
+    }
     else if (tI1 === -1) { tI1 = id; tSX1 = tX1 = vpX(e); tSY1 = tY1 = vpY(e); }
     else { tTap = false; if (scr) { e.preventDefault(); e.stopImmediatePropagation(); } return; } // スクロールの間の 3 本目以降の指では描かない
     if (flung && !scr && tI1 === -1) { scr = 2; tFl = true; } // 滑っているのを止めた指は、離すまで描かない

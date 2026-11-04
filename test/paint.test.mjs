@@ -2972,6 +2972,48 @@ test('2 本指のタップで元に戻す。動かしたとき・長く置いた
   await page.close();
 });
 
+test('画面の端に触れたままの指は 2 本指に数えない: 描いている途中に端へ触れても描き続け、端に置いたまま別の指で描ける（端の点は残らない）。端でない 2 本はスクロール（T-166）', async () => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 700 }, hasTouch: true });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(server.base + '/long');
+  await runCode(page, CODE);
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], id) => ({ x, y, id })) });
+  const sy = () => page.evaluate(() => scrollY);
+  // 左の端に親指を置いたまま、別の指で描く
+  await touch('touchStart', [[5, 400]]);
+  await touch('touchStart', [[5, 400], [100, 300]]);
+  for (let i = 1; i <= 10; i++) await touch('touchMove', [[5, 400], [100 + i * 20, 300]]);
+  await touch('touchEnd', [[5, 400]]);
+  await touch('touchEnd', []);
+  await page.waitForTimeout(50);
+  assert.equal(await sy(), 0);
+  assert.ok((await alphaStats(page, 110, 294, 180, 12)).count > 300, '別の指の線');
+  assert.equal((await alphaStats(page, 0, 390, 20, 20)).count, 0, '端の点は残らない');
+  // 描いている途中に右の端へ触れても、スクロールにならず描き続ける
+  await touch('touchStart', [[100, 450]]);
+  for (let i = 1; i <= 5; i++) await touch('touchMove', [[100 + i * 20, 450]]);
+  await touch('touchStart', [[200, 450], [385, 500]]);
+  for (let i = 6; i <= 10; i++) await touch('touchMove', [[100 + i * 20, 450], [385, 500]]);
+  await touch('touchEnd', [[300, 450]]);
+  await touch('touchEnd', []);
+  await page.waitForTimeout(50);
+  assert.equal(await sy(), 0);
+  assert.ok((await alphaStats(page, 210, 444, 80, 12)).count > 150, '触れた後も描き続ける');
+  // 端でない 2 本は今まで通りスクロール
+  await touch('touchStart', [[150, 500]]);
+  await touch('touchStart', [[150, 500], [250, 500]]);
+  for (let i = 1; i <= 10; i++) await touch('touchMove', [[150, 500 - i * 10], [250, 500 - i * 10]]);
+  await page.waitForTimeout(150);
+  await touch('touchEnd', [[150, 400]]);
+  await touch('touchEnd', []);
+  await page.waitForTimeout(50);
+  assert.ok(await sy() > 50);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('スマホの 2 本指: 本家でも Simple でも、2 本指で動かすとページがスクロールし、1 本目で始めた線・選択・塗りつぶし・文字は残らない。1 本指では今まで通り描け、タッチの塗りつぶしと文字は離したときに行う（T-088・T-104）', async () => {
   const page = await browser.newPage({ viewport: { width: 390, height: 700 }, isMobile: true, hasTouch: true });
   const errors = [];

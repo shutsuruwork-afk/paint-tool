@@ -1260,6 +1260,63 @@ test('Delete・Backspace は選んだ物だけを消し、全消去はしない�
   await page.close();
 });
 
+// T-175: Beta の一貫性。全消去も元に戻す・やり直すと同じく、消す物がないときは薄い（Simple は今まで通り）。閉じるの名前は名前だけ（T-148）。
+// 操作の一覧の Beta だけの行（ペン・図形をもう一度・その他の中身）は Simple に出さない。v1.66.0 では全消去がいつも押せた
+test('Beta: 消す物がないときは全消去が薄い（描く・元に戻す・やり直す・消しゴム・文字で変わる）。閉じるは名前だけ。操作の一覧の Beta だけの行は Simple に出さない', async () => {
+  const { page, errors } = await fresh();
+  const dis = () => shadowEval(page, root => root.querySelector('[title="全消去"]').disabled);
+  const clr = async () => {
+    await mouseClick(page, '.bar > [aria-label^="その他"]');
+    const d = await dis();
+    await page.keyboard.press('Escape');
+    return d;
+  };
+  assert.equal(await clr(), true, 'nothing drawn');
+  await drag(page, [[100, 300], [300, 300]], 5);
+  assert.equal(await clr(), false, 'after a line');
+  // その他を開いたまま元に戻す・やり直す（キー）と、合わせて変わる
+  await mouseClick(page, '.bar > [aria-label^="その他"]');
+  await page.keyboard.press('Control+z');
+  assert.equal(await dis(), true, 'undo to the start');
+  await page.keyboard.press('Control+Shift+z');
+  assert.equal(await dis(), false, 'redo');
+  await page.keyboard.press('Escape');
+  // 消しゴムで全部消すと薄い。文字を置くと押せる
+  await page.keyboard.press('e');
+  await drag(page, [[90, 300], [310, 300]], 10);
+  assert.equal((await alphaStats(page, 80, 280, 240, 40)).count, 0);
+  assert.equal(await clr(), true, 'erased everything');
+  await page.keyboard.press('t');
+  await page.mouse.click(400, 450);
+  await page.keyboard.type('ab');
+  await page.keyboard.press('Escape');
+  assert.equal(await clr(), false, 'a text');
+  // 閉じたら、次に開くまでは押せる形に戻る（薄くするのは開いている間だけ）
+  await clearAll(page);
+  assert.equal(await page.evaluate(() => window.__paintBookmarklet.stats().texts), 0);
+  assert.equal(await dis(), false);
+  // 閉じるは名前だけ
+  assert.equal(await shadowEval(page, root => root.querySelector('.bar > [aria-label^="閉じる"]').title), '閉じる');
+  // 操作の一覧: Beta のその他の行に Simple がある
+  await page.keyboard.press('?');
+  const helpB = await shadowEval(page, root => root.querySelector('.hp').textContent);
+  assert.ok(helpB.includes('デフォルトの変更・Simple'), helpB);
+  assert.ok(helpB.includes('ペン・図形をもう一度'));
+  assert.deepEqual(errors, []);
+  await page.close();
+  // Simple: 全消去は今まで通りいつも押せる。Beta だけの行は一覧に出ない
+  const { page: ps, errors: es } = await openPage(browser, server.base + '/');
+  await runCode(ps, withDefaults(CODE, { ui: 'cp2' }));
+  await mouseClick(ps, '.bar > [aria-label^="その他"]');
+  assert.equal(await shadowEval(ps, root => root.querySelector('[title="全消去"]').disabled), false, 'Simple');
+  await ps.keyboard.press('Escape');
+  await ps.keyboard.press('?');
+  const helpS = await shadowEval(ps, root => root.querySelector('.hp').textContent);
+  assert.ok(!helpS.includes('ペン・図形をもう一度') && !helpS.includes('デフォルトの変更'), helpS);
+  assert.deepEqual(es, []);
+  await ps.close();
+});
+
 test('全消去は、消す物がないときは何もしない（履歴が増えない）。積むのは描いた範囲に掛かるタイルだけ', async () => {
   const { page, errors } = await fresh();
   const st = () => page.evaluate(() => { const s = window.__paintBookmarklet.stats(); return [s.history, s.historyPixels]; });

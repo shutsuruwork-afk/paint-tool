@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.66.0';
+  const VERSION = '1.67.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -658,7 +658,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     satR.value = look.sat; satO.value = look.sat + '%';
     for (const f of syncs) f();
   }
-  const closeB = btn('閉じる（8 秒間は元に戻せます）', I.close, close);
+  const closeB = btn('閉じる', I.close, close); // 名前だけ（8 秒の間に元に戻せるのは、閉じたときのお知らせのボタンで分かる。T-148・T-175）
   // 入力の録画（開発用。T-070）: 描いた線の入力を録って JSON で書き出す。予測の精度を、人が実際に書いた線で測るため（T-060）
   let recB = null, hudB = null;
   if (dev) item('見た目（開発用）', '', I.bg, () => openPanel(lookP, moreB));
@@ -718,6 +718,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function openPanel(p, b) {
     closePanel();
     openP = p; openB = b;
+    if (p === moreP) syncClr();
     p.classList.add('on');
     b.classList.add('open');
     measureBar();
@@ -731,6 +732,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
   function closePanel() {
     if (!openP) return;
+    if (openP === moreP) clrMi.disabled = false; // 薄くするのは開いている間だけ（閉じたら次に開くときに測り直す）
     openP.classList.remove('on');
     openB.classList.remove('open');
     openP = openB = null;
@@ -921,7 +923,11 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function syncHist() {
     undoB.disabled = hpos === 0;
     redoB.disabled = hpos >= hist.length;
+    if (openP === moreP) syncClr(); // その他を開いたまま元に戻す・やり直す（キー）とき
   }
+  // Beta では、消す物がないとき全消去を薄くする（元に戻す・やり直すと同じ。T-175）。測るのはその他を開くときだけ（消しゴムの後などは読み戻すので、手ごとにはしない）。
+  // 打っている途中の文字と浮いている選択は、全消去の前に確定する（settle）ので、消す物に数える
+  function syncClr() { clrMi.disabled = !cp2 && !sel && !(ta && ta.value) && !canClear(); }
   function cycleBg() {
     bg = (bg + 1) % BGS.length;
     sbox.classList.toggle('bg1', bg === 1);
@@ -1204,8 +1210,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     // 消す物がなければ何もしない（履歴を増やさない。T-058・T-063）: 直前の手が全消去なら面も文字も空。
     // 画素は描いた範囲（cb*）の中にしかないので、範囲が空で文字もなければ空。積むのも範囲に掛かるタイルだけ。
     // 直前の手が描く手（b がある）でなければ、消しゴム・選択の削除・最初まで元に戻した、で空になっているかもしれないので読み戻して確かめる
-    const h = hpos ? hist[hpos - 1] : null;
-    if ((h && h.clr) || (!tlist.length && (cbx1 <= cbx0 || (!(h && h.b) && !hasInk())))) return;
+    if (!canClear()) return;
     const R = [], D = [], P = tlist.map(o => [o, tSnap(o)]);
     for (const [k, t] of dtiles) {
       const x = (k % 65536) * DT, y = ((k / 65536) | 0) * DT;
@@ -1220,6 +1225,11 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (D.length) e.d = D;
     for (const p of P) tApply(p[0], null);
     cbx0 = cby0 = cbx1 = cby1 = 0;
+  }
+
+  function canClear() {
+    const h = hpos ? hist[hpos - 1] : null;
+    return !((h && h.clr) || (!tlist.length && (cbx1 <= cbx0 || (!(h && h.b) && !hasInk()))));
   }
 
   // 描いた範囲（cb*）に画素が 1 つでも残っているか。掛かるタイルの重なる所だけを読み戻す（全消去の前にだけ使う。T-063）。
@@ -4101,13 +4111,13 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       ["{Esc}", "隠す（ブックマークレットで再表示）"]
     ]],
     ["ボタンと文字", [
-      ["ペン・図形をもう一度", "ペンの種類（万年筆・筆・鉛筆）や図形を選ぶ"],
+      ["ペン・図形をもう一度", "ペンの種類（万年筆・筆・鉛筆）や図形を選ぶ", "main"],
       ["文字を押す", "ペンなどのままでも選んで動かせる。もう一度押すと書き直し", "touch"],
       ["選んだ物を押す", "複製・削除"],
       ["文字の入力中", "{Esc}・{Ctrl}+{Enter}・外を押すと確定"],
       ["{Tab}", "電卓が入りのとき、= で終わる行に薄く出た答えを書き込む（iPhone・iPad はスペース）。= にカーソルを合わせると、書いた答えを今の式の答えに直す"],
       ["ツールバー", "どこを押しても、引けば動かせる"],
-      ["その他（⋯）", "全消去・背景・保存・コピー・電卓・画面に固定・デフォルトの変更"]
+      ["その他（⋯）", "全消去・背景・保存・コピー・電卓・画面に固定・デフォルトの変更・Simple", "main"]
     ]]
   ]/*HELP*/;
   // 一覧は初めて開いたときに作る。開いている間は、外を押すと閉じるだけ（線は描かない）

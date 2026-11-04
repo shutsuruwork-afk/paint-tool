@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.70.0';
+  const VERSION = '1.71.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -569,8 +569,9 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     syncTool(true);
   });
 
-  const undoB = btn('元に戻す (Ctrl/⌘+Z)', I.undo, undo);
-  const redoB = btn('やり直す (Ctrl/⌘+Shift+Z)', I.redo, redo);
+  // キーの表示は、その他の「PNG で保存」と同じく使っている機械の物だけ（Mac は ⌘。T-179）
+  const undoB = btn(IS_MAC ? '元に戻す (⌘Z)' : '元に戻す (Ctrl+Z)', I.undo, undo);
+  const redoB = btn(IS_MAC ? 'やり直す (⇧⌘Z)' : 'やり直す (Ctrl+Shift+Z)', I.redo, redo);
   const passB = btn('ページ操作モード (V)', I.pass, togglePass);
   // その他: 名前とショートカット付きのメニュー。keep なら押しても閉じない（背景を続けて切り替えられる）
   const moreP = pnl();

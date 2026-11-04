@@ -1297,6 +1297,8 @@ test('消す物がないときは全消去が薄い（描く・元に戻す・�
   assert.equal(await dis(), false);
   // 閉じるは名前だけ
   assert.equal(await shadowEval(page, root => root.querySelector('.bar > [aria-label^="閉じる"]').title), '閉じる');
+  // 元に戻す・やり直すのキーは、PNG で保存と同じく使っている機械の物だけ（Mac は ⌘。T-179。前は Ctrl/⌘+Z）
+  assert.deepEqual(await shadowEval(page, root => ['元に戻す', 'やり直す'].map(n => root.querySelector(`.bar > [aria-label^="${n}"]`).title)), ['元に戻す (Ctrl+Z)', 'やり直す (Ctrl+Shift+Z)']);
   // 操作の一覧: Beta のその他の行に Simple がある
   await page.keyboard.press('?');
   const helpB = await shadowEval(page, root => root.querySelector('.hp').textContent);

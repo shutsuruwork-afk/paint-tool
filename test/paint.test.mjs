@@ -2469,7 +2469,7 @@ test('電卓で方程式を解く（知らない名前が 1 つ。1 次は分数
   await page.close();
 });
 
-test('直線・矢印の始めと終わりは、近くの線の端に吸い付く（3 本で三角形が閉じ塗りつぶしが漏れない・印は絵に入らない・元に戻した線には吸い付かない）（T-158）', async () => {
+test('直線・矢印の始めと終わりは、近くの線の端に吸い付く（3 本で三角形が閉じ塗りつぶしが漏れない・印は出さない・元に戻した線には吸い付かない）（T-158・T-164）', async () => {
   const { page, errors } = await fresh();
   const alpha = (x, y) => readMain(page, x, y).then(d => d[3]);
   const blue = sel => shadowEval(page, (root, sel) => {
@@ -2480,14 +2480,13 @@ test('直線・矢印の始めと終わりは、近くの線の端に吸い付�
   }, sel);
   await page.keyboard.press('l');
   await drag(page, [[300, 300], [500, 300]], 5);
-  // 端から少し離れた所（8 px）から始めても、端から引かれる。吸い付いている間は、端に青い丸の印（pred に描く）
+  // 端から少し離れた所（8 px）から始めても、端から引かれる。吸い付いた印（青い丸）は出さない（T-164、ユーザー: 吸い付くマークいらない）
   await page.mouse.move(506, 305);
   await page.mouse.down();
   await page.mouse.move(450, 380, { steps: 3 });
   await page.mouse.move(400, 450, { steps: 3 });
-  assert.ok(await blue('canvas.q') > 10);
+  assert.equal(await blue('canvas.q'), 0);
   await page.mouse.up();
-  assert.equal(await blue('canvas.q'), 0); // 離すと印は消える
   // 3 本目は始めも終わりも端に吸い付き、三角形が閉じる
   await drag(page, [[395, 455], [296, 296]], 5);
   assert.equal(await alpha(500, 300), 255);
@@ -2508,6 +2507,56 @@ test('直線・矢印の始めと終わりは、近くの線の端に吸い付�
   await drag(page, [[506, 305], [600, 400]], 5);
   assert.equal(await alpha(500, 300), 0);
   assert.equal(await alpha(506, 305), 255);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('選択で動かした・回した・貼り付けた直線の端にも吸い付き、動かす前の場所には吸い付かない。元に戻すと端も戻る（T-164）', async () => {
+  const { page, errors } = await fresh();
+  const alpha = (x, y) => readMain(page, x, y).then(d => d[3]);
+  await page.keyboard.press('l');
+  await drag(page, [[300, 300], [500, 300]], 5);
+  // 選択で 100px 下へ動かす
+  await page.keyboard.press('s');
+  await drag(page, [[280, 280], [520, 320]], 5);
+  await drag(page, [[400, 300], [400, 400]], 8);
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('l');
+  // 動かす前の端（500, 300）には吸い付かない
+  await drag(page, [[506, 305], [600, 250]], 5);
+  assert.equal(await alpha(500, 300), 0);
+  await page.keyboard.press('Control+z');
+  // 動かした先の端（500, 400）に吸い付く（吸い付けば (503, 402) を通る）
+  await drag(page, [[506, 405], [600, 480]], 5);
+  assert.ok(await alpha(503, 402) > 0);
+  await page.keyboard.press('Control+z');
+  // 中心（400, 400）のまわりに 90° 回すと、端は (400, 300) と (400, 500)
+  await page.keyboard.press('s');
+  await drag(page, [[280, 380], [520, 420]], 5);
+  const f = await selBox(page, true), hy = f.y - 22.5;
+  await drag(page, [[f.x + f.w / 2, hy], [400 + (400 - hy), 400]], 8);
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('l');
+  await drag(page, [[406, 506], [480, 560]], 5);
+  assert.ok(await alpha(403, 502) > 0);
+  await page.keyboard.press('Control+z');
+  // Ctrl+C → Ctrl+V の写しの端（16px ずれて (416, 516)）にも吸い付く。元の端も残る
+  await page.keyboard.press('s');
+  await drag(page, [[380, 280], [420, 520]], 5);
+  await page.keyboard.press('Control+c');
+  await page.keyboard.press('Control+v');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('l');
+  await drag(page, [[422, 522], [500, 580]], 5);
+  assert.ok(await alpha(419, 519) > 0);
+  await page.keyboard.press('Control+z');
+  await drag(page, [[406, 506], [480, 560]], 5);
+  assert.ok(await alpha(403, 502) > 0);
+  await page.keyboard.press('Control+z');
+  // 貼り付け・回転・移動を元に戻すと、端も元の場所（500, 300）に戻る
+  for (let i = 0; i < 3; i++) await page.keyboard.press('Control+z');
+  await drag(page, [[506, 305], [600, 380]], 5);
+  assert.ok(await alpha(503, 302) > 0);
   assert.deepEqual(errors, []);
   await page.close();
 });

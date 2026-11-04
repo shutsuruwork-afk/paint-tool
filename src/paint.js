@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.55.0';
+  const VERSION = '1.56.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -1394,11 +1394,17 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     for (const h of hist) {
       for (let i = 0; i < h.R.length; i += 6) { h.R[i] += dx; h.R[i + 1] += dy; }
       if (h.b) { h.b[0] += dx; h.b[1] += dy; h.b[2] += dx; h.b[3] += dy; }
-      if (h.e) { h.e[0] += dx; h.e[1] += dy; h.e[2] += dx; h.e[3] += dy; }
+      for (const e of [h.e, h.x]) if (e) for (let k = 0; k < e.length; k += 2) { e[k] += dx; e[k + 1] += dy; }
       if (h.t) for (const p of h.t) if (p[1]) st(p[1]);
     }
     for (const o of tlist.slice()) { const q = tSnap(o); st(q); tApply(o, q); }
     if (cbx1 > cbx0) { cbx0 = max(0, cbx0 + dx); cby0 = max(0, cby0 + dy); cbx1 += dx; cby1 += dy; }
+    // Ctrl+C の写しも、面と同じだけずらす（貼り付ける場所が絵と合うように）
+    if (clip) {
+      clip.g[0] += dx; clip.g[1] += dy; clip.f[0] += dx; clip.f[1] += dy;
+      for (const q of clip.t) st(q);
+      for (let k = 0; k < clip.e.length; k += 2) { clip.e[k] += dx; clip.e[k + 1] += dy; }
+    }
   }
 
   // ---------- ストローク状態（ホットパスで割り当てを起こさないよう、すべてスカラーで保持） ----------
@@ -1696,7 +1702,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         snapN = 0;
         if (t === 'line' || t === 'arrow') {
           snapPrep(type);
-          if (snapAt(x, y)) { sx = cx = x0 = x1 = SX; sy = cy = y0 = y1 = SY; sSnap = true; } else sSnap = false;
+          if (snapAt(x, y)) { sx = cx = x0 = x1 = SX; sy = cy = y0 = y1 = SY; }
         }
         lctx.lineWidth = sW;
         lctx.lineJoin = t === 'rect' ? 'miter' : 'round';
@@ -2020,16 +2026,31 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   }
 
   // 直線・矢印の端に吸い付く（T-158、ユーザーの案: 線と線の先を繋げれるようにして、それで図形を作れるようにしたい）。
-  // 相手は見えている手（最後の全消去より後で、元に戻していない手）の直線・矢印の端。押したときに V の座標で詰め、動かす間は割り当てなしで探す
-  let snapV = new Float64Array(64), snapN = 0, snapR = 0, sSnap = false, SX = 0, SY = 0;
+  // 相手は見えている手（最後の全消去より後で、元に戻していない手）の直線・矢印の端。押したときに V の座標で詰め、動かす間は割り当てなしで探す。
+  // 端は手の e（[x, y, …]、S）。選択で動かした・回した・消した手は、元の端を x に持つ（T-164）。新しい手から順にたどり、x にある座標と同じ古い端は飛ばす
+  // （shiftAll は e と x を同じだけずらすので、等しさは崩れない）
+  let snapV = new Float64Array(64), snapN = 0, snapR = 0, SX = 0, SY = 0;
+  const exE = [];
+  function eachEnd(fn) {
+    exE.length = 0;
+    for (let j = hpos - 1; j >= 0 && !hist[j].clr; j--) {
+      const h = hist[j], e = h.e;
+      if (e) for (let k = 0; k < e.length; k += 2) {
+        let gone = false;
+        for (let i = 0; i < exE.length && !gone; i += 2) gone = exE[i] === e[k] && exE[i + 1] === e[k + 1];
+        if (!gone) fn(e[k], e[k + 1]);
+      }
+      if (h.x) for (const v of h.x) exE.push(v);
+    }
+  }
   function snapPrep(type) {
     snapN = 0;
-    for (let j = hpos - 1; j >= 0 && !hist[j].clr; j--) {
-      const e = hist[j].e;
-      if (!e) continue;
-      if (snapV.length < snapN * 2 + 4) { const v = new Float64Array(snapV.length * 2); v.set(snapV); snapV = v; }
-      for (let k = 0; k < 4; k += 2) { snapV[snapN * 2] = (e[k] - sox) / sk; snapV[snapN * 2 + 1] = (e[k + 1] - soy) / sk; snapN++; }
-    }
+    eachEnd((X, Y) => {
+      if (snapV.length < snapN * 2 + 2) { const v = new Float64Array(snapV.length * 2); v.set(snapV); snapV = v; }
+      snapV[snapN * 2] = (X - sox) / sk;
+      snapV[snapN * 2 + 1] = (Y - soy) / sk;
+      snapN++;
+    });
     snapR = (type === 'touch' ? 22 : 12) * dpr;
   }
   // (x, y) にいちばん近い端（snapR 以内）を SX, SY に入れる
@@ -2041,37 +2062,18 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     }
     return f;
   }
-  // 吸い付いた端の印（青い丸）。確定する絵に入らないよう pred に描き、線を終えたら消す
-  let mkA = false, mkB = false, mkAx = 0, mkAy = 0, mkBx = 0, mkBy = 0;
-  function snapMarks(a, ax, ay, b, bx2, by2) {
-    const r = 7 * dpr, p = r + 3 * dpr;
-    if (mkA) pctx.clearRect(mkAx - p, mkAy - p, 2 * p, 2 * p);
-    if (mkB) pctx.clearRect(mkBx - p, mkBy - p, 2 * p, 2 * p);
-    mkA = a; mkB = b; mkAx = ax; mkAy = ay; mkBx = bx2; mkBy = by2;
-    if (!a && !b) return;
-    pctx.save();
-    pctx.globalAlpha = 1;
-    pctx.globalCompositeOperation = 'source-over';
-    pctx.strokeStyle = '#3d7cff';
-    pctx.lineWidth = 2 * dpr;
-    pctx.beginPath();
-    if (a) { pctx.moveTo(ax + r, ay); pctx.arc(ax, ay, r, 0, TAU); }
-    if (b) { pctx.moveTo(bx2 + r, by2); pctx.arc(bx2, by2, r, 0, TAU); }
-    pctx.stroke();
-    pctx.restore();
-  }
   function drawShape() {
     const c = lctx;
     if (dirty()) c.clearRect(dX, dY, dW, dH);
     let ax = sx, ay = sy, ex = cx, ey = cy;
     c.beginPath();
     if (sTool === 'line' || sTool === 'arrow') {
-      let d = hypot(ex - ax, ey - ay), es = false;
+      let d = hypot(ex - ax, ey - ay);
+      // 吸い付いた印は出さない（T-164、ユーザー: 吸い付くマークいらない）
       if (shShift) {
         const a = round(atan2(ey - ay, ex - ax) / (PI / 4)) * (PI / 4);
         ex = ax + cos(a) * d; ey = ay + sin(a) * d;
-      } else if (snapAt(ex, ey)) { ex = SX; ey = SY; d = hypot(ex - ax, ey - ay); es = true; }
-      if (snapN) snapMarks(sSnap, ax, ay, es, ex, ey);
+      } else if (snapAt(ex, ey)) { ex = SX; ey = SY; d = hypot(ex - ax, ey - ay); }
       c.moveTo(ax, ay);
       c.lineTo(ex, ey);
       G[0] = ax; G[1] = ay; G[2] = ex; G[3] = ey;
@@ -2153,7 +2155,6 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function stopStroke() {
     const id = act;
     act = -1;
-    if (mkA || mkB) snapMarks(false, 0, 0, false, 0, 0);
     if (recCur) recStop();
     if (sRaw) pad.removeEventListener('pointerrawupdate', onMove);
     cancelAnimationFrame(raf);
@@ -2553,6 +2554,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   selM.append(mDup, mDel);
   let selA = 0, begA = 0, rotA0 = 0; // 枠の向き（ラジアン。浮いている間は CSS で回し、確定のときに描く）
   let sCopy = false, altDup = false, clip = null, selMOn = false; // sCopy: 浮いている物は写し（元の範囲を消していない）
+  let selE = []; // 浮かせた範囲の中の直線・矢印の端（S、選んだときの位置）。確定で一緒に動かす（T-164）
   let sel = false, sDrag = 0, sH = 0, sWas = false, sEd = false, hoverCur = '', toolCur = ''; // sEd: 文字の道具で押した（引かずに離せば 1 回目で書き直す。T-146）
   let selX = 0, selY = 0, selW = 0, selH = 0;     // 今の枠（S、小数のまま持つ）
   let srcX = 0, srcY = 0, srcW = 0, srcH = 0;     // 浮かせた元の範囲（S、整数）
@@ -2612,6 +2614,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 矩形の中の画素を selC へ浮かせ、面から消す。範囲は中身の外接矩形に詰める（何もなければ srcW = 0）
   function liftRaster(x, y, w, h) {
     srcW = srcH = 0;
+    selE = [];
     // 描いた範囲の外は透明と分かっているので、重なる所だけを 1 回で読む
     const ax = max(0, x, cbx0), ay = max(0, y, cby0), ex = min(x + w, cbx1), ey = min(y + h, cby1);
     if (cbx1 <= cbx0 || ex <= ax || ey <= ay) return;
@@ -2634,6 +2637,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       selC.height = srcH;
       selC.getContext('2d').drawImage(rc, bx0, by0, srcW, srcH, 0, 0, srcW, srcH);
       forTiles(srcX, srcY, srcW, srcH, false, (t, ox, oy, ix, iy, iw, ih) => t.x.clearRect(ix - ox, iy - oy, iw, ih));
+      eachEnd((X, Y) => { if (X >= srcX && X <= srcX + srcW && Y >= srcY && Y <= srcY + srcH) selE.push(X, Y); });
     }
     rc.width = rc.height = 0;
   }
@@ -2686,6 +2690,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     if (copy && del) {
       for (const p of selT) tApply(p[0], null);
       selT.length = 0;
+      selE = [];
       selC.width = selC.height = 0;
       return;
     }
@@ -2745,9 +2750,27 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       }
       const P = selT.map(p => [p[0], p[1]]);
       for (let i = 0; i < selT.length; i++) tApply(selT[i][0], next[i]);
-      if (R.length || P.length) push(R, atlas, put ? [dx, dy, dx + DW, dy + DH] : null, P.length ? P : null);
+      if (R.length || P.length) {
+        push(R, atlas, put ? [dx, dy, dx + DW, dy + DH] : null, P.length ? P : null);
+        // 範囲の中の直線・矢印の端も、描いた画素と同じに動かす（置いた先を e に。元の端は x に付けて、それより古い手の端を相手にしない。写しは元を残す。T-164）
+        if (selE.length) {
+          if (put) {
+            const ne = [];
+            for (let i = 0; i < selE.length; i += 2) {
+              const fx = (selE[i] - srcX) / srcW, fy = (selE[i + 1] - srcY) / srcH;
+              if (A) {
+                const px = rx + fx * dw - cx, py = ry + fy * dh - cy;
+                ne.push(cx + px * ca - py * sa, cy + px * sa + py * ca);
+              } else ne.push(dx + fx * dw, dy + fy * dh);
+            }
+            lastH.e = ne;
+          }
+          if (!copy) lastH.x = selE.slice();
+        }
+      }
     }
     selT.length = 0;
+    selE = [];
     selC.width = selC.height = 0;
   }
   function paintSel(x, y, w, h) {
@@ -2811,7 +2834,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       dropSel();
       // 文字の物は押したらそのまま選び、同じドラッグで動かせる
       const o = textHit(X, Y);
-      if (o) { srcW = srcH = 0; beginSel([o]); hit = -1; }
+      if (o) { srcW = srcH = 0; selE = []; beginSel([o]); hit = -1; }
     }
     act = e.pointerId; aType = e.pointerType; mode = 4;
     try { pad.setPointerCapture(act); } catch (_) { }
@@ -2933,11 +2956,12 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   function snapSel() {
     let c = null;
     if (srcW) { c = newCanvas(srcW, srcH); c.getContext('2d').drawImage(selC, 0, 0); }
-    return { c, g: [srcX, srcY, srcW, srcH], f: [selX, selY, selW, selH, selA], t: selT.map(p => tSnap(p[0])), n: 1 };
+    return { c, g: [srcX, srcY, srcW, srcH], f: [selX, selY, selW, selH, selA], t: selT.map(p => tSnap(p[0])), e: selE.slice(), n: 1 };
   }
   // 写しを、新しい物として浮かせる（文字は新しい物を作る。元に戻すと消える）。off だけずらす
   function floatSnap(q, off) {
     [srcX, srcY, srcW, srcH] = q.g;
+    selE = q.e.slice();
     if (srcW) {
       selC.width = srcW;
       selC.height = srcH;

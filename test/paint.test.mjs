@@ -1216,6 +1216,29 @@ test('全消去は、消しゴム・選択の削除で全部消した後や、�
   await page.close();
 });
 
+// T-171: Mac・iPad のキーボードの delete は Backspace。v1.62.0 では Backspace で全消去しない
+test('Backspace でも全消去する（元に戻せる）。文字の入力中の Backspace は文字だけを消す', async () => {
+  const { page, errors } = await fresh();
+  await drag(page, [[100, 300], [300, 300]], 5);
+  assert.ok((await alphaStats(page, 80, 280, 240, 40)).count > 0);
+  // 文字の入力中は、入力欄の文字だけが消える
+  await page.keyboard.press('t');
+  await page.mouse.click(400, 450);
+  await page.keyboard.type('ab');
+  await page.keyboard.press('Backspace');
+  assert.equal((await textBox(page)).value, 'a');
+  assert.ok((await alphaStats(page, 80, 280, 240, 40)).count > 0, 'Backspace in the text box');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Backspace');
+  assert.equal((await alphaStats(page, 0, 0, 1000, 700)).count, 0, 'Backspace clears');
+  assert.equal(await page.evaluate(() => window.__paintBookmarklet.stats().texts), 0);
+  await page.keyboard.press('Control+z');
+  assert.ok((await alphaStats(page, 80, 280, 240, 40)).count > 0, 'undo');
+  assert.equal(await page.evaluate(() => window.__paintBookmarklet.stats().texts), 1);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('全消去は、消す物がないときは何もしない（履歴が増えない）。積むのは描いた範囲に掛かるタイルだけ', async () => {
   const { page, errors } = await fresh();
   const st = () => page.evaluate(() => { const s = window.__paintBookmarklet.stats(); return [s.history, s.historyPixels]; });

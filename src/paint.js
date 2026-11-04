@@ -6,7 +6,7 @@
   'use strict';
 
   const NS = '__paintBookmarklet';
-  const VERSION = '1.62.0';
+  const VERSION = '1.63.0';
   const win = window;
   // 2 回目以降の実行は表示/非表示の切り替えのみ（描画内容は保持）
   if (win[NS]) { win[NS].toggle(); return; }
@@ -590,7 +590,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     moreP.append(b);
     return [b, b.querySelector('span')];
   };
-  const [clrMi] = item('全消去', 'Delete', I.trash, clearAll);
+  const [clrMi] = item('全消去', IS_MAC ? '⌫' : 'Delete', I.trash, clearAll);
   const [bgB, bgL] = item('', 'B', I.bg, cycleBg, true);
   item('PNG で保存', IS_MAC ? '⌘S' : 'Ctrl+S', I.save, save);
   if (HAS_CLIP) item('クリップボードにコピー', '', I.copy, copyImg);
@@ -4070,7 +4070,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   // 3 つ目が 'touch' の行は、文字に触れる（touchText）が入りのときだけツールの中に出す
   const HELP = /*HELP*/[
     ["道具", [
-      ["{S}", "選択。囲むか押して選び、引くと移動、角で拡大縮小、上の丸で回す（{Shift} で 15° ずつ）、{Delete} で削除、矢印で 1px（{Shift} で 10px）"],
+      ["{S}", "選択。囲むか押して選び、引くと移動、角で拡大縮小、上の丸で回す（{Shift} で 15° ずつ）、{Delete}・{Backspace} で削除、矢印で 1px（{Shift} で 10px）"],
       ["{P}", "ペン（筆圧対応）"],
       ["{H}", "蛍光ペン"],
       ["{E}", "消しゴム（右クリック・ペンの消しゴム側でも）"],
@@ -4090,7 +4090,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       ["{Ctrl}+{Y}", "やり直す（{Ctrl}+{Shift}+{Z} でも）"],
       ["{Ctrl}+{C} {X} {V}", "選んだ物のコピー・切り取り・貼り付け"],
       ["{Alt}+引く", "選んだ物を複製して動かす"],
-      ["{Delete}", "全消去（元に戻せる）"],
+      ["{Delete}・{Backspace}", "全消去（元に戻せる）"],
       ["{Ctrl}+{S}", "PNG で保存"]
     ]],
     ["表示", [
@@ -4115,7 +4115,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   let helpOn = false;
   const rich = (p, s) => s.split(/\{([^}]*)\}/).forEach((t, i) => {
     if (!t) return;
-    if (i % 2) { const k = el('kbd'); k.textContent = IS_MAC && t === 'Ctrl' ? '⌘' : t; p.append(k); }
+    if (i % 2) { const k = el('kbd'); k.textContent = IS_MAC && t === 'Ctrl' ? '⌘' : IS_MAC && t === 'Backspace' ? '⌫' : t; p.append(k); }
     else p.append(t);
   });
   function openHelp() {
@@ -4187,7 +4187,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     else if (k === 'b') cycleBg();
     else if (k === 'd') toggleHud();
     else if (k === 'i') pickColor();
-    else if (k === 'Delete') clearAll();
+    else if (k === 'Delete' || k === 'Backspace') clearAll(); // Mac・iPad のキーボードの delete は Backspace（T-171）
     else if (k === 'Escape') picking ? setPicking(false) : openP ? closePanel() : cp2 ? hide() : hideHint(); // CP2 はお知らせを出さずに隠す
     else ok = false;
     if (ok) { e.preventDefault(); e.stopPropagation(); }
